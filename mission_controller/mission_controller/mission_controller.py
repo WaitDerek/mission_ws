@@ -60,6 +60,7 @@ class MissionController(Node):
         self._declare_parameters()
         self._validate_parameters()
 
+        # Match the command transport used by dual_arm_manipulation/tools/r1pro_test.
         command_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
@@ -163,7 +164,8 @@ class MissionController(Node):
                 ("arm_joints_result_timeout_sec", 60.0),
                 ("arm_pose_result_timeout_sec", 120.0),
                 ("home_result_timeout_sec", 60.0),
-                ("require_command_subscribers", True),
+                ("wait_for_command_subscribers", True),
+                ("require_command_subscribers", False),
                 ("command_subscriber_wait_timeout_sec", 3.0),
                 ("command_repeat_count", 10),
                 ("command_repeat_interval_sec", 0.005),
@@ -197,7 +199,7 @@ class MissionController(Node):
                 ("place_chassis_yaw", 0.0),
                 ("place_chassis_duration_sec", 5.0),
                 ("chassis_publish_hz", 10.0),
-                ("chassis_stop_repeat_count", 3),
+                ("chassis_stop_repeat_count", 1),
                 ("max_chassis_linear_speed", 0.2),
                 ("max_chassis_angular_speed", 0.4),
                 ("home_velocity", 0.05),
@@ -435,16 +437,20 @@ class MissionController(Node):
         return value
 
     def _wait_for_publisher(self, publisher, topic: str, goal_handle) -> None:
-        if not self._boolean("require_command_subscribers"):
+        if not self._boolean("wait_for_command_subscribers"):
             return
         timeout_sec = self._float("command_subscriber_wait_timeout_sec")
         deadline = time.monotonic() + timeout_sec
         while publisher.get_subscription_count() == 0:
             self._check_canceled(goal_handle, f"while waiting for subscriber on {topic}")
             if time.monotonic() >= deadline:
-                raise MissionError(
-                    f"timeout waiting for subscriber on {topic} after {timeout_sec:.1f}s"
+                detail = (
+                    f"no subscriber matched on {topic} within {timeout_sec:.1f}s"
                 )
+                if self._boolean("require_command_subscribers"):
+                    raise MissionError(detail)
+                self.get_logger().warning(f"{detail}; publishing anyway")
+                return
             time.sleep(0.05)
 
     def _publish_joint_command(
@@ -509,6 +515,9 @@ class MissionController(Node):
         message.header.stamp = self.get_clock().now().to_msg()
         message.twist.linear.x = linear_x
         message.twist.linear.y = linear_y
+        message.twist.linear.z = 0.0
+        message.twist.angular.x = 0.0
+        message.twist.angular.y = 0.0
         message.twist.angular.z = angular_z
         return message
 

@@ -4,6 +4,7 @@ mission_controller:
     arm_joints_result_timeout_sec: 2.0
     arm_pose_result_timeout_sec: 2.0
     home_result_timeout_sec: 2.0
+    require_command_subscribers: true
     command_subscriber_wait_timeout_sec: 2.0
     command_repeat_count: 2
     command_repeat_interval_sec: 0.005

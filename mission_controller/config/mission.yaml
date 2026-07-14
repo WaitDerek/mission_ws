@@ -21,7 +21,9 @@ mission_controller:
     arm_pose_result_timeout_sec: 120.0
     home_result_timeout_sec: 60.0
 
-    require_command_subscribers: true
+    # Match r1pro_test: wait, warn, then publish. Set require=true for strict mode.
+    wait_for_command_subscribers: true
+    require_command_subscribers: false
     command_subscriber_wait_timeout_sec: 3.0
     command_repeat_count: 10
     command_repeat_interval_sec: 0.005
@@ -48,7 +50,7 @@ mission_controller:
     place_chassis_yaw: 0.0
     place_chassis_duration_sec: 5.0
     chassis_publish_hz: 10.0
-    chassis_stop_repeat_count: 3
+    chassis_stop_repeat_count: 1
     max_chassis_linear_speed: 0.2
     max_chassis_angular_speed: 0.4
 

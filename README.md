@@ -33,6 +33,22 @@ Only one mission is accepted at a time.
 The chassis move is open-loop. Calibrate the distance, duration, direction, and
 joint targets in `mission_controller/config/mission.yaml` before hardware use.
 
+## R1PRO command transport
+
+The chassis and gripper publishers follow the examples under
+`dual_arm_manipulation/tools/r1pro_test`:
+
+- Commands use reliable, keep-last depth 10, transient-local QoS.
+- Grippers publish `sensor_msgs/msg/JointState` with one percentage value on
+  `/motion_target/target_position_gripper_left` or `_right`; `0` is closed and
+  `100` is open.
+- The chassis publishes `geometry_msgs/msg/TwistStamped` on
+  `/motion_target/target_speed_chassis` at 10 Hz by default and publishes one
+  all-zero command when motion finishes, fails, or is canceled.
+- By default the node waits three seconds for a command subscriber, warns, and
+  publishes anyway like the reference scripts. Set
+  `require_command_subscribers: true` for strict mission failure instead.
+
 ## Build
 
 Activate `changan`, then source the installed dual-arm and perception

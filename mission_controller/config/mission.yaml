@@ -1,0 +1,55 @@
+mission_controller:
+  ros__parameters:
+    execute_grasp_action_name: /execute_grasp
+    execute_place_action_name: /execute_place
+    detect_service_name: /detect_grasp_pose
+    arm_pose_action_name: /move_arm_p
+    arm_joints_service_name: /move_arm_j
+    home_service_name: /home
+    grasp_pose_topic: /mission/grasp_pose
+
+    torso_topic: /motion_target/target_joint_state_torso
+    left_gripper_topic: /motion_target/target_position_gripper_left
+    right_gripper_topic: /motion_target/target_position_gripper_right
+    chassis_topic: /motion_target/target_speed_chassis
+
+    default_arm: right
+    default_target_frame: torso_link
+    default_detection_timeout_sec: 20.0
+    dependency_wait_timeout_sec: 10.0
+    arm_joints_result_timeout_sec: 60.0
+    arm_pose_result_timeout_sec: 120.0
+    home_result_timeout_sec: 60.0
+
+    require_command_subscribers: true
+    command_subscriber_wait_timeout_sec: 3.0
+    command_repeat_count: 10
+    command_repeat_interval_sec: 0.005
+    torso_settle_sec: 1.0
+    arm_settle_sec: 1.0
+    gripper_settle_sec: 1.0
+
+    torso_prepare_positions: [0.61, -0.81, -0.21, 0.0]
+    torso_reset_positions: [0.0, 0.0, 0.0, 0.0]
+    torso_velocities: [0.2, 0.2, 0.2, 0.2]
+
+    grasp_left_joint_positions: [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
+    grasp_right_joint_positions: [-0.88, -0.84, 1.13, -1.80, -1.25, 0.29, -0.13]
+    place_left_joint_positions: [-0.911, 0.270, -1.095, -1.193, 2.356, 0.801, 1.470]
+    place_right_joint_positions: [-0.911, -0.270, 1.095, -1.193, -2.356, 0.801, -1.470]
+
+    gripper_open_position: 100.0
+    gripper_closed_position: 0.0
+    open_gripper_before_grasp: true
+
+    # Calibrate these fixed-location values before running on hardware.
+    place_chassis_distance_x: -0.5
+    place_chassis_distance_y: 0.0
+    place_chassis_yaw: 0.0
+    place_chassis_duration_sec: 5.0
+    chassis_publish_hz: 10.0
+    chassis_stop_repeat_count: 3
+    max_chassis_linear_speed: 0.2
+    max_chassis_angular_speed: 0.4
+
+    home_velocity: 0.05

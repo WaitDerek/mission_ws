@@ -1,0 +1,29 @@
+# Execute one complete grasp mission.
+string request_id
+string target_frame
+int32 target_label
+string arm
+bool publish_pose
+float64 detection_timeout_sec
+bool dry_run
+
+---
+
+bool success
+string message
+geometry_msgs/PoseStamped grasp_pose
+float64 score
+float64 width
+float64 height
+float64 depth
+int32 object_id
+string arm
+string arm_message
+bool gripper_command_published
+bool torso_reset_command_published
+
+---
+
+string stage
+string detail
+string arm

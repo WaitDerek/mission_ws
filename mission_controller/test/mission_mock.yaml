@@ -1,0 +1,18 @@
+mission_controller:
+  ros__parameters:
+    dependency_wait_timeout_sec: 2.0
+    arm_joints_result_timeout_sec: 2.0
+    arm_pose_result_timeout_sec: 2.0
+    home_result_timeout_sec: 2.0
+    command_subscriber_wait_timeout_sec: 2.0
+    command_repeat_count: 2
+    command_repeat_interval_sec: 0.005
+    torso_settle_sec: 0.05
+    arm_settle_sec: 0.05
+    gripper_settle_sec: 0.05
+    place_chassis_distance_x: -0.02
+    place_chassis_distance_y: 0.0
+    place_chassis_yaw: 0.0
+    place_chassis_duration_sec: 0.2
+    chassis_publish_hz: 20.0
+    chassis_stop_repeat_count: 2

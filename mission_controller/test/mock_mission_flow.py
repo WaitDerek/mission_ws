@@ -25,6 +25,7 @@ class MockMissionSystem(Node):
         super().__init__("mock_mission_system")
         self.events: list[str] = []
         self.events_lock = threading.Lock()
+        self.arm_joint_call_count = 0
         command_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
@@ -114,7 +115,22 @@ class MockMissionSystem(Node):
         response.source_frame = "torso_link"
         return response
 
-    def _move_arm_joints(self, _request, response):
+    def _move_arm_joints(self, request, response):
+        self.arm_joint_call_count += 1
+        if self.arm_joint_call_count == 1:
+            if len(request.left_joints) != 7 or len(request.right_joints) != 7:
+                raise AssertionError("grasp preparation should target both arms")
+            expected_left = [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
+            expected_right = [-0.98, -0.64, 1.13, -1.60, -1.25, 0.6, -0.13]
+            if list(request.left_joints) != expected_left:
+                raise AssertionError("unexpected grasp left preparation target")
+            if list(request.right_joints) != expected_right:
+                raise AssertionError("unexpected grasp right preparation target")
+        else:
+            if request.left_joints:
+                raise AssertionError("place flow should leave left_joints empty")
+            if len(request.right_joints) != 7:
+                raise AssertionError("right_joints must contain seven positions")
         self._record("move_arm_j")
         response.success = True
         response.message = "mock joints complete"
@@ -157,6 +173,15 @@ def assert_in_order(events: list[str], expected: list[str]) -> None:
             ) from exc
 
 
+def assert_all_before(events: list[str], expected: list[str], marker: str) -> None:
+    marker_index = events.index(marker)
+    for event in expected:
+        if event not in events[:marker_index]:
+            raise AssertionError(
+                f"event '{event}' did not occur before '{marker}'; events={events}"
+            )
+
+
 def run_grasp(node: MockMissionSystem) -> None:
     if not node.grasp_client.wait_for_server(timeout_sec=5.0):
         raise RuntimeError("/execute_grasp action server not available")
@@ -175,17 +200,15 @@ def run_grasp(node: MockMissionSystem) -> None:
     if not wrapped_result.result.success:
         raise AssertionError(wrapped_result.result.message)
     time.sleep(0.1)
+    events = node.snapshot()
+    assert_all_before(
+        events,
+        ["gripper:left:100.0", "gripper:right:100.0", "torso:prepare", "move_arm_j"],
+        "detect",
+    )
     assert_in_order(
-        node.snapshot(),
-        [
-            "gripper:right:100.0",
-            "torso:prepare",
-            "move_arm_j",
-            "detect",
-            "move_arm_p",
-            "gripper:right:0.0",
-            "torso:reset",
-        ],
+        events,
+        ["detect", "move_arm_p", "gripper:right:0.0", "torso:reset"],
     )
 
 
@@ -212,8 +235,8 @@ def run_place(node: MockMissionSystem) -> None:
             "torso:prepare",
             "move_arm_j",
             "gripper:right:100.0",
-            "home:dry_run=false",
             "torso:reset",
+            "home:dry_run=false",
         ],
     )
 

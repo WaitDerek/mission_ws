@@ -8,13 +8,27 @@ dual-arm workspace.
 
 - `/execute_grasp` (`mission_interfaces/action/ExecuteGrasp`)
 - `/execute_place` (`mission_interfaces/action/ExecutePlace`)
+- `/execute_bin_grasp` (`mission_interfaces/action/ExecuteBinGrasp`)
+- `/execute_bin_place` (`mission_interfaces/action/ExecuteBinPlace`)
 
 Only one mission is accepted at a time.
 
+The bin actions are registered separately from the material actions. They are
+disabled by default until bin-specific observation joint targets and the bin
+perception service are configured. They reject goals while
+`bin_mission_enabled` is false and do not publish robot commands.
+
+The intended bin grasp sequence is: initialize the bin observation pose, call
+the bin perception service, execute the detected grasp pose, close the selected
+gripper, and lift only the torso while keeping the arm at the grasp pose. The
+intended bin place sequence is: move the chassis to its fixed location, bend the
+torso, open the selected gripper, then home the arms and reset the torso.
+
 ### Grasp sequence
 
-1. Open the selected gripper, publish the configured torso target, and call
-   `/move_arm_j` with the configured dual-arm preparation joints.
+1. Start opening both grippers, moving the torso to its preparation target, and
+   calling `/move_arm_j` with the configured dual-arm preparation joints in
+   parallel. Wait for all three preparations to settle before continuing.
 2. Call `/detect_grasp_pose` and receive a pose in `torso_link` by default.
 3. Send that pose to the `/move_arm_p` action for the selected arm.
 4. Close the selected gripper.
@@ -25,10 +39,11 @@ Only one mission is accepted at a time.
 
 1. Publish a constant chassis velocity for the configured distance and duration,
    then always publish zero velocity.
-2. Publish the configured torso target and call `/move_arm_j` with the place
-   joint target.
+2. Publish the configured torso target and call `/move_arm_j` with only the
+   configured right-arm place joint target. The left arm target is empty and
+   remains at its current position.
 3. Open the selected gripper.
-4. Call `/home` to reset both arms and publish the torso reset target.
+4. Publish the torso reset target, then call `/home` to reset both arms.
 
 The chassis move is open-loop. Calibrate the distance, duration, direction, and
 joint targets in `mission_controller/config/mission.yaml` before hardware use.

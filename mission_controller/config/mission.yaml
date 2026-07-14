@@ -2,7 +2,11 @@ mission_controller:
   ros__parameters:
     execute_grasp_action_name: /execute_grasp
     execute_place_action_name: /execute_place
+    execute_bin_grasp_action_name: /execute_bin_grasp
+    execute_bin_place_action_name: /execute_bin_place
     detect_service_name: /detect_grasp_pose
+    bin_detect_service_name: /detect_bin_grasp_pose
+    bin_mission_enabled: false
     arm_pose_action_name: /move_arm_p
     arm_joints_service_name: /move_arm_j
     home_service_name: /home
@@ -14,7 +18,14 @@ mission_controller:
     chassis_topic: /motion_target/target_speed_chassis
 
     default_arm: right
-    default_target_frame: torso_link
+    default_target_frame: torso_link4
+    camera_mount_tf_enabled: true
+    camera_mount_parent_frame: right_gripper_link
+    camera_mount_child_frame: hdas/camera_wrist_right_link
+    # Initial R1Pro URDF values for right_D405_joint; calibrate before hardware use.
+    camera_mount_xyz: [0.074703, 0.009582, 0.019134]
+    camera_mount_rpy: [2.4435, 0.0, -1.563]
+    camera_tf_timeout_sec: 2.0
     default_detection_timeout_sec: 20.0
     dependency_wait_timeout_sec: 10.0
     arm_joints_result_timeout_sec: 60.0
@@ -36,9 +47,19 @@ mission_controller:
     torso_velocities: [0.2, 0.2, 0.2, 0.2]
 
     grasp_left_joint_positions: [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
-    grasp_right_joint_positions: [-0.88, -0.84, 1.13, -1.80, -1.25, 0.29, -0.13]
-    place_left_joint_positions: [-0.911, 0.270, -1.095, -1.193, 2.356, 0.801, 1.470]
+    grasp_right_joint_positions: [-0.98, -0.64, 1.13, -1.60, -1.25, 0.6, -0.13]
     place_right_joint_positions: [-0.911, -0.270, 1.095, -1.193, -2.356, 0.801, -1.470]
+
+    # Fill these bin-specific values before setting bin_mission_enabled=true.
+    bin_grasp_left_observation_joint_positions: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    bin_grasp_right_observation_joint_positions: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    bin_grasp_torso_prepare_positions: [0.0, 0.0, 0.0, 0.0]
+    bin_grasp_torso_lift_positions: [0.0, 0.0, 0.0, 0.0]
+    bin_place_torso_positions: [0.0, 0.0, 0.0, 0.0]
+    bin_place_chassis_distance_x: 0.0
+    bin_place_chassis_distance_y: 0.0
+    bin_place_chassis_yaw: 0.0
+    bin_place_chassis_duration_sec: 5.0
 
     gripper_open_position: 100.0
     gripper_closed_position: 0.0

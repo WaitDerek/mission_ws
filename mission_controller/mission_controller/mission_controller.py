@@ -1,15 +1,22 @@
 import math
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 import rclpy
 from action_msgs.msg import GoalStatus
-from geometry_msgs.msg import Pose, PoseStamped, TwistStamped
+from geometry_msgs.msg import Pose, PoseStamped, TransformStamped, TwistStamped
 from grasp_orchestrator_interfaces.srv import DetectGraspPose
-from mission_interfaces.action import ExecuteGrasp, ExecutePlace
+from mission_interfaces.action import (
+    ExecuteBinGrasp,
+    ExecuteBinPlace,
+    ExecuteGrasp,
+    ExecutePlace,
+)
 from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import (
@@ -21,6 +28,8 @@ from rclpy.qos import (
 from sensor_msgs.msg import JointState
 from task_interfaces.action import MoveArmPose
 from task_interfaces.srv import ArmJoints, Home
+from tf2_geometry_msgs import do_transform_pose_stamped
+from tf2_ros import Buffer, StaticTransformBroadcaster, TransformException, TransformListener
 
 
 VALID_ARMS = {"left", "right"}
@@ -59,6 +68,10 @@ class MissionController(Node):
         super().__init__("mission_controller")
         self._declare_parameters()
         self._validate_parameters()
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.camera_static_broadcaster = StaticTransformBroadcaster(self)
+        self._publish_camera_mount_tf()
 
         # Match the command transport used by dual_arm_manipulation/tools/r1pro_test.
         command_qos = QoSProfile(
@@ -88,6 +101,11 @@ class MissionController(Node):
         self.detect_client = self.create_client(
             DetectGraspPose,
             self._string("detect_service_name"),
+            callback_group=self.client_group,
+        )
+        self.bin_detect_client = self.create_client(
+            DetectGraspPose,
+            self._string("bin_detect_service_name"),
             callback_group=self.client_group,
         )
         self.arm_joints_client = self.create_client(
@@ -130,10 +148,30 @@ class MissionController(Node):
             cancel_callback=self._cancel_callback,
             callback_group=self.server_group,
         )
+        self.bin_grasp_action_server = ActionServer(
+            self,
+            ExecuteBinGrasp,
+            self._string("execute_bin_grasp_action_name"),
+            execute_callback=self._execute_bin_grasp,
+            goal_callback=self._bin_grasp_goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=self.server_group,
+        )
+        self.bin_place_action_server = ActionServer(
+            self,
+            ExecuteBinPlace,
+            self._string("execute_bin_place_action_name"),
+            execute_callback=self._execute_bin_place,
+            goal_callback=self._bin_place_goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=self.server_group,
+        )
         self.get_logger().info(
             "mission controller ready: "
             f"grasp={self._string('execute_grasp_action_name')} "
-            f"place={self._string('execute_place_action_name')}"
+            f"place={self._string('execute_place_action_name')} "
+            f"bin_grasp={self._string('execute_bin_grasp_action_name')} "
+            f"bin_place={self._string('execute_bin_place_action_name')}"
         )
 
     def _declare_parameters(self) -> None:
@@ -142,7 +180,11 @@ class MissionController(Node):
             parameters=[
                 ("execute_grasp_action_name", "/execute_grasp"),
                 ("execute_place_action_name", "/execute_place"),
+                ("execute_bin_grasp_action_name", "/execute_bin_grasp"),
+                ("execute_bin_place_action_name", "/execute_bin_place"),
                 ("detect_service_name", "/detect_grasp_pose"),
+                ("bin_detect_service_name", "/detect_bin_grasp_pose"),
+                ("bin_mission_enabled", False),
                 ("arm_pose_action_name", "/move_arm_p"),
                 ("arm_joints_service_name", "/move_arm_j"),
                 ("home_service_name", "/home"),
@@ -158,7 +200,13 @@ class MissionController(Node):
                 ),
                 ("chassis_topic", "/motion_target/target_speed_chassis"),
                 ("default_arm", "right"),
-                ("default_target_frame", "torso_link"),
+                ("default_target_frame", "torso_link4"),
+                ("camera_mount_tf_enabled", True),
+                ("camera_mount_parent_frame", "right_gripper_link"),
+                ("camera_mount_child_frame", "hdas/camera_wrist_right_link"),
+                ("camera_mount_xyz", [0.074703, 0.009582, 0.019134]),
+                ("camera_mount_rpy", [2.4435, 0.0, -1.563]),
+                ("camera_tf_timeout_sec", 2.0),
                 ("default_detection_timeout_sec", 20.0),
                 ("dependency_wait_timeout_sec", 10.0),
                 ("arm_joints_result_timeout_sec", 60.0),
@@ -181,16 +229,28 @@ class MissionController(Node):
                 ),
                 (
                     "grasp_right_joint_positions",
-                    [-0.88, -0.84, 1.13, -1.80, -1.25, 0.29, -0.13],
-                ),
-                (
-                    "place_left_joint_positions",
-                    [-0.911, 0.270, -1.095, -1.193, 2.356, 0.801, 1.470],
+                    [-0.98, -0.64, 1.13, -1.60, -1.25, 0.6, -0.13],
                 ),
                 (
                     "place_right_joint_positions",
                     [-0.911, -0.270, 1.095, -1.193, -2.356, 0.801, -1.470],
                 ),
+                # Fill these bin-specific values before enabling bin missions.
+                (
+                    "bin_grasp_left_observation_joint_positions",
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                ),
+                (
+                    "bin_grasp_right_observation_joint_positions",
+                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                ),
+                ("bin_grasp_torso_prepare_positions", [0.0, 0.0, 0.0, 0.0]),
+                ("bin_grasp_torso_lift_positions", [0.0, 0.0, 0.0, 0.0]),
+                ("bin_place_torso_positions", [0.0, 0.0, 0.0, 0.0]),
+                ("bin_place_chassis_distance_x", 0.0),
+                ("bin_place_chassis_distance_y", 0.0),
+                ("bin_place_chassis_yaw", 0.0),
+                ("bin_place_chassis_duration_sec", 5.0),
                 ("gripper_open_position", 100.0),
                 ("gripper_closed_position", 0.0),
                 ("open_gripper_before_grasp", True),
@@ -210,7 +270,10 @@ class MissionController(Node):
         for name in (
             "execute_grasp_action_name",
             "execute_place_action_name",
+            "execute_bin_grasp_action_name",
+            "execute_bin_place_action_name",
             "detect_service_name",
+            "bin_detect_service_name",
             "arm_pose_action_name",
             "arm_joints_service_name",
             "home_service_name",
@@ -226,14 +289,25 @@ class MissionController(Node):
         if self._string("default_arm").lower() not in VALID_ARMS:
             raise ValueError("default_arm must be 'left' or 'right'")
 
+        if self._boolean("camera_mount_tf_enabled"):
+            for name in ("camera_mount_parent_frame", "camera_mount_child_frame"):
+                if not self._string(name):
+                    raise ValueError(f"parameter '{name}' must not be empty")
+
         for name, expected_length in (
             ("torso_prepare_positions", 4),
             ("torso_reset_positions", 4),
             ("torso_velocities", 4),
             ("grasp_left_joint_positions", 7),
             ("grasp_right_joint_positions", 7),
-            ("place_left_joint_positions", 7),
             ("place_right_joint_positions", 7),
+            ("bin_grasp_left_observation_joint_positions", 7),
+            ("bin_grasp_right_observation_joint_positions", 7),
+            ("bin_grasp_torso_prepare_positions", 4),
+            ("bin_grasp_torso_lift_positions", 4),
+            ("bin_place_torso_positions", 4),
+            ("camera_mount_xyz", 3),
+            ("camera_mount_rpy", 3),
         ):
             values = self._float_array(name)
             if len(values) != expected_length:
@@ -256,10 +330,12 @@ class MissionController(Node):
             "home_result_timeout_sec",
             "command_subscriber_wait_timeout_sec",
             "place_chassis_duration_sec",
+            "bin_place_chassis_duration_sec",
             "chassis_publish_hz",
             "max_chassis_linear_speed",
             "max_chassis_angular_speed",
             "home_velocity",
+            "camera_tf_timeout_sec",
         )
         for name in positive_parameters:
             if not math.isfinite(self._float(name)) or self._float(name) <= 0.0:
@@ -294,6 +370,36 @@ class MissionController(Node):
                 "configured place chassis angular speed exceeds max_chassis_angular_speed"
             )
 
+        bin_duration = self._float("bin_place_chassis_duration_sec")
+        bin_vx = self._float("bin_place_chassis_distance_x") / bin_duration
+        bin_vy = self._float("bin_place_chassis_distance_y") / bin_duration
+        bin_wz = self._float("bin_place_chassis_yaw") / bin_duration
+        if math.hypot(bin_vx, bin_vy) > self._float(
+            "max_chassis_linear_speed"
+        ) + 1e-9:
+            raise ValueError(
+                "configured bin place chassis linear speed exceeds "
+                "max_chassis_linear_speed"
+            )
+        if abs(bin_wz) > self._float("max_chassis_angular_speed") + 1e-9:
+            raise ValueError(
+                "configured bin place chassis angular speed exceeds "
+                "max_chassis_angular_speed"
+            )
+
+        if self._boolean("bin_mission_enabled"):
+            for name in (
+                "bin_grasp_left_observation_joint_positions",
+                "bin_grasp_right_observation_joint_positions",
+                "bin_grasp_torso_prepare_positions",
+                "bin_grasp_torso_lift_positions",
+                "bin_place_torso_positions",
+            ):
+                if all(abs(value) < 1e-9 for value in self._float_array(name)):
+                    raise ValueError(
+                        f"bin_mission_enabled requires configured '{name}'"
+                    )
+
     def _string(self, name: str) -> str:
         return str(self.get_parameter(name).value).strip()
 
@@ -308,6 +414,75 @@ class MissionController(Node):
 
     def _float_array(self, name: str) -> list[float]:
         return [float(value) for value in self.get_parameter(name).value]
+
+    @staticmethod
+    def _quaternion_from_rpy(roll: float, pitch: float, yaw: float) -> tuple[float, float, float, float]:
+        cr = math.cos(roll * 0.5)
+        sr = math.sin(roll * 0.5)
+        cp = math.cos(pitch * 0.5)
+        sp = math.sin(pitch * 0.5)
+        cy = math.cos(yaw * 0.5)
+        sy = math.sin(yaw * 0.5)
+        return (
+            sr * cp * cy - cr * sp * sy,
+            cr * sp * cy + sr * cp * sy,
+            cr * cp * sy - sr * sp * cy,
+            cr * cp * cy + sr * sp * sy,
+        )
+
+    def _publish_camera_mount_tf(self) -> None:
+        if not self._boolean("camera_mount_tf_enabled"):
+            self.get_logger().info("camera mount TF publication disabled")
+            return
+
+        xyz = self._float_array("camera_mount_xyz")
+        rpy = self._float_array("camera_mount_rpy")
+        qx, qy, qz, qw = self._quaternion_from_rpy(*rpy)
+        transform = TransformStamped()
+        transform.header.stamp = self.get_clock().now().to_msg()
+        transform.header.frame_id = self._string("camera_mount_parent_frame").lstrip("/")
+        transform.child_frame_id = self._string("camera_mount_child_frame").lstrip("/")
+        transform.transform.translation.x = xyz[0]
+        transform.transform.translation.y = xyz[1]
+        transform.transform.translation.z = xyz[2]
+        transform.transform.rotation.x = qx
+        transform.transform.rotation.y = qy
+        transform.transform.rotation.z = qz
+        transform.transform.rotation.w = qw
+        self.camera_static_broadcaster.sendTransform(transform)
+        self.get_logger().info(
+            "published mission-owned camera mount TF "
+            f"{transform.header.frame_id} -> {transform.child_frame_id}"
+        )
+
+    def _transform_detection_pose(self, pose: PoseStamped, target_frame: str) -> PoseStamped:
+        source_frame = pose.header.frame_id.strip().lstrip("/")
+        target_frame = target_frame.strip().lstrip("/")
+        if not source_frame:
+            raise MissionError("grasp detector returned an empty source frame")
+        if not target_frame or source_frame == target_frame:
+            pose.header.frame_id = target_frame or source_frame
+            return pose
+
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                target_frame,
+                source_frame,
+                rclpy.time.Time(),
+                timeout=Duration(seconds=self._float("camera_tf_timeout_sec")),
+            )
+            transformed = do_transform_pose_stamped(pose, transform)
+        except TransformException as exc:
+            raise MissionError(
+                f"camera pose transform {source_frame} -> {target_frame} failed: {exc}"
+            ) from exc
+
+        transformed.header.frame_id = target_frame
+        transformed.header.stamp = self.get_clock().now().to_msg()
+        self.get_logger().info(
+            f"converted grasp pose {source_frame} -> {target_frame} using current robot TF/joint state"
+        )
+        return transformed
 
     def _resolve_arm(self, requested_arm: str) -> str:
         arm = requested_arm.strip().lower()
@@ -342,6 +517,32 @@ class MissionController(Node):
             "place", request.request_id, self._resolve_arm(request.arm)
         )
 
+    def _bin_grasp_goal_callback(
+        self, request: ExecuteBinGrasp.Goal
+    ) -> GoalResponse:
+        if not self._boolean("bin_mission_enabled"):
+            self.get_logger().warning(
+                "rejecting bin grasp goal: bin_mission_enabled is false; "
+                "configure bin preparation targets and perception first"
+            )
+            return GoalResponse.REJECT
+        return self._reserve_goal(
+            "bin_grasp", request.request_id, self._resolve_arm(request.arm)
+        )
+
+    def _bin_place_goal_callback(
+        self, request: ExecuteBinPlace.Goal
+    ) -> GoalResponse:
+        if not self._boolean("bin_mission_enabled"):
+            self.get_logger().warning(
+                "rejecting bin place goal: bin_mission_enabled is false; "
+                "configure bin preparation targets first"
+            )
+            return GoalResponse.REJECT
+        return self._reserve_goal(
+            "bin_place", request.request_id, self._resolve_arm(request.arm)
+        )
+
     def _cancel_callback(self, _goal_handle) -> CancelResponse:
         with self.state_lock:
             arm_goal_handle = self.active_arm_goal_handle
@@ -366,6 +567,26 @@ class MissionController(Node):
     @staticmethod
     def _publish_place_feedback(goal_handle, stage: str, detail: str, arm: str) -> None:
         feedback = ExecutePlace.Feedback()
+        feedback.stage = stage
+        feedback.detail = detail
+        feedback.arm = arm
+        goal_handle.publish_feedback(feedback)
+
+    @staticmethod
+    def _publish_bin_grasp_feedback(
+        goal_handle, stage: str, detail: str, arm: str
+    ) -> None:
+        feedback = ExecuteBinGrasp.Feedback()
+        feedback.stage = stage
+        feedback.detail = detail
+        feedback.arm = arm
+        goal_handle.publish_feedback(feedback)
+
+    @staticmethod
+    def _publish_bin_place_feedback(
+        goal_handle, stage: str, detail: str, arm: str
+    ) -> None:
+        feedback = ExecuteBinPlace.Feedback()
         feedback.stage = stage
         feedback.detail = detail
         feedback.arm = arm
@@ -508,6 +729,109 @@ class MissionController(Node):
             publisher, topic, [position], [], goal_handle
         )
 
+    def _prepare_grasp_grippers(self, goal_handle) -> None:
+        for gripper_arm in ("left", "right"):
+            self._publish_gripper(
+                goal_handle,
+                gripper_arm,
+                self._float("gripper_open_position"),
+            )
+        self._wait_delay(
+            goal_handle,
+            self._float("gripper_settle_sec"),
+            "while waiting for gripper preparation",
+        )
+
+    def _prepare_grasp_torso(self, goal_handle) -> None:
+        self._publish_torso(
+            goal_handle, self._float_array("torso_prepare_positions")
+        )
+        self._wait_delay(
+            goal_handle,
+            self._float("torso_settle_sec"),
+            "while waiting for torso preparation",
+        )
+
+    def _prepare_grasp_arms(self, goal_handle) -> None:
+        self._call_arm_joints(
+            goal_handle,
+            self._float_array("grasp_left_joint_positions"),
+            self._float_array("grasp_right_joint_positions"),
+            False,
+        )
+        self._wait_delay(
+            goal_handle,
+            self._float("arm_settle_sec"),
+            "while waiting for arm preparation",
+        )
+
+    def _prepare_grasp_concurrently(
+        self, goal_handle, open_grippers: bool
+    ) -> None:
+        tasks = [
+            self._prepare_grasp_torso,
+            self._prepare_grasp_arms,
+        ]
+        if open_grippers:
+            tasks.insert(0, self._prepare_grasp_grippers)
+
+        with ThreadPoolExecutor(
+            max_workers=len(tasks), thread_name_prefix="grasp_prepare"
+        ) as executor:
+            futures = [executor.submit(task, goal_handle) for task in tasks]
+            for future in futures:
+                future.result()
+
+    def _prepare_bin_grasp_grippers(self, goal_handle) -> None:
+        for gripper_arm in ("left", "right"):
+            self._publish_gripper(
+                goal_handle,
+                gripper_arm,
+                self._float("gripper_open_position"),
+            )
+        self._wait_delay(
+            goal_handle,
+            self._float("gripper_settle_sec"),
+            "while waiting for bin gripper preparation",
+        )
+
+    def _prepare_bin_grasp_torso(self, goal_handle) -> None:
+        self._publish_torso(
+            goal_handle,
+            self._float_array("bin_grasp_torso_prepare_positions"),
+        )
+        self._wait_delay(
+            goal_handle,
+            self._float("torso_settle_sec"),
+            "while waiting for bin torso preparation",
+        )
+
+    def _prepare_bin_grasp_arms(self, goal_handle) -> None:
+        self._call_arm_joints(
+            goal_handle,
+            self._float_array("bin_grasp_left_observation_joint_positions"),
+            self._float_array("bin_grasp_right_observation_joint_positions"),
+            False,
+        )
+        self._wait_delay(
+            goal_handle,
+            self._float("arm_settle_sec"),
+            "while waiting for bin arm preparation",
+        )
+
+    def _prepare_bin_grasp_concurrently(self, goal_handle) -> None:
+        tasks = [
+            self._prepare_bin_grasp_grippers,
+            self._prepare_bin_grasp_torso,
+            self._prepare_bin_grasp_arms,
+        ]
+        with ThreadPoolExecutor(
+            max_workers=len(tasks), thread_name_prefix="bin_grasp_prepare"
+        ) as executor:
+            futures = [executor.submit(task, goal_handle) for task in tasks]
+            for future in futures:
+                future.result()
+
     def _make_chassis_message(
         self, linear_x: float, linear_y: float, angular_z: float
     ) -> TwistStamped:
@@ -561,6 +885,29 @@ class MissionController(Node):
         finally:
             self._publish_zero_chassis()
 
+    def _move_bin_chassis(self, goal_handle, dry_run: bool) -> None:
+        duration = self._float("bin_place_chassis_duration_sec")
+        distance_x = self._float("bin_place_chassis_distance_x")
+        distance_y = self._float("bin_place_chassis_distance_y")
+        yaw = self._float("bin_place_chassis_yaw")
+        if dry_run:
+            return
+
+        topic = self._string("chassis_topic")
+        self._wait_for_publisher(self.chassis_publisher, topic, goal_handle)
+        vx = distance_x / duration
+        vy = distance_y / duration
+        wz = yaw / duration
+        period = 1.0 / self._float("chassis_publish_hz")
+        deadline = time.monotonic() + duration
+        try:
+            while time.monotonic() < deadline:
+                self._check_canceled(goal_handle, "during bin chassis motion")
+                self.chassis_publisher.publish(self._make_chassis_message(vx, vy, wz))
+                time.sleep(min(period, max(0.0, deadline - time.monotonic())))
+        finally:
+            self._publish_zero_chassis()
+
     def _call_arm_joints(
         self,
         goal_handle,
@@ -586,13 +933,24 @@ class MissionController(Node):
             raise MissionError(f"{service_name} failed: {response.message}")
         return str(response.message)
 
-    def _call_detect(self, goal_handle, request: ExecuteGrasp.Goal):
-        service_name = self._string("detect_service_name")
-        self._wait_for_service(self.detect_client, service_name, goal_handle)
+    def _call_detect(
+        self,
+        goal_handle,
+        request,
+        *,
+        client=None,
+        service_name: Optional[str] = None,
+    ):
+        client = client or self.detect_client
+        service_name = service_name or self._string("detect_service_name")
+        self._wait_for_service(client, service_name, goal_handle)
         detect_request = DetectGraspPose.Request()
-        detect_request.target_frame = (
+        target_frame = (
             request.target_frame.strip() or self._string("default_target_frame")
-        )
+        ).lstrip("/")
+        # Graspness is camera-local. Mission owns the robot/camera relationship
+        # and performs the conversion from the current robot TF state below.
+        detect_request.target_frame = ""
         detect_request.target_label = int(request.target_label)
         detect_request.timeout_sec = (
             float(request.detection_timeout_sec)
@@ -600,7 +958,7 @@ class MissionController(Node):
             else self._float("default_detection_timeout_sec")
         )
         response = self._wait_future(
-            self.detect_client.call_async(detect_request),
+            client.call_async(detect_request),
             goal_handle,
             f"calling {service_name}",
             detect_request.timeout_sec + self._float("dependency_wait_timeout_sec"),
@@ -608,12 +966,10 @@ class MissionController(Node):
         )
         if not response.success:
             raise MissionError(f"grasp detection failed: {response.message}")
-        if response.grasp_pose.header.frame_id != detect_request.target_frame:
-            raise MissionError(
-                "grasp detector returned frame "
-                f"'{response.grasp_pose.header.frame_id}', expected "
-                f"'{detect_request.target_frame}'"
-            )
+        response.grasp_pose = self._transform_detection_pose(
+            response.grasp_pose, target_frame
+        )
+        self.grasp_pose_publisher.publish(response.grasp_pose)
         return response
 
     def _forward_arm_feedback(self, goal_handle, arm: str, feedback_message) -> None:
@@ -726,6 +1082,254 @@ class MissionController(Node):
             self.get_logger().error(f"failed to publish torso cleanup command: {exc}")
             return False
 
+    def _execute_bin_grasp(self, goal_handle) -> ExecuteBinGrasp.Result:
+        request = goal_handle.request
+        arm = self._resolve_arm(request.arm)
+        result = ExecuteBinGrasp.Result()
+        result.arm = arm
+        torso_prepared = False
+        joint_preparation_started = False
+        joint_preparation_complete = False
+        cartesian_motion_started = False
+        completed = False
+
+        try:
+            self._publish_bin_grasp_feedback(
+                goal_handle,
+                "INITIALIZING",
+                "preparing bin observation pose, torso, and grippers",
+                arm,
+            )
+            if request.dry_run:
+                self._publish_bin_grasp_feedback(
+                    goal_handle,
+                    "DRY_RUN_INITIALIZATION",
+                    "skipping direct bin preparation commands",
+                    arm,
+                )
+            else:
+                self._publish_bin_grasp_feedback(
+                    goal_handle,
+                    "PREPARING_BIN_OBSERVATION",
+                    "moving bin observation arms, torso, and grippers concurrently",
+                    arm,
+                )
+                torso_prepared = True
+                joint_preparation_started = True
+                self._prepare_bin_grasp_concurrently(goal_handle)
+                joint_preparation_complete = True
+
+            self._publish_bin_grasp_feedback(
+                goal_handle,
+                "DETECTING_BIN",
+                "requesting bin grasp pose detection",
+                arm,
+            )
+            detection = self._call_detect(
+                goal_handle,
+                request,
+                client=self.bin_detect_client,
+                service_name=self._string("bin_detect_service_name"),
+            )
+            result.grasp_pose = detection.grasp_pose
+            result.score = float(detection.score)
+            result.width = float(detection.width)
+            result.height = float(detection.height)
+            result.depth = float(detection.depth)
+            result.object_id = int(detection.object_id)
+            if request.publish_pose:
+                self.grasp_pose_publisher.publish(detection.grasp_pose)
+
+            self._check_canceled(goal_handle, "after bin grasp detection")
+            self._publish_bin_grasp_feedback(
+                goal_handle,
+                "EXECUTING_BIN_GRASP",
+                f"sending detected bin pose to {self._string('arm_pose_action_name')}",
+                arm,
+            )
+            cartesian_motion_started = True
+            result.arm_message = self._call_arm_pose(
+                goal_handle, arm, detection.grasp_pose.pose, request.dry_run
+            )
+
+            if request.dry_run:
+                self._publish_bin_grasp_feedback(
+                    goal_handle,
+                    "DRY_RUN_COMPLETE",
+                    "bin grasp plan succeeded; direct close and lift were skipped",
+                    arm,
+                )
+            else:
+                self._publish_bin_grasp_feedback(
+                    goal_handle, "CLOSING_GRIPPER", "closing bin gripper", arm
+                )
+                self._publish_gripper(
+                    goal_handle, arm, self._float("gripper_closed_position")
+                )
+                result.gripper_command_published = True
+                self._wait_delay(
+                    goal_handle,
+                    self._float("gripper_settle_sec"),
+                    "while waiting for bin gripper close",
+                )
+
+                self._publish_bin_grasp_feedback(
+                    goal_handle,
+                    "LIFTING_TORSO",
+                    "lifting torso while keeping the arm at the grasp pose",
+                    arm,
+                )
+                self._publish_torso(
+                    goal_handle,
+                    self._float_array("bin_grasp_torso_lift_positions"),
+                )
+                result.torso_lift_command_published = True
+                self._wait_delay(
+                    goal_handle,
+                    self._float("torso_settle_sec"),
+                    "while waiting for bin torso lift",
+                )
+
+            result.success = True
+            result.message = (
+                "bin grasp dry run completed"
+                if request.dry_run
+                else "bin grasp mission completed"
+            )
+            self._publish_bin_grasp_feedback(goal_handle, "DONE", result.message, arm)
+            goal_handle.succeed()
+            completed = True
+            return result
+        except MissionCanceled as exc:
+            result.success = False
+            result.message = str(exc)
+            goal_handle.canceled()
+            return result
+        except MissionError as exc:
+            result.success = False
+            result.message = str(exc)
+            self.get_logger().error(result.message)
+            goal_handle.abort()
+            return result
+        except Exception as exc:  # noqa: BLE001
+            result.success = False
+            result.message = f"unexpected bin grasp mission error: {exc}"
+            self.get_logger().error(result.message)
+            goal_handle.abort()
+            return result
+        finally:
+            safe_to_reset = all(
+                (
+                    torso_prepared,
+                    not cartesian_motion_started,
+                    not joint_preparation_started or joint_preparation_complete,
+                )
+            )
+            if not completed and not request.dry_run and safe_to_reset:
+                self._safe_pre_arm_torso_reset(goal_handle)
+            self._release_goal()
+
+    def _execute_bin_place(self, goal_handle) -> ExecuteBinPlace.Result:
+        request = goal_handle.request
+        arm = self._resolve_arm(request.arm)
+        result = ExecuteBinPlace.Result()
+        result.arm = arm
+        result.chassis_distance_x = self._float("bin_place_chassis_distance_x")
+        result.chassis_distance_y = self._float("bin_place_chassis_distance_y")
+        result.chassis_yaw = self._float("bin_place_chassis_yaw")
+        result.chassis_duration_sec = self._float("bin_place_chassis_duration_sec")
+
+        try:
+            self._publish_bin_place_feedback(
+                goal_handle,
+                "MOVING_CHASSIS",
+                "moving chassis to the configured bin place location",
+                arm,
+            )
+            self._move_bin_chassis(goal_handle, request.dry_run)
+
+            if request.dry_run:
+                self._publish_bin_place_feedback(
+                    goal_handle,
+                    "DRY_RUN_POSITIONING",
+                    "skipping direct bin torso and gripper commands",
+                    arm,
+                )
+            else:
+                self._publish_bin_place_feedback(
+                    goal_handle,
+                    "BENDING_TORSO",
+                    "bending torso for bin placement",
+                    arm,
+                )
+                self._publish_torso(
+                    goal_handle, self._float_array("bin_place_torso_positions")
+                )
+                self._wait_delay(
+                    goal_handle,
+                    self._float("torso_settle_sec"),
+                    "while waiting for bin place torso bend",
+                )
+
+                self._publish_bin_place_feedback(
+                    goal_handle, "OPENING_GRIPPER", "releasing bin", arm
+                )
+                self._publish_gripper(
+                    goal_handle, arm, self._float("gripper_open_position")
+                )
+                result.gripper_command_published = True
+                self._wait_delay(
+                    goal_handle,
+                    self._float("gripper_settle_sec"),
+                    "while waiting for bin release",
+                )
+
+            self._publish_bin_place_feedback(
+                goal_handle,
+                "RESTORING_ROBOT",
+                "homing arms and resetting torso",
+                arm,
+            )
+            self._call_home(goal_handle, request.dry_run)
+            result.home_completed = True
+
+            if not request.dry_run:
+                self._publish_torso(
+                    goal_handle, self._float_array("torso_reset_positions")
+                )
+                result.torso_reset_command_published = True
+
+            result.success = True
+            result.message = (
+                "bin place dry run completed"
+                if request.dry_run
+                else "bin place mission completed"
+            )
+            self._publish_bin_place_feedback(goal_handle, "DONE", result.message, arm)
+            goal_handle.succeed()
+            return result
+        except MissionCanceled as exc:
+            result.success = False
+            result.message = str(exc)
+            goal_handle.canceled()
+            return result
+        except MissionError as exc:
+            result.success = False
+            result.message = str(exc)
+            self.get_logger().error(result.message)
+            goal_handle.abort()
+            return result
+        except Exception as exc:  # noqa: BLE001
+            result.success = False
+            result.message = f"unexpected bin place mission error: {exc}"
+            self.get_logger().error(result.message)
+            goal_handle.abort()
+            return result
+        finally:
+            if not request.dry_run:
+                self._publish_zero_chassis()
+            self._release_goal()
+
     def _execute_grasp(self, goal_handle) -> ExecuteGrasp.Result:
         request = goal_handle.request
         arm = self._resolve_arm(request.arm)
@@ -749,51 +1353,21 @@ class MissionController(Node):
                     arm,
                 )
             else:
-                if self._boolean("open_gripper_before_grasp"):
-                    self._publish_grasp_feedback(
-                        goal_handle, "OPENING_GRIPPER", "opening selected gripper", arm
-                    )
-                    self._publish_gripper(
-                        goal_handle, arm, self._float("gripper_open_position")
-                    )
-                    self._wait_delay(
-                        goal_handle,
-                        self._float("gripper_settle_sec"),
-                        "while waiting for gripper preparation",
-                    )
-
-                self._publish_grasp_feedback(
-                    goal_handle, "PREPARING_TORSO", "publishing grasp torso target", arm
-                )
-                self._publish_torso(
-                    goal_handle, self._float_array("torso_prepare_positions")
-                )
-                torso_prepared = True
-                self._wait_delay(
-                    goal_handle,
-                    self._float("torso_settle_sec"),
-                    "while waiting for torso preparation",
-                )
-
                 self._publish_grasp_feedback(
                     goal_handle,
-                    "PREPARING_ARMS",
-                    "calling configured dual-arm joint preparation",
+                    "PREPARING",
+                    "starting grippers, torso, and arms concurrently"
+                    if self._boolean("open_gripper_before_grasp")
+                    else "starting torso and arms concurrently",
                     arm,
                 )
+                torso_prepared = True
                 joint_preparation_started = True
-                self._call_arm_joints(
+                self._prepare_grasp_concurrently(
                     goal_handle,
-                    self._float_array("grasp_left_joint_positions"),
-                    self._float_array("grasp_right_joint_positions"),
-                    False,
+                    self._boolean("open_gripper_before_grasp"),
                 )
                 joint_preparation_complete = True
-                self._wait_delay(
-                    goal_handle,
-                    self._float("arm_settle_sec"),
-                    "while waiting for arm preparation",
-                )
 
             self._publish_grasp_feedback(
                 goal_handle, "DETECTING", "requesting grasp pose detection", arm
@@ -932,12 +1506,12 @@ class MissionController(Node):
                 self._publish_place_feedback(
                     goal_handle,
                     "PREPARING_ARMS",
-                    "calling configured dual-arm place joint target",
+                    "calling configured right-arm place joint target",
                     arm,
                 )
                 self._call_arm_joints(
                     goal_handle,
-                    self._float_array("place_left_joint_positions"),
+                    [],
                     self._float_array("place_right_joint_positions"),
                     False,
                 )
@@ -960,12 +1534,6 @@ class MissionController(Node):
                     "while waiting for object release",
                 )
 
-            self._publish_place_feedback(
-                goal_handle, "HOMING_ARMS", "calling robot arm home service", arm
-            )
-            self._call_home(goal_handle, request.dry_run)
-            result.home_completed = True
-
             if not request.dry_run:
                 self._publish_place_feedback(
                     goal_handle, "RESETTING_TORSO", "publishing torso reset target", arm
@@ -974,6 +1542,12 @@ class MissionController(Node):
                     goal_handle, self._float_array("torso_reset_positions")
                 )
                 result.torso_reset_command_published = True
+
+            self._publish_place_feedback(
+                goal_handle, "HOMING_ARMS", "calling robot arm home service", arm
+            )
+            self._call_home(goal_handle, request.dry_run)
+            result.home_completed = True
 
             result.success = True
             result.message = (

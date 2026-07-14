@@ -1,0 +1,23 @@
+# Execute a bin place mission with bin-specific preparation.
+string request_id
+string arm
+bool dry_run
+
+---
+
+bool success
+string message
+string arm
+float64 chassis_distance_x
+float64 chassis_distance_y
+float64 chassis_yaw
+float64 chassis_duration_sec
+bool gripper_command_published
+bool home_completed
+bool torso_reset_command_published
+
+---
+
+string stage
+string detail
+string arm

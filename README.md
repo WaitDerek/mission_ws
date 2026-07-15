@@ -29,8 +29,11 @@ torso, open the selected gripper, then home the arms and reset the torso.
 1. Start opening both grippers, moving the torso to its preparation target, and
    calling `/move_arm_j` with the configured dual-arm preparation joints in
    parallel. Wait for all three preparations to settle before continuing.
-2. Call `/detect_grasp_pose` and receive a pose in `torso_link` by default.
-3. Send that pose to the `/move_arm_p` action for the selected arm.
+2. Call `/detect_grasp_pose` and receive a grasp-center pose in the D405 color
+   optical frame.
+3. Transform the grasp center to `torso_link4`, apply the configured 0.15 m
+   grasp-center-to-gripper retreat, then use the URDF
+   `gripper_link -> arm_link7` transform to generate the `/move_arm_p` target.
 4. Close the selected gripper.
 5. Publish the torso reset target. The arms remain in the grasp pose so the
    object can be carried.
@@ -109,6 +112,117 @@ ros2 launch mission_controller mission.launch.py config_file:="<mission-config>"
 The perception repository contains no machine path. If its inferred merged
 workspace paths are not suitable, set `GRASPNESS_C_DIR`, `GRASPNESS_CHECKPOINT`,
 and `GRASP_RUNTIME_DIR` before launching.
+
+### RViz Graspness transform preview
+
+The offline preview uses the fixed Graspness sample captured in
+`hdas/camera_wrist_right_color_optical_frame`. It publishes the same torso and
+dual-arm preparation positions used immediately before detection by
+`/execute_grasp`, starts a preview-only robot state publisher, and executes the
+same mission transform functions without sending any robot command:
+
+```bash
+source /opt/ros/humble/setup.zsh
+source /home/dekc/libraries/ws_moveit2/install/setup.zsh
+source "$DUAL_ARM_WS/install/setup.zsh"
+source "$GRASP_WS/install/setup.zsh"
+source "$MISSION_WS/install/setup.zsh"
+ros2 launch mission_controller grasp_preview.launch.py
+```
+
+RViz displays three labeled poses on `/mission/grasp_visualization`:
+
+- orange `grasp_center`: corrected Graspness result in the execution frame,
+  shown as axes plus a translucent full gripper assembly before applying
+  `grasp_to_gripper_rpy`;
+- green `right_gripper_link_target`: 0.15 m behind the grasp center, shown as
+  axes plus a translucent full gripper assembly after `grasp_to_gripper_rpy`
+  and the local-Z `gripper_target_post_rpy` correction;
+- cyan `arm_link7_target`: final target after applying the URDF fixed joint.
+
+The corresponding `PoseStamped` topics are `/mission/grasp_pose`,
+`/mission/gripper_link_target`, and `/mission/arm_link7_target`. Set
+`start_rviz:=false` for a headless transform check.
+The orange and green gripper assemblies deliberately use the same URDF mesh
+set: their relative opening directions expose any 90-degree grasp-frame
+convention error without changing the pose sent to planning.
+Both finger-link poses come from the URDF TF chain. The offline preview opens
+each finger by 0.04 m so the opening axis remains visible.
+The target is also broadcast as TF child
+`mission_target/right_gripper_link` for direct inspection in the TF display.
+
+#### Manually verify `move_arm_p` planning
+
+Use three terminals. First start the R1 Pro planning stack. Keeping its global
+`dry_run` enabled prevents any trajectory execution:
+
+```bash
+source /opt/ros/humble/setup.zsh
+source /home/dekc/libraries/ws_moveit2/install/setup.zsh
+source "$DUAL_ARM_WS/install/setup.zsh"
+ros2 launch robot_bringup planning_only.launch.py \
+  robot_profile:=r1_pro dry_run:=true enable_rviz:=false
+```
+
+Then publish the `/execute_grasp` preparation joints directly to the planning
+stack and generate the fixed Graspness target. The planning stack already owns
+`robot_state_publisher`, so the preview copy is disabled:
+
+```bash
+source /opt/ros/humble/setup.zsh
+source /home/dekc/libraries/ws_moveit2/install/setup.zsh
+source "$DUAL_ARM_WS/install/setup.zsh"
+source "$GRASP_WS/install/setup.zsh"
+source "$MISSION_WS/install/setup.zsh"
+ros2 launch mission_controller grasp_preview.launch.py \
+  start_robot_state_publisher:=false joint_states_topic:=/joint_states
+```
+
+After checking the orange, green, and cyan markers in RViz, explicitly forward
+the cyan target to `/move_arm_p`. The executor reads the current arm-link TF,
+splits position linearly and orientation with quaternion SLERP, and sends ten
+segments in sequence. The default remains plan-only:
+
+```bash
+source /opt/ros/humble/setup.zsh
+source /home/dekc/libraries/ws_moveit2/install/setup.zsh
+source "$DUAL_ARM_WS/install/setup.zsh"
+source "$MISSION_WS/install/setup.zsh"
+ros2 run mission_controller grasp_target_executor
+```
+
+Override the number of segments with `-p interpolation_steps:=N`. In dry-run
+mode every segment is planned from the unchanged measured robot state; during
+confirmed real execution, each successful segment updates the measured state
+before the next goal is sent.
+The preview RViz subscribes to `/display_planned_path`, queues successful
+segments without interrupting the active animation, and shows the trajectory
+robot trail. `segment_pause_sec` defaults to 0.5 seconds and can be overridden
+on `grasp_target_executor` when a longer visual pause is useful.
+
+Success is reported as `move_arm_p prepared in dry-run mode`. A failure such as
+`MoveIt IK failed` is a hard stop: do not switch to real execution. After the
+local-Z 180-degree gripper correction, the fixed sample produces the right-arm
+target `[0.640249, -0.005418, 0.029806, -0.123568, -0.160279, -0.050835,
+-0.977986]`. Exact IK failed for this target, for a full 360-degree local-Z
+sweep in 45-degree steps, and when retaining the initial end-effector
+orientation at the exact grasp point. A nearby diagnostic pre-grasp pose
+`[0.462374, -0.087679, 0.030488, 0.206985, -0.445968, 0.295979, 0.818942]`
+did plan successfully in dry-run mode, but it is not the final grasp pose.
+
+For a physical robot, do not publish preview joint states on `/joint_states`:
+place the robot at the `/execute_grasp` preparation pose first and use its
+measured joint-state TF. Only after the dry-run succeeds and the workspace is
+clear, launch the hardware stack with its global dry-run disabled and make the
+explicit execution call:
+
+```bash
+ros2 run mission_controller grasp_target_executor --ros-args \
+  -p dry_run:=false -p execute_confirmed:=true
+```
+
+Both parameters are required for real execution. This command moves the arm to
+the grasp pose; it does not close the gripper.
 
 ## Run
 

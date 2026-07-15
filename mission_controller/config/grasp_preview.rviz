@@ -1,0 +1,127 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.7
+      Class: rviz_default_plugins/RobotModel
+      Description Source: Topic
+      Description Topic:
+        Value: /robot_description
+      Enabled: true
+      Name: R1 Pro initial grasp pose
+      Visual Enabled: true
+    - Class: moveit_rviz_plugin/Trajectory
+      Color Enabled: true
+      Enabled: true
+      Interrupt Display: false
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+      Loop Animation: false
+      Name: Segmented planned trajectories
+      Robot Alpha: 0.65
+      Robot Color: 255; 100; 255
+      Robot Description: robot_description
+      Show Robot Collision: false
+      Show Robot Visual: true
+      Show Trail: true
+      State Display Time: 0.08 s
+      Trail Step Size: 1
+      Trajectory Topic: /display_planned_path
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Marker Topic:
+        Value: /mission/grasp_visualization
+      Name: Graspness transform chain
+      Namespaces:
+        arm_link7_target: true
+        arm_link7_target_axes: true
+        arm_link7_target_label: true
+        grasp_center: true
+        grasp_center_axes: true
+        grasp_center_label: true
+        grasp_pose_gripper_mesh: true
+        grasp_pose_gripper_mesh_finger1: true
+        grasp_pose_gripper_mesh_finger2: true
+        right_gripper_link_target: true
+        right_gripper_link_target_axes: true
+        right_gripper_link_target_label: true
+        right_gripper_link_target_mesh: true
+        right_gripper_link_target_mesh_finger1: true
+        right_gripper_link_target_mesh_finger2: true
+    - Alpha: 1
+      Axes Length: 0.2
+      Axes Radius: 0.012
+      Class: rviz_default_plugins/Pose
+      Color: 255; 140; 13
+      Enabled: true
+      Head Length: 0.1
+      Head Radius: 0.03
+      Name: Graspness grasp pose before gripper mapping
+      Shaft Length: 0.2
+      Shaft Radius: 0.015
+      Shape: Axes
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mission/grasp_pose
+    - Alpha: 1
+      Axes Length: 0.2
+      Axes Radius: 0.012
+      Class: rviz_default_plugins/Pose
+      Color: 25; 255; 50
+      Enabled: true
+      Head Length: 0.1
+      Head Radius: 0.03
+      Name: right_gripper_link target pose
+      Shaft Length: 0.2
+      Shaft Radius: 0.015
+      Shape: Axes
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /mission/gripper_link_target
+    - Class: rviz_default_plugins/TF
+      Enabled: false
+      Frame Timeout: 15
+      Marker Scale: 0.25
+      Name: TF
+      Show Axes: true
+      Show Names: true
+      Show Arrows: false
+  Enabled: true
+  Global Options:
+    Background Color: 32; 32; 32
+    Fixed Frame: torso_link4
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 0.7
+      Focal Point:
+        X: 0.535
+        Y: 0.04
+        Z: -0.18
+      Name: Orbit
+      Pitch: 0.35
+      Yaw: 0.6
+Window Geometry:
+  Height: 900
+  Width: 1440

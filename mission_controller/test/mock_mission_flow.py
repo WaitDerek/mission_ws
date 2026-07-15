@@ -16,8 +16,7 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 from sensor_msgs.msg import JointState
-from task_interfaces.action import MoveArmPose
-from task_interfaces.srv import ArmJoints, Home
+from task_interfaces.action import Home, MoveArmJoints, MoveArmPose
 
 
 class MockMissionSystem(Node):
@@ -59,8 +58,10 @@ class MockMissionSystem(Node):
         )
 
         self.create_service(DetectGraspPose, "/detect_grasp_pose", self._detect)
-        self.create_service(ArmJoints, "/move_arm_j", self._move_arm_joints)
-        self.create_service(Home, "/home", self._home)
+        self.arm_joints_server = ActionServer(
+            self, MoveArmJoints, "/move_arm_j", self._move_arm_joints
+        )
+        self.home_server = ActionServer(self, Home, "/home", self._home)
         self.arm_pose_server = ActionServer(
             self, MoveArmPose, "/move_arm_p", self._move_arm_pose
         )
@@ -115,7 +116,8 @@ class MockMissionSystem(Node):
         response.source_frame = "torso_link"
         return response
 
-    def _move_arm_joints(self, request, response):
+    def _move_arm_joints(self, goal_handle):
+        request = goal_handle.request
         self.arm_joint_call_count += 1
         if self.arm_joint_call_count == 1:
             if len(request.left_joints) != 7 or len(request.right_joints) != 7:
@@ -132,18 +134,34 @@ class MockMissionSystem(Node):
             if len(request.right_joints) != 7:
                 raise AssertionError("right_joints must contain seven positions")
         self._record("move_arm_j")
-        response.success = True
-        response.message = "mock joints complete"
-        return response
+        result = MoveArmJoints.Result()
+        result.success = True
+        result.error_code = 0
+        result.message = "mock joints complete"
+        goal_handle.succeed()
+        return result
 
-    def _home(self, request, response):
+    def _home(self, goal_handle):
+        request = goal_handle.request
         self._record(f"home:dry_run={str(request.dry_run).lower()}")
-        response.success = True
-        response.error_code = 0
-        response.message = "mock home complete"
-        return response
+        result = Home.Result()
+        result.success = True
+        result.error_code = 0
+        result.message = "mock home complete"
+        goal_handle.succeed()
+        return result
 
     def _move_arm_pose(self, goal_handle):
+        request = goal_handle.request
+        expected_right_pose = [0.15, -0.10, 0.15, 0.5, -0.5, -0.5, 0.5]
+        if len(request.right_pose) != 7:
+            raise AssertionError("grasp should send one right-arm pose")
+        for actual, expected in zip(request.right_pose, expected_right_pose):
+            if not math.isclose(actual, expected, abs_tol=1e-6):
+                raise AssertionError(
+                    "grasp-center extrinsic was not applied to right-arm target: "
+                    f"actual={list(request.right_pose)}"
+                )
         self._record("move_arm_p")
         result = MoveArmPose.Result()
         result.success = True

@@ -7,10 +7,34 @@ mission_controller:
     detect_service_name: /detect_grasp_pose
     bin_detect_service_name: /detect_bin_grasp_pose
     bin_mission_enabled: false
+    # Bin perception uses FoundationPose. Normal /execute_grasp continues to
+    # use grasp_ws through detect_service_name above.
+    bin_object_pose_action_name: /object_pose/estimate
+    bin_object_pose_topic: /mission/bin_object_pose
+    bin_object_pose_model_label: f320
+    bin_object_pose_instance_index: 0
+    bin_object_pose_confidence_threshold: 0.0
+    bin_object_pose_result_timeout_sec: 60.0
+    # Transform from the FoundationPose model frame to the desired gripper EE
+    # frame. Keep real bin motion disabled until these are calibrated.
+    bin_grasp_object_to_ee_xyz: [0.0, 0.0, 0.0]
+    bin_grasp_object_to_ee_rpy: [0.0, 0.0, 0.0]
+    bin_grasp_offset_configured: false
     arm_pose_action_name: /move_arm_p
     arm_joints_service_name: /move_arm_j
     home_service_name: /home
+    # Mission owns all perception-frame conversions. move_arm_p receives only
+    # an absolute arm_link7 target expressed in arm_execution_frame.
     grasp_pose_topic: /mission/grasp_pose
+    grasp_pose_camera_topic: /mission/grasp_pose_camera
+    grasp_pose_ee_topic: /mission/grasp_pose_ee
+    gripper_target_pose_topic: /mission/gripper_link_target
+    arm_target_pose_topic: /mission/arm_link7_target
+    grasp_visualization_topic: /mission/grasp_visualization
+    # Safe visualization-only input. Publishing here computes and displays the
+    # transform chain but never calls move_arm_j or move_arm_p.
+    preview_grasp_pose_topic: /mission/preview_grasp_pose
+    preview_arm: right
 
     torso_topic: /motion_target/target_joint_state_torso
     left_gripper_topic: /motion_target/target_position_gripper_left
@@ -19,12 +43,33 @@ mission_controller:
 
     default_arm: right
     default_target_frame: torso_link4
+    arm_execution_frame: torso_link4
+    left_ee_frame: left_arm_link7
+    right_ee_frame: right_arm_link7
+    left_gripper_frame: left_gripper_link
+    right_gripper_frame: right_gripper_link
+    # GraspNet reports the grasp center. Place the gripper link 15 cm backward
+    # along local -X; gripper_link -> arm_link7 is read separately from URDF TF.
+    grasp_center_to_gripper_xyz: [-0.15, 0.0, 0.0]
+    # X is already the correct approach axis; rotate 180 degrees around local
+    # X so the displayed and commanded Y/Z axes match the physical gripper.
+    grasp_pose_correction_rpy: [3.141592653589793, 0.0, 0.0]
+    # GraspNet +X aligns with gripper -Z; both +Y axes are the finger
+    # opening/closing direction.
+    grasp_to_gripper_rpy: [0.0, -1.5707963267948966, 0.0]
+    # After the axis mapping, rotate the target gripper 180 degrees around its
+    # own local Z axis. This flips the palm direction without moving the grasp
+    # center or changing the 15 cm retreat vector.
+    gripper_target_post_rpy: [0.0, 0.0, 3.141592653589793]
     camera_mount_tf_enabled: true
-    camera_mount_parent_frame: right_gripper_link
+    # flange -> gripper -> D405 is provided by robot_state_publisher from URDF.
+    # Mission only connects the CAD D405 axes to the RealSense ROS camera axes.
+    camera_mount_parent_frame: right_D405_link
     camera_mount_child_frame: hdas/camera_wrist_right_link
-    # Initial R1Pro URDF values for right_D405_joint; calibrate before hardware use.
-    camera_mount_xyz: [0.074703, 0.009582, 0.019134]
-    camera_mount_rpy: [2.4435, 0.0, -1.563]
+    camera_mount_xyz: [0.0, 0.0, 0.0]
+    # camera_link +X (and therefore optical +Z) = right_D405_link +Z.
+    camera_mount_rpy: [-1.5707963267948966, -1.5707963267948966, 0.0]
+    camera_mount_correction_rpy: [0.0, 0.0, 0.0]
     camera_tf_timeout_sec: 2.0
     default_detection_timeout_sec: 20.0
     dependency_wait_timeout_sec: 10.0

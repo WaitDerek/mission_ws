@@ -13,12 +13,19 @@
   <depend>action_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>visualization_msgs</depend>
   <depend>grasp_orchestrator_interfaces</depend>
   <depend>mission_interfaces</depend>
+  <depend>object_pose_interfaces</depend>
   <depend>task_interfaces</depend>
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>moveit_ros_visualization</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>xacro</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

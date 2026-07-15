@@ -12,6 +12,7 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/config", glob("config/*.yaml")),
+        (f"share/{package_name}/config", glob("config/*.rviz")),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
     install_requires=["setuptools"],
@@ -23,6 +24,8 @@ setup(
     entry_points={
         "console_scripts": [
             "mission_controller = mission_controller.mission_controller:main",
+            "grasp_preview_publisher = mission_controller.grasp_preview_publisher:main",
+            "grasp_target_executor = mission_controller.grasp_target_executor:main",
         ],
     },
 )

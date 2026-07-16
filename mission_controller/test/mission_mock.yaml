@@ -6,6 +6,8 @@ mission_controller:
     left_gripper_frame: torso_link
     right_gripper_frame: torso_link
     camera_mount_tf_enabled: false
+    bin_mission_enabled: true
+    bin_foundation_to_pickup_rpy: [0.0, 0.0, 0.0]
     dependency_wait_timeout_sec: 2.0
     arm_joints_result_timeout_sec: 2.0
     arm_pose_result_timeout_sec: 2.0

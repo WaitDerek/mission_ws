@@ -13,16 +13,20 @@ dual-arm workspace.
 
 Only one mission is accepted at a time.
 
-The bin actions are registered separately from the material actions. They are
-disabled by default until bin-specific observation joint targets and the bin
-perception service are configured. They reject goals while
-`bin_mission_enabled` is false and do not publish robot commands.
+The bin actions are registered separately from the material actions. The node's
+safe fallback keeps them disabled, while the shipped R1 Pro configuration
+enables them with calibrated observation targets and FoundationPose settings.
+They reject goals while `bin_mission_enabled` is false and do not publish robot
+commands.
 
-The intended bin grasp sequence is: initialize the bin observation pose, call
-the bin perception service, execute the detected grasp pose, close the selected
-gripper, and lift only the torso while keeping the arm at the grasp pose. The
-intended bin place sequence is: move the chassis to its fixed location, bend the
-torso, open the selected gripper, then home the arms and reset the torso.
+The bin grasp sequence initializes the saved dual-arm observation pose, calls
+FoundationPose, transforms the OBB centre from the D405 optical frame into
+`torso_link4`, preserves the F320 model axes and geometric-centre semantics, and
+delegates the two-hand geometry and motion to `/pickup_task`.
+The configured F320 dimensions are passed explicitly as width and height. The
+bin place sequence remains separate: move the chassis to its fixed location,
+bend the torso, open the selected gripper, then home the arms and reset the
+torso.
 
 ### Grasp sequence
 
@@ -34,8 +38,11 @@ torso, open the selected gripper, then home the arms and reset the torso.
 3. Transform the grasp center to `torso_link4`, apply the configured 0.15 m
    grasp-center-to-gripper retreat, then use the URDF
    `gripper_link -> arm_link7` transform to generate the `/move_arm_p` target.
-4. Close the selected gripper.
-5. Publish the torso reset target. The arms remain in the grasp pose so the
+4. Read the current `arm_link7` TF and execute two `/move_arm_p` stages: the
+   halfway interpolated pose followed by the final grasp pose. Position uses
+   linear interpolation and orientation uses shortest-path quaternion SLERP.
+5. Close the selected gripper.
+6. Publish the torso reset target. The arms remain in the grasp pose so the
    object can be carried.
 
 ### Place sequence
@@ -161,8 +168,14 @@ source /opt/ros/humble/setup.zsh
 source /home/dekc/libraries/ws_moveit2/install/setup.zsh
 source "$DUAL_ARM_WS/install/setup.zsh"
 ros2 launch robot_bringup planning_only.launch.py \
-  robot_profile:=r1_pro dry_run:=true enable_rviz:=false
+  robot_profile:=r1_pro dry_run:=false enable_rviz:=true \
+  enable_fake_ros2_control:=true
 ```
+
+This planning-only launch uses mock ros2_control: no robot adapter is started,
+but `/move_arm_j` and successful MoveIt trajectories animate the virtual robot
+through `joint_state_broadcaster`. Use `dry_run:=true` when only plan validation
+and markers are wanted.
 
 Then publish the `/execute_grasp` preparation joints directly to the planning
 stack and generate the fixed Graspness target. The planning stack already owns
@@ -180,7 +193,7 @@ ros2 launch mission_controller grasp_preview.launch.py \
 
 After checking the orange, green, and cyan markers in RViz, explicitly forward
 the cyan target to `/move_arm_p`. The executor reads the current arm-link TF,
-splits position linearly and orientation with quaternion SLERP, and sends ten
+splits position linearly and orientation with quaternion SLERP, and sends two
 segments in sequence. The default remains plan-only:
 
 ```bash

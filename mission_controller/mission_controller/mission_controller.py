@@ -27,7 +27,7 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 from sensor_msgs.msg import JointState
-from task_interfaces.action import Home, MoveArmJoints, MoveArmPose
+from task_interfaces.action import Home, MoveArmJoints, MoveArmPose, PickupTask
 from tf2_geometry_msgs import do_transform_pose_stamped
 from tf2_ros import (
     Buffer,
@@ -124,6 +124,48 @@ def compose_poses(parent_pose: Pose, child_pose: Pose) -> Pose:
     return result
 
 
+def interpolate_pose(start_pose: Pose, target_pose: Pose, fraction: float) -> Pose:
+    """Interpolate position linearly and orientation along the shortest arc."""
+    if not 0.0 <= fraction <= 1.0:
+        raise MissionError("pose interpolation fraction must be in [0, 1]")
+
+    start = pose_to_array(start_pose)
+    target = pose_to_array(target_pose)
+    start_quaternion = start[3:]
+    target_quaternion = target[3:]
+    dot = sum(a * b for a, b in zip(start_quaternion, target_quaternion))
+    if dot < 0.0:
+        target_quaternion = [-value for value in target_quaternion]
+        dot = -dot
+    dot = max(-1.0, min(1.0, dot))
+
+    if dot > 0.9995:
+        orientation = [
+            a + fraction * (b - a)
+            for a, b in zip(start_quaternion, target_quaternion)
+        ]
+    else:
+        theta = math.acos(dot)
+        scale = math.sin(theta)
+        start_scale = math.sin((1.0 - fraction) * theta) / scale
+        target_scale = math.sin(fraction * theta) / scale
+        orientation = [
+            start_scale * a + target_scale * b
+            for a, b in zip(start_quaternion, target_quaternion)
+        ]
+    orientation_norm = math.sqrt(sum(value * value for value in orientation))
+
+    result = Pose()
+    result.position.x = start[0] + fraction * (target[0] - start[0])
+    result.position.y = start[1] + fraction * (target[1] - start[1])
+    result.position.z = start[2] + fraction * (target[2] - start[2])
+    result.orientation.x = orientation[0] / orientation_norm
+    result.orientation.y = orientation[1] / orientation_norm
+    result.orientation.z = orientation[2] / orientation_norm
+    result.orientation.w = orientation[3] / orientation_norm
+    return result
+
+
 class MissionController(Node):
     def __init__(self) -> None:
         super().__init__("mission_controller")
@@ -204,6 +246,17 @@ class MissionController(Node):
         self.bin_object_pose_publisher = self.create_publisher(
             PoseStamped, self._string("bin_object_pose_topic"), 10
         )
+        self.bin_object_pose_raw_publisher = self.create_publisher(
+            PoseStamped,
+            self._string("bin_object_pose_raw_topic"),
+            visualization_qos,
+        )
+        self.bin_object_pose_camera_subscription = self.create_subscription(
+            PoseStamped,
+            self._string("bin_object_pose_camera_topic"),
+            self._bin_object_pose_camera_callback,
+            10,
+        )
 
         self.client_group = ReentrantCallbackGroup()
         self.server_group = ReentrantCallbackGroup()
@@ -241,6 +294,12 @@ class MissionController(Node):
             self._string("bin_object_pose_action_name"),
             callback_group=self.client_group,
         )
+        self.pickup_task_client = ActionClient(
+            self,
+            PickupTask,
+            self._string("pickup_task_action_name"),
+            callback_group=self.client_group,
+        )
 
         self.state_lock = threading.Lock()
         self.mission_reserved = False
@@ -249,6 +308,7 @@ class MissionController(Node):
         self.active_arm_joints_goal_handle = None
         self.active_home_goal_handle = None
         self.active_bin_object_pose_goal_handle = None
+        self.active_pickup_task_goal_handle = None
 
         self.grasp_action_server = ActionServer(
             self,
@@ -307,13 +367,25 @@ class MissionController(Node):
                 ("bin_mission_enabled", False),
                 ("bin_object_pose_action_name", "/object_pose/estimate"),
                 ("bin_object_pose_topic", "/mission/bin_object_pose"),
+                ("bin_object_pose_camera_topic", "/object_pose/pose"),
+                ("bin_object_pose_raw_topic", "/mission/bin_object_pose_raw"),
                 ("bin_object_pose_model_label", "f320"),
                 ("bin_object_pose_instance_index", 0),
                 ("bin_object_pose_confidence_threshold", 0.0),
                 ("bin_object_pose_result_timeout_sec", 60.0),
-                ("bin_grasp_object_to_ee_xyz", [0.0, 0.0, 0.0]),
-                ("bin_grasp_object_to_ee_rpy", [0.0, 0.0, 0.0]),
-                ("bin_grasp_offset_configured", False),
+                ("pickup_task_action_name", "/pickup_task"),
+                ("pickup_task_result_timeout_sec", 120.0),
+                ("bin_box_width", 0.357),
+                ("bin_box_height", 0.127),
+                ("bin_box_type", "f320"),
+                # FoundationPose publishes the oriented-bounding-box centre
+                # with F320 axes X=down, Y=depth, Z=width. Keep those axes by
+                # default; each robot pickup profile owns the fixed transform
+                # from model axes to its operation/end-effector convention.
+                (
+                    "bin_foundation_to_pickup_rpy",
+                    [0.0, 0.0, 0.0],
+                ),
                 ("arm_pose_action_name", "/move_arm_p"),
                 ("arm_joints_service_name", "/move_arm_j"),
                 ("home_service_name", "/home"),
@@ -364,7 +436,7 @@ class MissionController(Node):
                 ("gripper_target_post_rpy", [0.0, 0.0, 3.141592653589793]),
                 ("camera_mount_tf_enabled", True),
                 ("camera_mount_parent_frame", "right_D405_link"),
-                ("camera_mount_child_frame", "hdas/camera_wrist_right_link"),
+                ("camera_mount_child_frame", "d405_link"),
                 # The mechanical flange-to-camera transform comes from URDF.
                 # This zero-translation rotation only maps the CAD D405 axes
                 # to the ROS camera_link convention: camera +X = D405 +Z.
@@ -406,14 +478,21 @@ class MissionController(Node):
                 # Fill these bin-specific values before enabling bin missions.
                 (
                     "bin_grasp_left_observation_joint_positions",
-                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13],
                 ),
                 (
                     "bin_grasp_right_observation_joint_positions",
-                    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    [
+                        0.16,
+                        -0.04,
+                        0.20,
+                        -2.095894,
+                        0.174647,
+                        -0.718606,
+                        -0.094098,
+                    ],
                 ),
-                ("bin_grasp_torso_prepare_positions", [0.0, 0.0, 0.0, 0.0]),
-                ("bin_grasp_torso_lift_positions", [0.0, 0.0, 0.0, 0.0]),
+                ("bin_grasp_torso_prepare_positions", [0.61, -0.81, -0.6, 0.0]),
                 ("bin_place_torso_positions", [0.0, 0.0, 0.0, 0.0]),
                 ("bin_place_chassis_distance_x", 0.0),
                 ("bin_place_chassis_distance_y", 0.0),
@@ -444,7 +523,11 @@ class MissionController(Node):
             "bin_detect_service_name",
             "bin_object_pose_action_name",
             "bin_object_pose_topic",
+            "bin_object_pose_camera_topic",
+            "bin_object_pose_raw_topic",
             "bin_object_pose_model_label",
+            "pickup_task_action_name",
+            "bin_box_type",
             "arm_pose_action_name",
             "arm_joints_service_name",
             "home_service_name",
@@ -489,7 +572,6 @@ class MissionController(Node):
             ("bin_grasp_left_observation_joint_positions", 7),
             ("bin_grasp_right_observation_joint_positions", 7),
             ("bin_grasp_torso_prepare_positions", 4),
-            ("bin_grasp_torso_lift_positions", 4),
             ("bin_place_torso_positions", 4),
             ("camera_mount_xyz", 3),
             ("camera_mount_rpy", 3),
@@ -498,8 +580,7 @@ class MissionController(Node):
             ("grasp_pose_correction_rpy", 3),
             ("grasp_to_gripper_rpy", 3),
             ("gripper_target_post_rpy", 3),
-            ("bin_grasp_object_to_ee_xyz", 3),
-            ("bin_grasp_object_to_ee_rpy", 3),
+            ("bin_foundation_to_pickup_rpy", 3),
         ):
             values = self._float_array(name)
             if len(values) != expected_length:
@@ -529,6 +610,9 @@ class MissionController(Node):
             "home_velocity",
             "camera_tf_timeout_sec",
             "bin_object_pose_result_timeout_sec",
+            "pickup_task_result_timeout_sec",
+            "bin_box_width",
+            "bin_box_height",
         )
         for name in positive_parameters:
             if not math.isfinite(self._float(name)) or self._float(name) <= 0.0:
@@ -592,8 +676,6 @@ class MissionController(Node):
                 "bin_grasp_left_observation_joint_positions",
                 "bin_grasp_right_observation_joint_positions",
                 "bin_grasp_torso_prepare_positions",
-                "bin_grasp_torso_lift_positions",
-                "bin_place_torso_positions",
             ):
                 if all(abs(value) < 1e-9 for value in self._float_array(name)):
                     raise ValueError(
@@ -629,30 +711,6 @@ class MissionController(Node):
             cr * cp * sy - sr * sp * cy,
             cr * cp * cy + sr * sp * sy,
         )
-
-    def _make_bin_grasp_pose(self, object_pose: PoseStamped) -> PoseStamped:
-        object_values = pose_to_array(object_pose.pose)
-        object_quaternion = tuple(object_values[3:])
-        offset_xyz = tuple(self._float_array("bin_grasp_object_to_ee_xyz"))
-        offset_quaternion = self._quaternion_from_rpy(
-            *self._float_array("bin_grasp_object_to_ee_rpy")
-        )
-        rotated_offset = rotate_vector(offset_xyz, object_quaternion)
-        grasp_quaternion = quaternion_multiply(
-            object_quaternion, offset_quaternion
-        )
-        quaternion_norm = math.sqrt(sum(value * value for value in grasp_quaternion))
-
-        grasp_pose = PoseStamped()
-        grasp_pose.header = object_pose.header
-        grasp_pose.pose.position.x = object_pose.pose.position.x + rotated_offset[0]
-        grasp_pose.pose.position.y = object_pose.pose.position.y + rotated_offset[1]
-        grasp_pose.pose.position.z = object_pose.pose.position.z + rotated_offset[2]
-        grasp_pose.pose.orientation.x = grasp_quaternion[0] / quaternion_norm
-        grasp_pose.pose.orientation.y = grasp_quaternion[1] / quaternion_norm
-        grasp_pose.pose.orientation.z = grasp_quaternion[2] / quaternion_norm
-        grasp_pose.pose.orientation.w = grasp_quaternion[3] / quaternion_norm
-        return grasp_pose
 
     def _grasp_center_to_gripper_pose(self, grasp_center: Pose) -> Pose:
         center_values = pose_to_array(grasp_center)
@@ -1158,6 +1216,20 @@ class MissionController(Node):
         )
         return transformed
 
+    def _bin_object_pose_camera_callback(self, pose: PoseStamped) -> None:
+        """Publish the raw bin pose after camera->execution-frame TF only."""
+        try:
+            transformed = self._transform_detection_pose(
+                pose,
+                self._string("arm_execution_frame"),
+            )
+        except MissionError as exc:
+            self.get_logger().warning(
+                f"cannot publish raw bin pose in robot frame: {exc}"
+            )
+            return
+        self.bin_object_pose_raw_publisher.publish(transformed)
+
     def _resolve_arm(self, requested_arm: str) -> str:
         arm = requested_arm.strip().lower()
         return arm or self._string("default_arm").lower()
@@ -1218,6 +1290,15 @@ class MissionController(Node):
                 "configure bin preparation targets first"
             )
             return GoalResponse.REJECT
+        if not request.dry_run and all(
+            abs(value) < 1e-9
+            for value in self._float_array("bin_place_torso_positions")
+        ):
+            self.get_logger().warning(
+                "rejecting bin place goal: bin_place_torso_positions is not "
+                "configured"
+            )
+            return GoalResponse.REJECT
         return self._reserve_goal(
             "bin_place", request.request_id, self._resolve_arm(request.arm)
         )
@@ -1228,6 +1309,7 @@ class MissionController(Node):
             arm_joints_goal_handle = self.active_arm_joints_goal_handle
             home_goal_handle = self.active_home_goal_handle
             bin_object_pose_goal_handle = self.active_bin_object_pose_goal_handle
+            pickup_task_goal_handle = self.active_pickup_task_goal_handle
         if arm_goal_handle is not None:
             arm_goal_handle.cancel_goal_async()
         if arm_joints_goal_handle is not None:
@@ -1236,6 +1318,8 @@ class MissionController(Node):
             home_goal_handle.cancel_goal_async()
         if bin_object_pose_goal_handle is not None:
             bin_object_pose_goal_handle.cancel_goal_async()
+        if pickup_task_goal_handle is not None:
+            pickup_task_goal_handle.cancel_goal_async()
         return CancelResponse.ACCEPT
 
     def _release_goal(self) -> None:
@@ -1246,6 +1330,7 @@ class MissionController(Node):
             self.active_arm_joints_goal_handle = None
             self.active_home_goal_handle = None
             self.active_bin_object_pose_goal_handle = None
+            self.active_pickup_task_goal_handle = None
 
     @staticmethod
     def _publish_grasp_feedback(goal_handle, stage: str, detail: str, arm: str) -> None:
@@ -1607,6 +1692,7 @@ class MissionController(Node):
         action_goal,
         timeout_sec: float,
         active_handle_attribute: str,
+        feedback_callback=None,
     ):
         wait_deadline = time.monotonic() + self._float(
             "dependency_wait_timeout_sec"
@@ -1622,8 +1708,11 @@ class MissionController(Node):
                 f"{self._float('dependency_wait_timeout_sec'):.1f}s"
             )
 
+        send_future = client.send_goal_async(
+            action_goal, feedback_callback=feedback_callback
+        )
         action_handle = self._wait_future(
-            client.send_goal_async(action_goal),
+            send_future,
             goal_handle,
             f"sending {action_name} goal",
             self._float("dependency_wait_timeout_sec"),
@@ -1737,6 +1826,33 @@ class MissionController(Node):
             arm,
         )
 
+    def _make_pickup_box_pose(self, center_pose: PoseStamped) -> PoseStamped:
+        """Apply an optional profile remap while preserving the geometric centre."""
+        center_values = pose_to_array(center_pose.pose)
+        model_to_pickup = self._quaternion_from_rpy(
+            *self._float_array("bin_foundation_to_pickup_rpy")
+        )
+        pickup_orientation = quaternion_multiply(
+            tuple(center_values[3:]), model_to_pickup
+        )
+        orientation_norm = math.sqrt(
+            sum(value * value for value in pickup_orientation)
+        )
+        pickup_orientation = tuple(
+            value / orientation_norm for value in pickup_orientation
+        )
+
+        result = PoseStamped()
+        result.header = center_pose.header
+        result.pose.position.x = center_values[0]
+        result.pose.position.y = center_values[1]
+        result.pose.position.z = center_values[2]
+        result.pose.orientation.x = pickup_orientation[0]
+        result.pose.orientation.y = pickup_orientation[1]
+        result.pose.orientation.z = pickup_orientation[2]
+        result.pose.orientation.w = pickup_orientation[3]
+        return result
+
     def _call_bin_object_pose(self, goal_handle, request, arm: str):
         action_name = self._string("bin_object_pose_action_name")
         timeout_sec = (
@@ -1819,16 +1935,58 @@ class MissionController(Node):
                 f"{action_name} failed: {foundation_result.message}"
             )
 
-        target_frame = (
-            request.target_frame.strip() or self._string("default_target_frame")
-        ).lstrip("/")
-        object_pose = self._transform_detection_pose(
+        target_frame = self._string("arm_execution_frame").lstrip("/")
+        requested_frame = request.target_frame.strip().lstrip("/")
+        if requested_frame and requested_frame != target_frame:
+            self.get_logger().warning(
+                f"ignoring bin target_frame '{requested_frame}'; "
+                f"pickup_task requires robot body frame '{target_frame}'"
+            )
+        foundation_center_pose = self._transform_detection_pose(
             foundation_result.pose, target_frame
         )
-        self.bin_object_pose_publisher.publish(object_pose)
-        grasp_pose = self._make_bin_grasp_pose(object_pose)
-        self.grasp_pose_publisher.publish(grasp_pose)
-        return foundation_result, object_pose, grasp_pose
+        self.bin_object_pose_raw_publisher.publish(foundation_center_pose)
+        pickup_box_pose = self._make_pickup_box_pose(foundation_center_pose)
+        self.bin_object_pose_publisher.publish(pickup_box_pose)
+        self.get_logger().info(
+            "prepared FoundationPose geometric-centre pose for pickup; "
+            "camera-to-body TF is complete and any configured model-axis "
+            "correction was applied exactly once"
+        )
+        return foundation_result, pickup_box_pose
+
+    def _forward_pickup_task_feedback(
+        self, goal_handle, arm: str, feedback_message
+    ) -> None:
+        feedback = feedback_message.feedback
+        self._publish_bin_grasp_feedback(
+            goal_handle,
+            f"PICKUP_{feedback.stage}",
+            f"{feedback.detail} (progress={feedback.progress:.0%})",
+            arm,
+        )
+
+    def _call_pickup_task(
+        self, goal_handle, box_pose: PoseStamped, dry_run: bool, arm: str
+    ) -> str:
+        pickup_goal = PickupTask.Goal()
+        pickup_goal.box_pose = box_pose
+        pickup_goal.box_width = self._float("bin_box_width")
+        pickup_goal.box_height = self._float("bin_box_height")
+        pickup_goal.box_type = self._string("bin_box_type")
+        pickup_goal.dry_run = dry_run
+        pickup_result = self._call_task_action(
+            goal_handle,
+            self.pickup_task_client,
+            self._string("pickup_task_action_name"),
+            pickup_goal,
+            self._float("pickup_task_result_timeout_sec"),
+            "active_pickup_task_goal_handle",
+            feedback_callback=lambda message: self._forward_pickup_task_feedback(
+                goal_handle, arm, message
+            ),
+        )
+        return str(pickup_result.message)
 
     def _forward_arm_feedback(self, goal_handle, arm: str, feedback_message) -> None:
         feedback = feedback_message.feedback
@@ -1907,6 +2065,57 @@ class MissionController(Node):
             )
         return str(arm_result.message)
 
+    def _current_arm_pose(self, arm: str) -> Pose:
+        execution_frame = self._string("arm_execution_frame").lstrip("/")
+        ee_frame = self._string(
+            "left_ee_frame" if arm == "left" else "right_ee_frame"
+        ).lstrip("/")
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                execution_frame,
+                ee_frame,
+                rclpy.time.Time(),
+                timeout=Duration(seconds=self._float("camera_tf_timeout_sec")),
+            )
+        except TransformException as exc:
+            raise MissionError(
+                f"current arm pose {execution_frame} <- {ee_frame} failed: {exc}"
+            ) from exc
+
+        pose = Pose()
+        pose.position.x = transform.transform.translation.x
+        pose.position.y = transform.transform.translation.y
+        pose.position.z = transform.transform.translation.z
+        pose.orientation = transform.transform.rotation
+        pose_to_array(pose)
+        return pose
+
+    def _call_two_stage_grasp_pose(
+        self, goal_handle, arm: str, target_pose: Pose, dry_run: bool
+    ) -> str:
+        current_pose = self._current_arm_pose(arm)
+        intermediate_pose = interpolate_pose(current_pose, target_pose, 0.5)
+
+        self._publish_grasp_feedback(
+            goal_handle,
+            "EXECUTING_INTERMEDIATE_GRASP_POSE",
+            "sending halfway arm pose (stage 1/2)",
+            arm,
+        )
+        intermediate_message = self._call_arm_pose(
+            goal_handle, arm, intermediate_pose, dry_run
+        )
+        self._check_canceled(goal_handle, "after intermediate grasp pose")
+
+        self._publish_grasp_feedback(
+            goal_handle,
+            "EXECUTING_FINAL_GRASP_POSE",
+            "sending final detected arm pose (stage 2/2)",
+            arm,
+        )
+        final_message = self._call_arm_pose(goal_handle, arm, target_pose, dry_run)
+        return f"stage 1/2: {intermediate_message}; stage 2/2: {final_message}"
+
     def _call_home(self, goal_handle, dry_run: bool) -> str:
         action_name = self._string("home_service_name")
         action_goal = Home.Goal()
@@ -1978,88 +2187,39 @@ class MissionController(Node):
                 "requesting FoundationPose object pose estimation",
                 arm,
             )
-            detection, object_pose, grasp_pose = self._call_bin_object_pose(
+            detection, object_pose = self._call_bin_object_pose(
                 goal_handle, request, arm
             )
-            result.grasp_pose = grasp_pose
+            # ExecuteBinGrasp predates the box-level pickup delegation. Keep
+            # this field populated with the transformed box pose for callers.
+            result.grasp_pose = object_pose
             result.score = float(detection.detection_score)
-            result.width = 0.0
-            result.height = 0.0
+            result.width = self._float("bin_box_width")
+            result.height = self._float("bin_box_height")
             result.depth = 0.0
             result.object_id = int(request.target_label)
             if request.publish_pose:
                 self.bin_object_pose_publisher.publish(object_pose)
-                self.grasp_pose_publisher.publish(grasp_pose)
 
             self._check_canceled(goal_handle, "after FoundationPose estimation")
-            if not self._boolean("bin_grasp_offset_configured"):
-                if not request.dry_run:
-                    raise MissionError(
-                        "bin_grasp_offset_configured is false; calibrate "
-                        "bin_grasp_object_to_ee_xyz/rpy before real motion"
-                    )
-                result.success = True
-                result.message = (
-                    "bin perception dry run completed; object-to-EE offset "
-                    "is not configured, so arm planning was skipped"
-                )
-                self._publish_bin_grasp_feedback(
-                    goal_handle,
-                    "OFFSET_REQUIRED",
-                    result.message,
-                    arm,
-                )
-                goal_handle.succeed()
-                completed = True
-                return result
-
             self._publish_bin_grasp_feedback(
                 goal_handle,
-                "EXECUTING_BIN_GRASP",
-                f"sending calibrated bin grasp pose to {self._string('arm_pose_action_name')}",
+                "PLANNING_BIN_PICKUP",
+                f"sending torso-frame box pose to "
+                f"{self._string('pickup_task_action_name')}",
                 arm,
             )
             cartesian_motion_started = True
-            result.arm_message = self._call_arm_pose(
-                goal_handle, arm, grasp_pose.pose, request.dry_run
+            result.arm_message = self._call_pickup_task(
+                goal_handle, object_pose, request.dry_run, arm
             )
 
             if request.dry_run:
                 self._publish_bin_grasp_feedback(
                     goal_handle,
                     "DRY_RUN_COMPLETE",
-                    "bin grasp plan succeeded; direct close and lift were skipped",
+                    "bin pickup planning succeeded; direct execution was skipped",
                     arm,
-                )
-            else:
-                self._publish_bin_grasp_feedback(
-                    goal_handle, "CLOSING_GRIPPER", "closing bin gripper", arm
-                )
-                self._publish_gripper(
-                    goal_handle, arm, self._float("gripper_closed_position")
-                )
-                result.gripper_command_published = True
-                self._wait_delay(
-                    goal_handle,
-                    self._float("gripper_settle_sec"),
-                    "while waiting for bin gripper close",
-                )
-
-                self._publish_bin_grasp_feedback(
-                    goal_handle,
-                    "LIFTING_TORSO",
-                    "lifting torso while keeping the arm at the grasp pose",
-                    arm,
-                )
-                self._publish_torso(
-                    goal_handle,
-                    self._float_array("bin_grasp_torso_lift_positions"),
-                )
-                result.torso_lift_command_published = True
-                self._wait_delay(
-                    goal_handle,
-                    self._float("torso_settle_sec"),
-                    "while waiting for bin torso lift",
                 )
 
             result.success = True
@@ -2261,11 +2421,12 @@ class MissionController(Node):
             self._publish_grasp_feedback(
                 goal_handle,
                 "EXECUTING_GRASP_POSE",
-                f"sending detected pose to {self._string('arm_pose_action_name')}",
+                f"sending two-stage pose sequence to "
+                f"{self._string('arm_pose_action_name')}",
                 arm,
             )
             cartesian_motion_started = True
-            result.arm_message = self._call_arm_pose(
+            result.arm_message = self._call_two_stage_grasp_pose(
                 goal_handle, arm, arm_target_stamped.pose, request.dry_run
             )
 

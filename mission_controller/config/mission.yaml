@@ -6,20 +6,32 @@ mission_controller:
     execute_bin_place_action_name: /execute_bin_place
     detect_service_name: /detect_grasp_pose
     bin_detect_service_name: /detect_bin_grasp_pose
-    bin_mission_enabled: false
+    bin_mission_enabled: true
     # Bin perception uses FoundationPose. Normal /execute_grasp continues to
     # use grasp_ws through detect_service_name above.
     bin_object_pose_action_name: /object_pose/estimate
     bin_object_pose_topic: /mission/bin_object_pose
+    # Debug/verification path: raw FoundationPose input and the same pose after
+    # camera->torso TF only. No object-axis remapping or geometric-centre shift.
+    bin_object_pose_camera_topic: /object_pose/pose
+    bin_object_pose_raw_topic: /mission/bin_object_pose_raw
     bin_object_pose_model_label: f320
     bin_object_pose_instance_index: 0
     bin_object_pose_confidence_threshold: 0.0
     bin_object_pose_result_timeout_sec: 60.0
-    # Transform from the FoundationPose model frame to the desired gripper EE
-    # frame. Keep real bin motion disabled until these are calibrated.
-    bin_grasp_object_to_ee_xyz: [0.0, 0.0, 0.0]
-    bin_grasp_object_to_ee_rpy: [0.0, 0.0, 0.0]
-    bin_grasp_offset_configured: false
+    # Mission transforms the FoundationPose result into torso_link4, then the
+    # existing dual-arm pickup task computes the two hand targets from the box
+    # dimensions. These are the validated F320 mesh extents for width/height.
+    pickup_task_action_name: /pickup_task
+    pickup_task_result_timeout_sec: 120.0
+    bin_box_width: 0.357
+    bin_box_height: 0.127
+    bin_box_type: f320
+    # Preserve the FoundationPose F320 model axes (X=down, Y=depth, Z=width)
+    # after camera->torso TF. The r1_pro pickup profile owns the single fixed
+    # box-frame->operation-frame correction, so applying another remap here
+    # would rotate the target twice. Position remains the geometric centre.
+    bin_foundation_to_pickup_rpy: [0.0, 0.0, 0.0]
     arm_pose_action_name: /move_arm_p
     arm_joints_service_name: /move_arm_j
     home_service_name: /home
@@ -65,11 +77,14 @@ mission_controller:
     # flange -> gripper -> D405 is provided by robot_state_publisher from URDF.
     # Mission only connects the CAD D405 axes to the RealSense ROS camera axes.
     camera_mount_parent_frame: right_D405_link
-    camera_mount_child_frame: hdas/camera_wrist_right_link
+    camera_mount_child_frame: d405_link
     camera_mount_xyz: [0.0, 0.0, 0.0]
     # camera_link +X (and therefore optical +Z) = right_D405_link +Z.
     camera_mount_rpy: [-1.5707963267948966, -1.5707963267948966, 0.0]
-    camera_mount_correction_rpy: [0.0, 0.0, 0.0]
+    # The CAD D405 frame is rolled 180 degrees relative to the physical color
+    # image: without this correction, optical -X (image left) appears on the
+    # robot's right side. Keep optical +Z (camera forward) unchanged.
+    camera_mount_correction_rpy: [0.0, 0.0, 3.141592653589793]
     camera_tf_timeout_sec: 2.0
     default_detection_timeout_sec: 20.0
     dependency_wait_timeout_sec: 10.0
@@ -95,11 +110,10 @@ mission_controller:
     grasp_right_joint_positions: [-0.98, -0.64, 1.13, -1.60, -1.25, 0.6, -0.13]
     place_right_joint_positions: [-0.911, -0.270, 1.095, -1.193, -2.356, 0.801, -1.470]
 
-    # Fill these bin-specific values before setting bin_mission_enabled=true.
-    bin_grasp_left_observation_joint_positions: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    bin_grasp_right_observation_joint_positions: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    bin_grasp_torso_prepare_positions: [0.0, 0.0, 0.0, 0.0]
-    bin_grasp_torso_lift_positions: [0.0, 0.0, 0.0, 0.0]
+    # Initial dual-arm observation posture for execute_bin_grasp.
+    bin_grasp_left_observation_joint_positions: [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
+    bin_grasp_right_observation_joint_positions: [0.16, -0.04, 0.20, -2.095894, 0.174647, -0.718606, -0.094098]
+    bin_grasp_torso_prepare_positions: [0.61, -0.81, -0.6, 0.0]
     bin_place_torso_positions: [0.0, 0.0, 0.0, 0.0]
     bin_place_chassis_distance_x: 0.0
     bin_place_chassis_distance_y: 0.0

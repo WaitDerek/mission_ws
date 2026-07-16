@@ -5,7 +5,8 @@ import time
 import rclpy
 from geometry_msgs.msg import TwistStamped
 from grasp_orchestrator_interfaces.srv import DetectGraspPose
-from mission_interfaces.action import ExecuteGrasp, ExecutePlace
+from mission_interfaces.action import ExecuteBinGrasp, ExecuteGrasp, ExecutePlace
+from object_pose_interfaces.action import EstimateObjectPose
 from rclpy.action import ActionClient, ActionServer
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -16,7 +17,7 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 from sensor_msgs.msg import JointState
-from task_interfaces.action import Home, MoveArmJoints, MoveArmPose
+from task_interfaces.action import Home, MoveArmJoints, MoveArmPose, PickupTask
 
 
 class MockMissionSystem(Node):
@@ -25,6 +26,7 @@ class MockMissionSystem(Node):
         self.events: list[str] = []
         self.events_lock = threading.Lock()
         self.arm_joint_call_count = 0
+        self.arm_pose_call_count = 0
         command_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
@@ -65,8 +67,20 @@ class MockMissionSystem(Node):
         self.arm_pose_server = ActionServer(
             self, MoveArmPose, "/move_arm_p", self._move_arm_pose
         )
+        self.object_pose_server = ActionServer(
+            self,
+            EstimateObjectPose,
+            "/object_pose/estimate",
+            self._estimate_object_pose,
+        )
+        self.pickup_server = ActionServer(
+            self, PickupTask, "/pickup_task", self._pickup_task
+        )
         self.grasp_client = ActionClient(self, ExecuteGrasp, "/execute_grasp")
         self.place_client = ActionClient(self, ExecutePlace, "/execute_place")
+        self.bin_grasp_client = ActionClient(
+            self, ExecuteBinGrasp, "/execute_bin_grasp"
+        )
 
     def _record(self, event: str) -> None:
         with self.events_lock:
@@ -153,20 +167,94 @@ class MockMissionSystem(Node):
 
     def _move_arm_pose(self, goal_handle):
         request = goal_handle.request
-        expected_right_pose = [0.15, -0.10, 0.15, 0.5, -0.5, -0.5, 0.5]
+        self.arm_pose_call_count += 1
+        expected_right_pose = (
+            [
+                0.075,
+                -0.05,
+                0.075,
+                0.2886751346,
+                -0.2886751346,
+                -0.2886751346,
+                0.8660254038,
+            ]
+            if self.arm_pose_call_count == 1
+            else [0.15, -0.10, 0.15, 0.5, -0.5, -0.5, 0.5]
+        )
         if len(request.right_pose) != 7:
-            raise AssertionError("grasp should send one right-arm pose")
+            raise AssertionError("grasp should send a seven-value right-arm pose")
         for actual, expected in zip(request.right_pose, expected_right_pose):
             if not math.isclose(actual, expected, abs_tol=1e-6):
                 raise AssertionError(
                     "grasp-center extrinsic was not applied to right-arm target: "
                     f"actual={list(request.right_pose)}"
                 )
-        self._record("move_arm_p")
+        self._record(f"move_arm_p:{self.arm_pose_call_count}/2")
         result = MoveArmPose.Result()
         result.success = True
         result.error_code = 0
         result.message = "mock pose complete"
+        goal_handle.succeed()
+        return result
+
+    def _estimate_object_pose(self, goal_handle):
+        request = goal_handle.request
+        if request.model_label != "f320" or request.instance_index != 0:
+            raise AssertionError("unexpected FoundationPose goal")
+        self._record("foundation_pose")
+        result = EstimateObjectPose.Result()
+        result.success = True
+        result.message = "mock box detected"
+        result.model_label = request.model_label
+        result.detection_score = 0.95
+        result.pose.header.frame_id = "torso_link"
+        result.pose.header.stamp = self.get_clock().now().to_msg()
+        result.pose.pose.position.x = 0.40
+        result.pose.pose.position.z = 0.20
+        result.pose.pose.orientation.w = 1.0
+        goal_handle.succeed()
+        return result
+
+    def _pickup_task(self, goal_handle):
+        request = goal_handle.request
+        if request.box_pose.header.frame_id != "torso_link":
+            raise AssertionError("pickup box pose must be in the body frame")
+        if not math.isclose(request.box_width, 0.357, abs_tol=1e-9):
+            raise AssertionError("unexpected pickup box width")
+        if not math.isclose(request.box_height, 0.127, abs_tol=1e-9):
+            raise AssertionError("unexpected pickup box height")
+        expected_center = [0.40, 0.0, 0.20]
+        actual_center = [
+            request.box_pose.pose.position.x,
+            request.box_pose.pose.position.y,
+            request.box_pose.pose.position.z,
+        ]
+        for actual, expected in zip(actual_center, expected_center):
+            if not math.isclose(actual, expected, abs_tol=1e-6):
+                raise AssertionError(
+                    "FoundationPose geometric centre changed before pickup: "
+                    f"actual={actual_center}"
+                )
+        expected_orientation = [0.0, 0.0, 0.0, 1.0]
+        actual_orientation = [
+            request.box_pose.pose.orientation.x,
+            request.box_pose.pose.orientation.y,
+            request.box_pose.pose.orientation.z,
+            request.box_pose.pose.orientation.w,
+        ]
+        for actual, expected in zip(actual_orientation, expected_orientation):
+            if not math.isclose(actual, expected, abs_tol=1e-6):
+                raise AssertionError(
+                    "FoundationPose axes changed before pickup: "
+                    f"actual={actual_orientation}"
+                )
+        if request.box_type != "f320" or not request.dry_run:
+            raise AssertionError("unexpected pickup task metadata")
+        self._record("pickup_task:dry_run=true")
+        result = PickupTask.Result()
+        result.success = True
+        result.error_code = 0
+        result.message = "mock pickup plan complete"
         goal_handle.succeed()
         return result
 
@@ -226,7 +314,13 @@ def run_grasp(node: MockMissionSystem) -> None:
     )
     assert_in_order(
         events,
-        ["detect", "move_arm_p", "gripper:right:0.0", "torso:reset"],
+        [
+            "detect",
+            "move_arm_p:1/2",
+            "move_arm_p:2/2",
+            "gripper:right:0.0",
+            "torso:reset",
+        ],
     )
 
 
@@ -259,6 +353,31 @@ def run_place(node: MockMissionSystem) -> None:
     )
 
 
+def run_bin_grasp(node: MockMissionSystem) -> None:
+    node.clear_events()
+    if not node.bin_grasp_client.wait_for_server(timeout_sec=5.0):
+        raise RuntimeError("/execute_bin_grasp action server not available")
+    goal = ExecuteBinGrasp.Goal()
+    goal.request_id = "mock_bin_grasp"
+    goal.target_label = -1
+    goal.arm = "right"
+    goal.publish_pose = True
+    goal.detection_timeout_sec = 2.0
+    goal.dry_run = True
+    goal_handle = wait_future(node.bin_grasp_client.send_goal_async(goal), 5.0)
+    if not goal_handle.accepted:
+        raise AssertionError("mock bin grasp goal was rejected")
+    wrapped_result = wait_future(goal_handle.get_result_async(), 10.0)
+    result = wrapped_result.result
+    if not result.success:
+        raise AssertionError(result.message)
+    if result.grasp_pose.header.frame_id != "torso_link":
+        raise AssertionError("bin result must expose the transformed body-frame pose")
+    assert_in_order(
+        node.snapshot(), ["foundation_pose", "pickup_task:dry_run=true"]
+    )
+
+
 def main() -> None:
     rclpy.init()
     node = MockMissionSystem()
@@ -269,7 +388,8 @@ def main() -> None:
     try:
         run_grasp(node)
         run_place(node)
-        print("mock grasp and place missions passed")
+        run_bin_grasp(node)
+        print("mock grasp, place, and bin-pickup missions passed")
     finally:
         executor.shutdown()
         spin_thread.join(timeout=2.0)

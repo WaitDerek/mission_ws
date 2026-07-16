@@ -26,7 +26,7 @@ class GraspTargetExecutor(Node):
         self.declare_parameter("dry_run", True)
         self.declare_parameter("execute_confirmed", False)
         self.declare_parameter("server_timeout_sec", 10.0)
-        self.declare_parameter("interpolation_steps", 10)
+        self.declare_parameter("interpolation_steps", 2)
         self.declare_parameter("current_pose_timeout_sec", 2.0)
         self.declare_parameter("segment_pause_sec", 0.5)
 

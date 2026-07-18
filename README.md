@@ -8,25 +8,50 @@ dual-arm workspace.
 
 - `/execute_grasp` (`mission_interfaces/action/ExecuteGrasp`)
 - `/execute_place` (`mission_interfaces/action/ExecutePlace`)
-- `/execute_bin_grasp` (`mission_interfaces/action/ExecuteBinGrasp`)
-- `/execute_bin_place` (`mission_interfaces/action/ExecuteBinPlace`)
+- `/execute_box_grasp` (`mission_interfaces/action/ExecuteBoxGrasp`)
+- `/execute_box_place` (`mission_interfaces/action/ExecuteBoxPlace`)
 
 Only one mission is accepted at a time.
 
-The bin actions are registered separately from the material actions. The node's
+The box actions are registered separately from the material actions. The node's
 safe fallback keeps them disabled, while the shipped R1 Pro configuration
 enables them with calibrated observation targets and FoundationPose settings.
-They reject goals while `bin_mission_enabled` is false and do not publish robot
+They reject goals while `box_mission_enabled` is false and do not publish robot
 commands.
 
-The bin grasp sequence initializes the saved dual-arm observation pose, calls
+The box grasp sequence initializes the saved dual-arm observation pose, calls
 FoundationPose, transforms the OBB centre from the D405 optical frame into
 `torso_link4`, preserves the F320 model axes and geometric-centre semantics, and
 delegates the two-hand geometry and motion to `/pickup_task`.
-The configured F320 dimensions are passed explicitly as width and height. The
-bin place sequence remains separate: move the chassis to its fixed location,
-bend the torso, open the selected gripper, then home the arms and reset the
-torso.
+The configured F320 dimensions are passed explicitly as width and height. Once
+pickup execution succeeds, mission closes both grippers and lifts the torso to
+the shallower box-carry waist posture. A failed `/pickup_task` is
+retried once with the same transformed box pose; two failures abort the box
+grasp before any close or lift command.
+The box place sequence remains separate: move the chassis in robot-right
+(`-Y`), bend the torso, open both grippers, call `/go_ready`, then reset the
+torso upright.
+
+### Box grasp sequence
+
+1. Open both grippers and move the torso and both arms to the saved observation
+   posture.
+2. Run FoundationPose, transform the geometric-centre pose into `torso_link4`,
+   and call `/pickup_task` with the F320 dimensions. Retry once if it fails.
+3. After `/pickup_task` reports success, close both grippers.
+4. Publish `box_grasp_torso_lift_positions` while preserving the final arm
+   targets. This target is the shallower box-carry posture, not the shared
+   deep material/box observation posture.
+
+### Box place sequence
+
+1. Move the chassis by the configured fixed displacement. R1 Pro robot-right
+   is negative chassis Y.
+2. Publish `box_place_torso_positions` to return to the same waist posture used
+   for box detection.
+3. Open both grippers and wait for them to settle.
+4. Call `/go_ready` for the dual-arm work posture, then publish the upright
+   torso reset target.
 
 ### Grasp sequence
 
@@ -35,9 +60,12 @@ torso.
    parallel. Wait for all three preparations to settle before continuing.
 2. Call `/detect_grasp_pose` and receive a grasp-center pose in the D405 color
    optical frame.
-3. Transform the grasp center to `torso_link4`, apply the configured 0.15 m
+3. Transform the grasp center to `torso_link4`, apply the configured 0.10 m
    grasp-center-to-gripper retreat, then use the URDF
    `gripper_link -> arm_link7` transform to generate the `/move_arm_p` target.
+   For the parallel-jaw 180-degree symmetry, compare both equivalent branches
+   against the current gripper orientation and keep the branch requiring less
+   wrist rotation so the wrist camera remains on the same side.
 4. Read the current `arm_link7` TF and execute two `/move_arm_p` stages: the
    halfway interpolated pose followed by the final grasp pose. Position uses
    linear interpolation and orientation uses shortest-path quaternion SLERP.
@@ -148,7 +176,8 @@ RViz displays three labeled poses on `/mission/grasp_visualization`:
 - cyan `arm_link7_target`: final target after applying the URDF fixed joint.
 
 The corresponding `PoseStamped` topics are `/mission/grasp_pose`,
-`/mission/gripper_link_target`, and `/mission/arm_link7_target`. Set
+`/mission/gripper_link_target`, `/mission/arm_link7_target`, and the actual
+two-stage midpoint `/mission/arm_link7_intermediate`. Set
 `start_rviz:=false` for a headless transform check.
 The orange and green gripper assemblies deliberately use the same URDF mesh
 set: their relative opening directions expose any 90-degree grasp-frame
@@ -256,10 +285,20 @@ ros2 action send_goal --feedback \
   "{request_id: place_1, arm: right, dry_run: false}"
 ```
 
+Execute the complete box place flow after a successful real box grasp:
+
+```bash
+ros2 action send_goal --feedback \
+  /execute_box_place mission_interfaces/action/ExecuteBoxPlace \
+  "{request_id: box_place_1, arm: right, dry_run: false}"
+```
+
 For a safe integration check, use `dry_run: true`. Direct chassis, torso,
 arm-joint, and gripper commands are skipped. Grasp detection and `/move_arm_p`
-planning still run; place calls `/home` with its `dry_run` flag set.
+planning still run. Box grasp still calls `/pickup_task` for planning, while box
+place calls `/go_ready` with its `dry_run` flag set.
 
 The repository also contains an isolated mock integration fixture under
 `mission_controller/test`. Run it on a non-production `ROS_DOMAIN_ID`; it
-checks the full grasp and place ordering without connecting to robot nodes.
+checks material grasp/place and the complete box grasp/place ordering without
+connecting to robot nodes.

@@ -2,39 +2,40 @@ mission_controller:
   ros__parameters:
     execute_grasp_action_name: /execute_grasp
     execute_place_action_name: /execute_place
-    execute_bin_grasp_action_name: /execute_bin_grasp
-    execute_bin_place_action_name: /execute_bin_place
+    execute_box_grasp_action_name: /execute_box_grasp
+    execute_box_place_action_name: /execute_box_place
     detect_service_name: /detect_grasp_pose
-    bin_detect_service_name: /detect_bin_grasp_pose
-    bin_mission_enabled: true
-    # Bin perception uses FoundationPose. Normal /execute_grasp continues to
+    box_detect_service_name: /detect_box_grasp_pose
+    box_mission_enabled: true
+    # Box perception uses FoundationPose. Normal /execute_grasp continues to
     # use grasp_ws through detect_service_name above.
-    bin_object_pose_action_name: /object_pose/estimate
-    bin_object_pose_topic: /mission/bin_object_pose
+    box_object_pose_action_name: /object_pose/estimate
+    box_object_pose_topic: /mission/box_object_pose
     # Debug/verification path: raw FoundationPose input and the same pose after
     # camera->torso TF only. No object-axis remapping or geometric-centre shift.
-    bin_object_pose_camera_topic: /object_pose/pose
-    bin_object_pose_raw_topic: /mission/bin_object_pose_raw
-    bin_object_pose_model_label: f320
-    bin_object_pose_instance_index: 0
-    bin_object_pose_confidence_threshold: 0.0
-    bin_object_pose_result_timeout_sec: 60.0
+    box_object_pose_camera_topic: /object_pose/pose
+    box_object_pose_raw_topic: /mission/box_object_pose_raw
+    box_object_pose_model_label: f320
+    box_object_pose_instance_index: 0
+    box_object_pose_confidence_threshold: 0.0
+    box_object_pose_result_timeout_sec: 60.0
     # Mission transforms the FoundationPose result into torso_link4, then the
     # existing dual-arm pickup task computes the two hand targets from the box
     # dimensions. These are the validated F320 mesh extents for width/height.
     pickup_task_action_name: /pickup_task
     pickup_task_result_timeout_sec: 120.0
-    bin_box_width: 0.357
-    bin_box_height: 0.127
-    bin_box_type: f320
+    box_width: 0.357
+    box_height: 0.127
+    box_type: f320
     # Preserve the FoundationPose F320 model axes (X=down, Y=depth, Z=width)
     # after camera->torso TF. The r1_pro pickup profile owns the single fixed
     # box-frame->operation-frame correction, so applying another remap here
     # would rotate the target twice. Position remains the geometric centre.
-    bin_foundation_to_pickup_rpy: [0.0, 0.0, 0.0]
+    box_foundation_to_pickup_rpy: [0.0, 0.0, 0.0]
     arm_pose_action_name: /move_arm_p
     arm_joints_service_name: /move_arm_j
     home_service_name: /home
+    go_ready_action_name: /go_ready
     # Mission owns all perception-frame conversions. move_arm_p receives only
     # an absolute arm_link7 target expressed in arm_execution_frame.
     grasp_pose_topic: /mission/grasp_pose
@@ -42,6 +43,7 @@ mission_controller:
     grasp_pose_ee_topic: /mission/grasp_pose_ee
     gripper_target_pose_topic: /mission/gripper_link_target
     arm_target_pose_topic: /mission/arm_link7_target
+    arm_intermediate_pose_topic: /mission/arm_link7_intermediate
     grasp_visualization_topic: /mission/grasp_visualization
     # Safe visualization-only input. Publishing here computes and displays the
     # transform chain but never calls move_arm_j or move_arm_p.
@@ -60,19 +62,25 @@ mission_controller:
     right_ee_frame: right_arm_link7
     left_gripper_frame: left_gripper_link
     right_gripper_frame: right_gripper_link
-    # GraspNet reports the grasp center. Place the gripper link 15 cm backward
-    # along local -X; gripper_link -> arm_link7 is read separately from URDF TF.
-    grasp_center_to_gripper_xyz: [-0.15, 0.0, 0.0]
+    # Approximate grasp-center-to-gripper tool length along corrected local -X.
+    # gripper_link -> arm_link7 is read separately from the URDF TF.
+    grasp_center_to_gripper_xyz: [-0.20, 0.0, 0.0]
     # X is already the correct approach axis; rotate 180 degrees around local
     # X so the displayed and commanded Y/Z axes match the physical gripper.
     grasp_pose_correction_rpy: [3.141592653589793, 0.0, 0.0]
+    # A parallel-jaw grasp is symmetric under a 180-degree rotation about the
+    # GraspNet approach axis. Select the equivalent branch closest to the
+    # current gripper orientation so the wrist camera stays on the same side.
+    grasp_symmetry_normalization_enabled: true
+    grasp_symmetry_rpy: [3.141592653589793, 0.0, 0.0]
     # GraspNet +X aligns with gripper -Z; both +Y axes are the finger
     # opening/closing direction.
     grasp_to_gripper_rpy: [0.0, -1.5707963267948966, 0.0]
-    # After the axis mapping, rotate the target gripper 180 degrees around its
-    # own local Z axis. This flips the palm direction without moving the grasp
-    # center or changing the 15 cm retreat vector.
-    gripper_target_post_rpy: [0.0, 0.0, 3.141592653589793]
+    # After the axis mapping, tilt the target gripper 45 degrees backward about
+    # its local Y axis, then retain the 180-degree local-Z palm flip. This only
+    # changes the gripper orientation; the perceived grasp pose and grasp-center
+    # position remain unchanged.
+    gripper_target_post_rpy: [0.0, -0.7853981633974483, 3.141592653589793]
     camera_mount_tf_enabled: true
     # flange -> gripper -> D405 is provided by robot_state_publisher from URDF.
     # Mission only connects the CAD D405 axes to the RealSense ROS camera axes.
@@ -91,6 +99,7 @@ mission_controller:
     arm_joints_result_timeout_sec: 60.0
     arm_pose_result_timeout_sec: 120.0
     home_result_timeout_sec: 60.0
+    go_ready_result_timeout_sec: 60.0
 
     # Match r1pro_test: wait, warn, then publish. Set require=true for strict mode.
     wait_for_command_subscribers: true
@@ -102,23 +111,30 @@ mission_controller:
     arm_settle_sec: 1.0
     gripper_settle_sec: 1.0
 
-    torso_prepare_positions: [0.61, -0.81, -0.21, 0.0]
+    # Use the same deeper waist observation posture as execute_box_grasp so
+    # the material grasp target remains inside the right-arm reachable space.
+    torso_prepare_positions: [0.61, -0.81, -0.60, 0.0]
     torso_reset_positions: [0.0, 0.0, 0.0, 0.0]
     torso_velocities: [0.2, 0.2, 0.2, 0.2]
 
     grasp_left_joint_positions: [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
-    grasp_right_joint_positions: [-0.98, -0.64, 1.13, -1.60, -1.25, 0.6, -0.13]
+    grasp_right_joint_positions: [-0.98, -0.84, 1.13, -2.00, -1.25, 0.60, -0.13]
     place_right_joint_positions: [-0.911, -0.270, 1.095, -1.193, -2.356, 0.801, -1.470]
 
-    # Initial dual-arm observation posture for execute_bin_grasp.
-    bin_grasp_left_observation_joint_positions: [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
-    bin_grasp_right_observation_joint_positions: [0.16, -0.04, 0.20, -2.095894, 0.174647, -0.718606, -0.094098]
-    bin_grasp_torso_prepare_positions: [0.61, -0.81, -0.6, 0.0]
-    bin_place_torso_positions: [0.0, 0.0, 0.0, 0.0]
-    bin_place_chassis_distance_x: 0.0
-    bin_place_chassis_distance_y: 0.0
-    bin_place_chassis_yaw: 0.0
-    bin_place_chassis_duration_sec: 5.0
+    # Initial dual-arm observation posture for execute_box_grasp.
+    box_grasp_left_observation_joint_positions: [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
+    box_grasp_right_observation_joint_positions: [0.16, -0.04, 0.20, -2.095894, 0.174647, -0.718606, -0.094098]
+    box_grasp_torso_prepare_positions: [0.61, -0.81, -0.6, 0.0]
+    # After both grippers close, lift from the shared deep observation bend to
+    # the shallower carry posture. Box placement returns to the deep posture
+    # before opening both grippers.
+    box_grasp_torso_lift_positions: [0.61, -0.81, -0.21, 0.0]
+    box_place_torso_positions: [0.61, -0.81, -0.6, 0.0]
+    # R1 Pro base convention: -Y is robot-right. Move 0.5 m over 5 seconds.
+    box_place_chassis_distance_x: 0.0
+    box_place_chassis_distance_y: -0.5
+    box_place_chassis_yaw: 0.0
+    box_place_chassis_duration_sec: 5.0
 
     gripper_open_position: 100.0
     gripper_closed_position: 0.0

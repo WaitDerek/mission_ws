@@ -1,4 +1,4 @@
-# Execute a bin grasp mission with bin-specific preparation and perception.
+# Execute a box grasp mission with box-specific preparation and perception.
 string request_id
 string target_frame
 int32 target_label

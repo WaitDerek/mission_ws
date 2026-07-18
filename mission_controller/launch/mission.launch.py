@@ -8,6 +8,7 @@ from launch.substitutions import (
     PathJoinSubstitution,
 )
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -15,6 +16,9 @@ def generate_launch_description() -> LaunchDescription:
     config_file = LaunchConfiguration("config_file")
     start_perception = LaunchConfiguration("start_perception")
     start_detector_daemon = LaunchConfiguration("start_detector_daemon")
+    require_command_subscribers = LaunchConfiguration(
+        "require_command_subscribers"
+    )
 
     perception_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -36,7 +40,14 @@ def generate_launch_description() -> LaunchDescription:
         name="mission_controller",
         output="screen",
         prefix=[FindExecutable(name="python3")],
-        parameters=[config_file],
+        parameters=[
+            config_file,
+            {
+                "require_command_subscribers": ParameterValue(
+                    require_command_subscribers, value_type=bool
+                )
+            },
+        ],
     )
 
     return LaunchDescription(
@@ -49,6 +60,14 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument("start_perception", default_value="true"),
             DeclareLaunchArgument("start_detector_daemon", default_value="true"),
+            DeclareLaunchArgument(
+                "require_command_subscribers",
+                default_value="false",
+                description=(
+                    "Abort Mission commands when gripper or torso topics have "
+                    "no subscribers. Hardware mode must set this to true."
+                ),
+            ),
             perception_launch,
             controller,
         ]

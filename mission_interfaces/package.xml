@@ -3,7 +3,7 @@
 <package format="3">
   <name>mission_interfaces</name>
   <version>0.1.0</version>
-  <description>ROS 2 action interfaces for material and bin missions.</description>
+  <description>ROS 2 action interfaces for material and box missions.</description>
   <maintainer email="dekc@example.com">dekc</maintainer>
   <license>Apache-2.0</license>
 

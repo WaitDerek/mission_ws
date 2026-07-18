@@ -42,6 +42,9 @@ Visualization Manager:
         Value: /mission/grasp_visualization
       Name: Graspness transform chain
       Namespaces:
+        arm_link7_intermediate: true
+        arm_link7_intermediate_axes: true
+        arm_link7_intermediate_label: true
         arm_link7_target: true
         arm_link7_target_axes: true
         arm_link7_target_label: true

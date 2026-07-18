@@ -5,7 +5,12 @@ import time
 import rclpy
 from geometry_msgs.msg import TwistStamped
 from grasp_orchestrator_interfaces.srv import DetectGraspPose
-from mission_interfaces.action import ExecuteBinGrasp, ExecuteGrasp, ExecutePlace
+from mission_interfaces.action import (
+    ExecuteBoxGrasp,
+    ExecuteBoxPlace,
+    ExecuteGrasp,
+    ExecutePlace,
+)
 from object_pose_interfaces.action import EstimateObjectPose
 from rclpy.action import ActionClient, ActionServer
 from rclpy.executors import MultiThreadedExecutor
@@ -17,7 +22,13 @@ from rclpy.qos import (
     ReliabilityPolicy,
 )
 from sensor_msgs.msg import JointState
-from task_interfaces.action import Home, MoveArmJoints, MoveArmPose, PickupTask
+from task_interfaces.action import (
+    GoReady,
+    Home,
+    MoveArmJoints,
+    MoveArmPose,
+    PickupTask,
+)
 
 
 class MockMissionSystem(Node):
@@ -27,6 +38,8 @@ class MockMissionSystem(Node):
         self.events_lock = threading.Lock()
         self.arm_joint_call_count = 0
         self.arm_pose_call_count = 0
+        self.pickup_call_count = 0
+        self.pickup_failures_remaining = 0
         command_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
@@ -64,6 +77,9 @@ class MockMissionSystem(Node):
             self, MoveArmJoints, "/move_arm_j", self._move_arm_joints
         )
         self.home_server = ActionServer(self, Home, "/home", self._home)
+        self.go_ready_server = ActionServer(
+            self, GoReady, "/go_ready", self._go_ready
+        )
         self.arm_pose_server = ActionServer(
             self, MoveArmPose, "/move_arm_p", self._move_arm_pose
         )
@@ -78,8 +94,11 @@ class MockMissionSystem(Node):
         )
         self.grasp_client = ActionClient(self, ExecuteGrasp, "/execute_grasp")
         self.place_client = ActionClient(self, ExecutePlace, "/execute_place")
-        self.bin_grasp_client = ActionClient(
-            self, ExecuteBinGrasp, "/execute_bin_grasp"
+        self.box_grasp_client = ActionClient(
+            self, ExecuteBoxGrasp, "/execute_box_grasp"
+        )
+        self.box_place_client = ActionClient(
+            self, ExecuteBoxPlace, "/execute_box_place"
         )
 
     def _record(self, event: str) -> None:
@@ -94,11 +113,30 @@ class MockMissionSystem(Node):
         with self.events_lock:
             self.events.clear()
 
+    def configure_pickup_failures(self, count: int) -> None:
+        self.pickup_call_count = 0
+        self.pickup_failures_remaining = count
+
     def _on_torso(self, message: JointState) -> None:
         if not message.position:
             return
-        if all(abs(value) < 1e-8 for value in message.position):
+        positions = list(message.position)
+        if all(abs(value) < 1e-8 for value in positions):
             self._record("torso:reset")
+        elif all(
+            math.isclose(actual, expected, abs_tol=1e-8)
+            for actual, expected in zip(
+                positions, [0.61, -0.81, -0.21, 0.0]
+            )
+        ):
+            self._record("torso:grasp_observation")
+        elif all(
+            math.isclose(actual, expected, abs_tol=1e-8)
+            for actual, expected in zip(
+                positions, [0.61, -0.81, -0.6, 0.0]
+            )
+        ):
+            self._record("torso:deep_observation")
         else:
             self._record("torso:prepare")
 
@@ -109,7 +147,16 @@ class MockMissionSystem(Node):
     def _on_chassis(self, message: TwistStamped) -> None:
         speed = math.hypot(message.twist.linear.x, message.twist.linear.y)
         speed += abs(message.twist.angular.z)
-        self._record("chassis:moving" if speed > 1e-8 else "chassis:stopped")
+        if speed <= 1e-8:
+            self._record("chassis:stopped")
+        elif (
+            message.twist.linear.y < 0.0
+            and abs(message.twist.linear.x) <= 1e-8
+            and abs(message.twist.angular.z) <= 1e-8
+        ):
+            self._record("chassis:right")
+        else:
+            self._record("chassis:moving")
 
     def _detect(self, _request, response):
         self._record("detect")
@@ -137,16 +184,33 @@ class MockMissionSystem(Node):
             if len(request.left_joints) != 7 or len(request.right_joints) != 7:
                 raise AssertionError("grasp preparation should target both arms")
             expected_left = [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
-            expected_right = [-0.98, -0.64, 1.13, -1.60, -1.25, 0.6, -0.13]
+            expected_right = [-0.98, -0.84, 1.13, -2.00, -1.25, 0.60, -0.13]
             if list(request.left_joints) != expected_left:
                 raise AssertionError("unexpected grasp left preparation target")
             if list(request.right_joints) != expected_right:
                 raise AssertionError("unexpected grasp right preparation target")
-        else:
+        elif self.arm_joint_call_count == 2:
             if request.left_joints:
                 raise AssertionError("place flow should leave left_joints empty")
             if len(request.right_joints) != 7:
                 raise AssertionError("right_joints must contain seven positions")
+        elif self.arm_joint_call_count == 3:
+            expected_left = [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
+            expected_right = [
+                0.16,
+                -0.04,
+                0.20,
+                -2.095894,
+                0.174647,
+                -0.718606,
+                -0.094098,
+            ]
+            if list(request.left_joints) != expected_left:
+                raise AssertionError("unexpected box observation left target")
+            if list(request.right_joints) != expected_right:
+                raise AssertionError("unexpected box observation right target")
+        else:
+            raise AssertionError("unexpected move_arm_j call")
         self._record("move_arm_j")
         result = MoveArmJoints.Result()
         result.success = True
@@ -165,6 +229,16 @@ class MockMissionSystem(Node):
         goal_handle.succeed()
         return result
 
+    def _go_ready(self, goal_handle):
+        request = goal_handle.request
+        self._record(f"go_ready:dry_run={str(request.dry_run).lower()}")
+        result = GoReady.Result()
+        result.success = True
+        result.error_code = 0
+        result.message = "mock ready complete"
+        goal_handle.succeed()
+        return result
+
     def _move_arm_pose(self, goal_handle):
         request = goal_handle.request
         self.arm_pose_call_count += 1
@@ -173,13 +247,21 @@ class MockMissionSystem(Node):
                 0.075,
                 -0.05,
                 0.075,
-                0.2886751346,
-                -0.2886751346,
-                -0.2886751346,
-                0.8660254038,
+                0.1697483544,
+                -0.4098087793,
+                -0.4098087793,
+                0.7970564754,
             ]
             if self.arm_pose_call_count == 1
-            else [0.15, -0.10, 0.15, 0.5, -0.5, -0.5, 0.5]
+            else [
+                0.15,
+                -0.10,
+                0.15,
+                0.2705980501,
+                -0.6532814824,
+                -0.6532814824,
+                0.2705980501,
+            ]
         )
         if len(request.right_pose) != 7:
             raise AssertionError("grasp should send a seven-value right-arm pose")
@@ -248,10 +330,21 @@ class MockMissionSystem(Node):
                     "FoundationPose axes changed before pickup: "
                     f"actual={actual_orientation}"
                 )
-        if request.box_type != "f320" or not request.dry_run:
+        if request.box_type != "f320":
             raise AssertionError("unexpected pickup task metadata")
-        self._record("pickup_task:dry_run=true")
+        self.pickup_call_count += 1
+        self._record(
+            f"pickup_task:{self.pickup_call_count}:"
+            f"dry_run={str(request.dry_run).lower()}"
+        )
         result = PickupTask.Result()
+        if self.pickup_failures_remaining > 0:
+            self.pickup_failures_remaining -= 1
+            result.success = False
+            result.error_code = 13
+            result.message = f"mock pickup failure {self.pickup_call_count}"
+            goal_handle.abort()
+            return result
         result.success = True
         result.error_code = 0
         result.message = "mock pickup plan complete"
@@ -291,6 +384,8 @@ def assert_all_before(events: list[str], expected: list[str], marker: str) -> No
 def run_grasp(node: MockMissionSystem) -> None:
     if not node.grasp_client.wait_for_server(timeout_sec=5.0):
         raise RuntimeError("/execute_grasp action server not available")
+    time.sleep(0.1)
+    node.clear_events()
     goal = ExecuteGrasp.Goal()
     goal.request_id = "mock_grasp"
     goal.target_frame = "torso_link"
@@ -309,7 +404,12 @@ def run_grasp(node: MockMissionSystem) -> None:
     events = node.snapshot()
     assert_all_before(
         events,
-        ["gripper:left:100.0", "gripper:right:100.0", "torso:prepare", "move_arm_j"],
+        [
+            "gripper:left:100.0",
+            "gripper:right:100.0",
+            "torso:deep_observation",
+            "move_arm_j",
+        ],
         "detect",
     )
     assert_in_order(
@@ -344,7 +444,7 @@ def run_place(node: MockMissionSystem) -> None:
         [
             "chassis:moving",
             "chassis:stopped",
-            "torso:prepare",
+            "torso:deep_observation",
             "move_arm_j",
             "gripper:right:100.0",
             "torso:reset",
@@ -353,28 +453,122 @@ def run_place(node: MockMissionSystem) -> None:
     )
 
 
-def run_bin_grasp(node: MockMissionSystem) -> None:
+def run_box_grasp(node: MockMissionSystem) -> None:
     node.clear_events()
-    if not node.bin_grasp_client.wait_for_server(timeout_sec=5.0):
-        raise RuntimeError("/execute_bin_grasp action server not available")
-    goal = ExecuteBinGrasp.Goal()
-    goal.request_id = "mock_bin_grasp"
+    node.configure_pickup_failures(1)
+    if not node.box_grasp_client.wait_for_server(timeout_sec=5.0):
+        raise RuntimeError("/execute_box_grasp action server not available")
+    goal = ExecuteBoxGrasp.Goal()
+    goal.request_id = "mock_box_grasp"
     goal.target_label = -1
     goal.arm = "right"
     goal.publish_pose = True
     goal.detection_timeout_sec = 2.0
-    goal.dry_run = True
-    goal_handle = wait_future(node.bin_grasp_client.send_goal_async(goal), 5.0)
+    goal.dry_run = False
+    goal_handle = wait_future(node.box_grasp_client.send_goal_async(goal), 5.0)
     if not goal_handle.accepted:
-        raise AssertionError("mock bin grasp goal was rejected")
+        raise AssertionError("mock box grasp goal was rejected")
     wrapped_result = wait_future(goal_handle.get_result_async(), 10.0)
     result = wrapped_result.result
     if not result.success:
         raise AssertionError(result.message)
     if result.grasp_pose.header.frame_id != "torso_link":
-        raise AssertionError("bin result must expose the transformed body-frame pose")
+        raise AssertionError("box result must expose the transformed body-frame pose")
+    if not result.gripper_command_published:
+        raise AssertionError("box grasp must close both grippers after pickup")
+    if not result.torso_lift_command_published:
+        raise AssertionError("box grasp must lift the torso after closing grippers")
+    events = node.snapshot()
+    assert_all_before(
+        events,
+        [
+            "gripper:left:100.0",
+            "gripper:right:100.0",
+            "torso:deep_observation",
+            "move_arm_j",
+        ],
+        "foundation_pose",
+    )
     assert_in_order(
-        node.snapshot(), ["foundation_pose", "pickup_task:dry_run=true"]
+        events,
+        [
+            "foundation_pose",
+            "pickup_task:1:dry_run=false",
+            "pickup_task:2:dry_run=false",
+            "gripper:left:0.0",
+            "gripper:right:0.0",
+            "torso:grasp_observation",
+        ],
+    )
+
+
+def run_box_grasp_double_failure(node: MockMissionSystem) -> None:
+    node.clear_events()
+    node.configure_pickup_failures(2)
+    goal = ExecuteBoxGrasp.Goal()
+    goal.request_id = "mock_box_grasp_double_failure"
+    goal.target_label = -1
+    goal.arm = "right"
+    goal.publish_pose = True
+    goal.detection_timeout_sec = 2.0
+    goal.dry_run = True
+    goal_handle = wait_future(node.box_grasp_client.send_goal_async(goal), 5.0)
+    if not goal_handle.accepted:
+        raise AssertionError("mock box grasp failure goal was rejected")
+    wrapped_result = wait_future(goal_handle.get_result_async(), 10.0)
+    result = wrapped_result.result
+    if result.success:
+        raise AssertionError("box grasp must fail after two pickup failures")
+    if "failed twice" not in result.message:
+        raise AssertionError(f"unexpected double-failure message: {result.message}")
+    events = node.snapshot()
+    assert_in_order(
+        events,
+        [
+            "foundation_pose",
+            "pickup_task:1:dry_run=true",
+            "pickup_task:2:dry_run=true",
+        ],
+    )
+    if any(event.startswith("gripper:") for event in events):
+        raise AssertionError("failed pickup must not command either gripper")
+    if any(event.startswith("torso:") for event in events):
+        raise AssertionError("failed dry-run pickup must not command the torso")
+
+
+def run_box_place(node: MockMissionSystem) -> None:
+    node.clear_events()
+    if not node.box_place_client.wait_for_server(timeout_sec=5.0):
+        raise RuntimeError("/execute_box_place action server not available")
+    goal = ExecuteBoxPlace.Goal()
+    goal.request_id = "mock_box_place"
+    goal.arm = "right"
+    goal.dry_run = False
+    goal_handle = wait_future(node.box_place_client.send_goal_async(goal), 5.0)
+    if not goal_handle.accepted:
+        raise AssertionError("mock box place goal was rejected")
+    wrapped_result = wait_future(goal_handle.get_result_async(), 10.0)
+    result = wrapped_result.result
+    if not result.success:
+        raise AssertionError(result.message)
+    if not result.gripper_command_published:
+        raise AssertionError("box place must open both grippers")
+    if not result.ready_completed:
+        raise AssertionError("box place must restore the ready arm posture")
+    if not result.torso_reset_command_published:
+        raise AssertionError("box place must reset the torso after release")
+    time.sleep(0.1)
+    assert_in_order(
+        node.snapshot(),
+        [
+            "chassis:right",
+            "chassis:stopped",
+            "torso:deep_observation",
+            "gripper:left:100.0",
+            "gripper:right:100.0",
+            "go_ready:dry_run=false",
+            "torso:reset",
+        ],
     )
 
 
@@ -388,8 +582,10 @@ def main() -> None:
     try:
         run_grasp(node)
         run_place(node)
-        run_bin_grasp(node)
-        print("mock grasp, place, and bin-pickup missions passed")
+        run_box_grasp(node)
+        run_box_grasp_double_failure(node)
+        run_box_place(node)
+        print("mock material and complete box grasp/place missions passed")
     finally:
         executor.shutdown()
         spin_thread.join(timeout=2.0)

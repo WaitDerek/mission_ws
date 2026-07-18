@@ -6,12 +6,13 @@ mission_controller:
     left_gripper_frame: torso_link
     right_gripper_frame: torso_link
     camera_mount_tf_enabled: false
-    bin_mission_enabled: true
-    bin_foundation_to_pickup_rpy: [0.0, 0.0, 0.0]
+    box_mission_enabled: true
+    box_foundation_to_pickup_rpy: [0.0, 0.0, 0.0]
     dependency_wait_timeout_sec: 2.0
     arm_joints_result_timeout_sec: 2.0
     arm_pose_result_timeout_sec: 2.0
     home_result_timeout_sec: 2.0
+    go_ready_result_timeout_sec: 2.0
     require_command_subscribers: true
     command_subscriber_wait_timeout_sec: 2.0
     command_repeat_count: 2
@@ -19,6 +20,12 @@ mission_controller:
     torso_settle_sec: 0.05
     arm_settle_sec: 0.05
     gripper_settle_sec: 0.05
+    box_grasp_torso_lift_positions: [0.61, -0.81, -0.21, 0.0]
+    box_place_torso_positions: [0.61, -0.81, -0.6, 0.0]
+    box_place_chassis_distance_x: 0.0
+    box_place_chassis_distance_y: -0.02
+    box_place_chassis_yaw: 0.0
+    box_place_chassis_duration_sec: 0.2
     place_chassis_distance_x: -0.02
     place_chassis_distance_y: 0.0
     place_chassis_yaw: 0.0

@@ -18,10 +18,6 @@ _mission_source_setup() {
   source "${setup_file}"
 }
 
-_mission_source_setup "/opt/ros/humble/setup.zsh" "ROS 2 Humble" || return 1
-_mission_source_setup \
-  "${MOVEIT2_WS_ROOT:-/home/dekc/libraries/ws_moveit2}/install/setup.zsh" \
-  "MoveIt 2 workspace" || return 1
 _mission_source_setup "${_changan_root}/dual_arm_ws/install/setup.zsh" \
   "dual_arm_ws" || return 1
 _mission_source_setup "${_changan_root}/grasp_ws/install/setup.zsh" \

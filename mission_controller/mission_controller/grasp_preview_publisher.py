@@ -60,11 +60,11 @@ class GraspPreviewPublisher(Node):
         )
         self.declare_parameter(
             "left_arm_positions",
-            [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13],
+            [-0.98, 0.84, -0.83, -2.00, 1.25, 0.29, 0.13],
         )
         self.declare_parameter(
             "right_arm_positions",
-            [-0.98, -0.84, 1.13, -2.00, -1.25, 0.60, -0.13],
+            [-0.98, -0.84, 0.93, -2.00, -1.25, 0.60, -0.13],
         )
         self.declare_parameter("torso_positions", [0.61, -0.81, -0.60, 0.0])
         self.declare_parameter(

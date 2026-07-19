@@ -38,6 +38,7 @@ class MockMissionSystem(Node):
         self.events_lock = threading.Lock()
         self.arm_joint_call_count = 0
         self.arm_pose_call_count = 0
+        self.arm_pose_failure_stages: list[int] = []
         self.pickup_call_count = 0
         self.pickup_failures_remaining = 0
         command_qos = QoSProfile(
@@ -117,6 +118,9 @@ class MockMissionSystem(Node):
         self.pickup_call_count = 0
         self.pickup_failures_remaining = count
 
+    def configure_arm_pose_failures(self, stages: list[int]) -> None:
+        self.arm_pose_failure_stages = list(stages)
+
     def _on_torso(self, message: JointState) -> None:
         if not message.position:
             return
@@ -175,42 +179,63 @@ class MockMissionSystem(Node):
         response.depth = 0.03
         response.object_id = 1
         response.source_frame = "torso_link"
+        response.candidate_poses.extend(
+            [response.grasp_pose, response.grasp_pose]
+        )
+        response.candidate_scores.extend([0.9, 0.8])
+        response.candidate_widths.extend([0.08, 0.08])
+        response.candidate_heights.extend([0.02, 0.02])
+        response.candidate_depths.extend([0.03, 0.03])
+        response.candidate_object_ids.extend([1, 1])
         return response
 
     def _move_arm_joints(self, goal_handle):
         request = goal_handle.request
         self.arm_joint_call_count += 1
-        if self.arm_joint_call_count == 1:
-            if len(request.left_joints) != 7 or len(request.right_joints) != 7:
-                raise AssertionError("grasp preparation should target both arms")
-            expected_left = [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
-            expected_right = [-0.98, -0.84, 1.13, -2.00, -1.25, 0.60, -0.13]
-            if list(request.left_joints) != expected_left:
-                raise AssertionError("unexpected grasp left preparation target")
-            if list(request.right_joints) != expected_right:
-                raise AssertionError("unexpected grasp right preparation target")
-        elif self.arm_joint_call_count == 2:
+        left = list(request.left_joints)
+        right = list(request.right_joints)
+        intermediate_left = [1.30, 0.6, 0.0, -1.5, 0.0, 0.0, 0.0]
+        intermediate_right = [1.30, -0.6, 0.0, -1.5, 0.0, 0.0, 0.0]
+        grasp_left = [-0.98, 0.84, -0.83, -2.00, 1.25, 0.29, 0.13]
+        grasp_right = [-0.98, -0.84, 0.93, -2.00, -1.25, 0.60, -0.13]
+        box_left = [-0.88, 1.24, -0.70, -2.0, 1.25, 0.1, 0.0]
+        box_right = [
+            0.86,
+            -0.24,
+            0.20,
+            -2.0944,
+            0.174647,
+            -0.618606,
+            0.104098,
+        ]
+        if left == intermediate_left and right == intermediate_right:
+            pass
+        elif left == grasp_left and right == grasp_right:
+            pass
+        elif not left:
             if request.left_joints:
                 raise AssertionError("place flow should leave left_joints empty")
             if len(request.right_joints) != 7:
                 raise AssertionError("right_joints must contain seven positions")
-        elif self.arm_joint_call_count == 3:
-            expected_left = [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
-            expected_right = [
-                0.16,
-                -0.04,
-                0.20,
-                -2.095894,
-                0.174647,
-                -0.718606,
-                -0.094098,
+            expected_place_right = [
+                -1.011,
+                0.040,
+                0.835,
+                -0.9513,
+                -1.956,
+                0.901,
+                -1.370,
             ]
-            if list(request.left_joints) != expected_left:
-                raise AssertionError("unexpected box observation left target")
-            if list(request.right_joints) != expected_right:
-                raise AssertionError("unexpected box observation right target")
+            if right != expected_place_right:
+                raise AssertionError(
+                    f"unexpected right-arm place target: {right}"
+                )
+        elif left == box_left and right == box_right:
+            pass
         else:
-            raise AssertionError("unexpected move_arm_j call")
+            raise AssertionError(
+                f"unexpected move_arm_j target left={left} right={right}"
+            )
         self._record("move_arm_j")
         result = MoveArmJoints.Result()
         result.success = True
@@ -242,25 +267,26 @@ class MockMissionSystem(Node):
     def _move_arm_pose(self, goal_handle):
         request = goal_handle.request
         self.arm_pose_call_count += 1
+        stage = 1 if math.isclose(request.right_pose[0], 0.135, abs_tol=1e-6) else 2
         expected_right_pose = (
             [
-                0.075,
+                0.135,
                 -0.05,
                 0.075,
-                0.1697483544,
-                -0.4098087793,
-                -0.4098087793,
-                0.7970564754,
+                0.2286958501,
+                -0.3589805774,
+                -0.3589805774,
+                0.8306407757,
             ]
-            if self.arm_pose_call_count == 1
+            if stage == 1
             else [
-                0.15,
+                0.27,
                 -0.10,
                 0.15,
-                0.2705980501,
-                -0.6532814824,
-                -0.6532814824,
-                0.2705980501,
+                0.3799281966,
+                -0.5963678105,
+                -0.5963678105,
+                0.3799281966,
             ]
         )
         if len(request.right_pose) != 7:
@@ -268,11 +294,20 @@ class MockMissionSystem(Node):
         for actual, expected in zip(request.right_pose, expected_right_pose):
             if not math.isclose(actual, expected, abs_tol=1e-6):
                 raise AssertionError(
-                    "grasp-center extrinsic was not applied to right-arm target: "
+                    "grasp target conversion produced an unexpected right-arm pose: "
                     f"actual={list(request.right_pose)}"
                 )
-        self._record(f"move_arm_p:{self.arm_pose_call_count}/2")
+        event = f"move_arm_p:{stage}/2"
         result = MoveArmPose.Result()
+        if self.arm_pose_failure_stages and self.arm_pose_failure_stages[0] == stage:
+            self.arm_pose_failure_stages.pop(0)
+            self._record(f"{event}:failed")
+            result.success = False
+            result.error_code = 13
+            result.message = f"mock stage {stage} failure"
+            goal_handle.abort()
+            return result
+        self._record(event)
         result.success = True
         result.error_code = 0
         result.message = "mock pose complete"
@@ -398,8 +433,11 @@ def run_grasp(node: MockMissionSystem) -> None:
     if not goal_handle.accepted:
         raise AssertionError("mock grasp goal was rejected")
     wrapped_result = wait_future(goal_handle.get_result_async(), 10.0)
-    if not wrapped_result.result.success:
-        raise AssertionError(wrapped_result.result.message)
+    result = wrapped_result.result
+    if not result.success:
+        raise AssertionError(result.message)
+    if not result.torso_reset_command_published:
+        raise AssertionError("grasp must report its torso observation-return command")
     time.sleep(0.1)
     events = node.snapshot()
     assert_all_before(
@@ -412,6 +450,20 @@ def run_grasp(node: MockMissionSystem) -> None:
         ],
         "detect",
     )
+    detect_index = events.index("detect")
+    first_arm_move_index = events.index("move_arm_j")
+    if (
+        events.index("gripper:left:100.0") > first_arm_move_index
+        or events.index("gripper:right:100.0") > first_arm_move_index
+    ):
+        raise AssertionError(
+            f"both grippers must open before initial arm movement; events={events}"
+        )
+    if events[:detect_index].count("move_arm_j") != 2:
+        raise AssertionError(
+            "grasp preparation must use intermediate and final arm targets; "
+            f"events={events}"
+        )
     assert_in_order(
         events,
         [
@@ -419,9 +471,147 @@ def run_grasp(node: MockMissionSystem) -> None:
             "move_arm_p:1/2",
             "move_arm_p:2/2",
             "gripper:right:0.0",
-            "torso:reset",
         ],
     )
+    gripper_closed_index = events.index("gripper:right:0.0")
+    return_events = events[gripper_closed_index + 1 :]
+    for expected in ("torso:deep_observation", "move_arm_j"):
+        if expected not in return_events:
+            raise AssertionError(
+                f"grasp did not return to observation posture; events={events}"
+            )
+    if return_events.count("move_arm_j") != 1:
+        raise AssertionError(
+            "grasp return must go directly to the final observation target; "
+            f"events={events}"
+        )
+    if "torso:reset" in events:
+        raise AssertionError("grasp must retain the deep observation torso posture")
+
+
+def run_grasp_stage_one_failure_continues_same_candidate(
+    node: MockMissionSystem,
+) -> None:
+    node.clear_events()
+    node.configure_arm_pose_failures([1])
+    goal = ExecuteGrasp.Goal()
+    goal.request_id = "mock_grasp_stage_one_continue"
+    goal.target_frame = "torso_link"
+    goal.target_label = 0
+    goal.arm = "right"
+    goal.publish_pose = True
+    goal.detection_timeout_sec = 2.0
+    goal.dry_run = False
+    goal_handle = wait_future(node.grasp_client.send_goal_async(goal), 5.0)
+    wrapped_result = wait_future(goal_handle.get_result_async(), 10.0)
+    result = wrapped_result.result
+    if not result.success:
+        raise AssertionError(result.message)
+    if not math.isclose(result.score, 0.9, abs_tol=1e-9):
+        raise AssertionError("stage-1 failure must retain the highest-ranked grasp")
+    events = node.snapshot()
+    failed_index = events.index("move_arm_p:1/2:failed")
+    final_index = events.index("move_arm_p:2/2", failed_index + 1)
+    recovery_events = events[failed_index + 1 : final_index]
+    if recovery_events.count("move_arm_j") != 0:
+        raise AssertionError(
+            "the same candidate final pose must be attempted directly after "
+            "its intermediate pose fails; "
+            f"events={events}"
+        )
+    assert_in_order(
+        events,
+        [
+            "detect",
+            "move_arm_p:1/2:failed",
+            "move_arm_p:2/2",
+        ],
+    )
+
+
+def run_grasp_second_candidate_after_stage_two_failure(
+    node: MockMissionSystem,
+) -> None:
+    node.clear_events()
+    node.configure_arm_pose_failures([2])
+    goal = ExecuteGrasp.Goal()
+    goal.request_id = "mock_grasp_stage_two_second_candidate"
+    goal.target_frame = "torso_link"
+    goal.target_label = 0
+    goal.arm = "right"
+    goal.publish_pose = True
+    goal.detection_timeout_sec = 2.0
+    goal.dry_run = False
+    goal_handle = wait_future(node.grasp_client.send_goal_async(goal), 5.0)
+    wrapped_result = wait_future(goal_handle.get_result_async(), 10.0)
+    result = wrapped_result.result
+    if not result.success:
+        raise AssertionError(result.message)
+    if not math.isclose(result.score, 0.8, abs_tol=1e-9):
+        raise AssertionError("stage-2 failure must select the second-ranked grasp")
+    events = node.snapshot()
+    failed_index = events.index("move_arm_p:2/2:failed")
+    next_candidate_index = events.index("move_arm_p:1/2", failed_index + 1)
+    recovery_events = events[failed_index + 1 : next_candidate_index]
+    if recovery_events.count("move_arm_j") != 1:
+        raise AssertionError(
+            "stage-2 failure must return directly to the final observation "
+            f"joints before candidate 2; events={events}"
+        )
+    if events.count("detect") != 1:
+        raise AssertionError(f"candidate 2 must reuse the same detection: {events}")
+    assert_in_order(
+        events,
+        [
+            "move_arm_p:2/2:failed",
+            "move_arm_j",
+            "move_arm_p:1/2",
+            "move_arm_p:2/2",
+        ],
+    )
+
+
+def run_grasp_redetect_after_both_candidate_final_failures(
+    node: MockMissionSystem,
+) -> None:
+    node.clear_events()
+    node.configure_arm_pose_failures([2, 2])
+    goal = ExecuteGrasp.Goal()
+    goal.request_id = "mock_grasp_both_candidate_finals_fail"
+    goal.target_frame = "torso_link"
+    goal.target_label = 0
+    goal.arm = "right"
+    goal.publish_pose = True
+    goal.detection_timeout_sec = 2.0
+    goal.dry_run = False
+    goal_handle = wait_future(node.grasp_client.send_goal_async(goal), 5.0)
+    wrapped_result = wait_future(goal_handle.get_result_async(), 10.0)
+    result = wrapped_result.result
+    if not result.success:
+        raise AssertionError(result.message)
+    events = node.snapshot()
+    first_detect_index = events.index("detect")
+    second_detect_index = events.index("detect", first_detect_index + 1)
+    failed_indices = [
+        index
+        for index, event in enumerate(events[:second_detect_index])
+        if event == "move_arm_p:2/2:failed"
+    ]
+    if len(failed_indices) != 2:
+        raise AssertionError(
+            f"both first-detection candidate final poses must fail: {events}"
+        )
+    between_failures = events[failed_indices[0] + 1 : failed_indices[1]]
+    if between_failures.count("move_arm_j") != 1:
+        raise AssertionError(
+            f"candidate 2 must start after direct observation recovery: {events}"
+        )
+    before_redetect = events[failed_indices[1] + 1 : second_detect_index]
+    if before_redetect.count("move_arm_j") != 1:
+        raise AssertionError(
+            "both candidate final poses failing must restore the observation "
+            f"joints before re-detection; events={events}"
+        )
 
 
 def run_place(node: MockMissionSystem) -> None:
@@ -436,21 +626,38 @@ def run_place(node: MockMissionSystem) -> None:
     if not goal_handle.accepted:
         raise AssertionError("mock place goal was rejected")
     wrapped_result = wait_future(goal_handle.get_result_async(), 10.0)
-    if not wrapped_result.result.success:
-        raise AssertionError(wrapped_result.result.message)
+    result = wrapped_result.result
+    if not result.success:
+        raise AssertionError(result.message)
+    if result.home_completed:
+        raise AssertionError("material place must not call home after release")
+    if not result.torso_reset_command_published:
+        raise AssertionError("material place must report observation return")
     time.sleep(0.1)
+    events = node.snapshot()
     assert_in_order(
-        node.snapshot(),
+        events,
         [
             "chassis:moving",
             "chassis:stopped",
             "torso:deep_observation",
             "move_arm_j",
             "gripper:right:100.0",
-            "torso:reset",
-            "home:dry_run=false",
         ],
     )
+    release_index = events.index("gripper:right:100.0")
+    return_events = events[release_index + 1 :]
+    if (
+        "move_arm_j" not in return_events
+        or "torso:deep_observation" not in return_events
+    ):
+        raise AssertionError(
+            f"material place must return directly to observation; events={events}"
+        )
+    if "torso:reset" in return_events or "home:dry_run=false" in return_events:
+        raise AssertionError(
+            f"material place must not reset/home after release; events={events}"
+        )
 
 
 def run_box_grasp(node: MockMissionSystem) -> None:
@@ -489,6 +696,21 @@ def run_box_grasp(node: MockMissionSystem) -> None:
         ],
         "foundation_pose",
     )
+    foundation_pose_index = events.index("foundation_pose")
+    first_arm_move_index = events.index("move_arm_j")
+    if (
+        events.index("gripper:left:100.0") > first_arm_move_index
+        or events.index("gripper:right:100.0") > first_arm_move_index
+    ):
+        raise AssertionError(
+            "both box grippers must open before initial arm movement; "
+            f"events={events}"
+        )
+    if events[:foundation_pose_index].count("move_arm_j") != 2:
+        raise AssertionError(
+            "box preparation must use intermediate and final arm targets; "
+            f"events={events}"
+        )
     assert_in_order(
         events,
         [
@@ -581,6 +803,9 @@ def main() -> None:
     spin_thread.start()
     try:
         run_grasp(node)
+        run_grasp_stage_one_failure_continues_same_candidate(node)
+        run_grasp_second_candidate_after_stage_two_failure(node)
+        run_grasp_redetect_after_both_candidate_final_failures(node)
         run_place(node)
         run_box_grasp(node)
         run_box_grasp_double_failure(node)

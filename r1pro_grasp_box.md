@@ -25,8 +25,8 @@ ros2 launch object_pose_ros object_pose_action.launch.py \
 ros2 action send_goal --feedback \
   /move_arm_j \
   task_interfaces/action/MoveArmJoints \
-  "{left_joints: [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13],
-    right_joints: [0.16, -0.04, 0.20, -2.095894, 0.174647, -0.718606, -0.094098],
+  "{left_joints: [-0.88, 1.24, -0.70, -2.0, 1.25, 0.1, 0.0],
+    right_joints: [0.86, -0.24, 0.20, -2.0944, 0.174647, -0.618606, 0.104098],
     dry_run: false,
     duration: 5.0}"
 

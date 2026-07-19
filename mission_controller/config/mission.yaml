@@ -54,6 +54,16 @@ mission_controller:
     left_gripper_topic: /motion_target/target_position_gripper_left
     right_gripper_topic: /motion_target/target_position_gripper_right
     chassis_topic: /motion_target/target_speed_chassis
+    joint_state_topic: /joint_states
+    left_arm_joint_names: [left_arm_joint1, left_arm_joint2, left_arm_joint3, left_arm_joint4, left_arm_joint5, left_arm_joint6, left_arm_joint7]
+    right_arm_joint_names: [right_arm_joint1, right_arm_joint2, right_arm_joint3, right_arm_joint4, right_arm_joint5, right_arm_joint6, right_arm_joint7]
+
+    # Do not start perception merely because /move_arm_j returned. Require the
+    # measured arm posture to remain within tolerance for fresh feedback samples.
+    verify_arm_joint_targets: true
+    arm_joint_target_tolerance: 0.10
+    arm_joint_target_wait_timeout_sec: 20.0
+    arm_joint_target_stable_samples: 3
 
     default_arm: right
     default_target_frame: torso_link4
@@ -64,7 +74,7 @@ mission_controller:
     right_gripper_frame: right_gripper_link
     # Approximate grasp-center-to-gripper tool length along corrected local -X.
     # gripper_link -> arm_link7 is read separately from the URDF TF.
-    grasp_center_to_gripper_xyz: [-0.20, 0.0, 0.0]
+    grasp_center_to_gripper_xyz: [-0.03, 0.0, 0.0]
     # X is already the correct approach axis; rotate 180 degrees around local
     # X so the displayed and commanded Y/Z axes match the physical gripper.
     grasp_pose_correction_rpy: [3.141592653589793, 0.0, 0.0]
@@ -76,16 +86,18 @@ mission_controller:
     # GraspNet +X aligns with gripper -Z; both +Y axes are the finger
     # opening/closing direction.
     grasp_to_gripper_rpy: [0.0, -1.5707963267948966, 0.0]
-    # After the axis mapping, tilt the target gripper 45 degrees backward about
+    # After the axis mapping, tilt the target gripper 25 degrees backward about
     # its local Y axis, then retain the 180-degree local-Z palm flip. This only
     # changes the gripper orientation; the perceived grasp pose and grasp-center
     # position remain unchanged.
-    gripper_target_post_rpy: [0.0, -0.7853981633974483, 3.141592653589793]
+    gripper_target_post_rpy: [0.0, -0.4363323129985824, 3.141592653589793]
     camera_mount_tf_enabled: true
     # flange -> gripper -> D405 is provided by robot_state_publisher from URDF.
     # Mission only connects the CAD D405 axes to the RealSense ROS camera axes.
     camera_mount_parent_frame: right_D405_link
-    camera_mount_child_frame: d405_link
+    # R1 Pro Realsense root frame. Its color/depth optical children are
+    # published by /hdas/camera_wrist_right.
+    camera_mount_child_frame: hdas/camera_wrist_right_link
     camera_mount_xyz: [0.0, 0.0, 0.0]
     # camera_link +X (and therefore optical +Z) = right_D405_link +Z.
     camera_mount_rpy: [-1.5707963267948966, -1.5707963267948966, 0.0]
@@ -95,6 +107,10 @@ mission_controller:
     camera_mount_correction_rpy: [0.0, 0.0, 3.141592653589793]
     camera_tf_timeout_sec: 2.0
     default_detection_timeout_sec: 20.0
+    # Try the two highest-scoring candidates from one image. If both fail, or
+    # stage 2 fails after stage 1 moved the wrist camera, detect once more.
+    grasp_detection_attempts: 2
+    grasp_candidates_per_detection: 2
     dependency_wait_timeout_sec: 10.0
     arm_joints_result_timeout_sec: 60.0
     arm_pose_result_timeout_sec: 120.0
@@ -115,15 +131,19 @@ mission_controller:
     # the material grasp target remains inside the right-arm reachable space.
     torso_prepare_positions: [0.61, -0.81, -0.60, 0.0]
     torso_reset_positions: [0.0, 0.0, 0.0, 0.0]
-    torso_velocities: [0.2, 0.2, 0.2, 0.2]
+    torso_velocities: [0.1, 0.1, 0.1, 0.1]
 
-    grasp_left_joint_positions: [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
-    grasp_right_joint_positions: [-0.98, -0.84, 1.13, -2.00, -1.25, 0.60, -0.13]
-    place_right_joint_positions: [-0.911, -0.270, 1.095, -1.193, -2.356, 0.801, -1.470]
+    # Shared collision-clearance posture before either observation pose.
+    observation_intermediate_left_joint_positions: [1.30, 0.6, 0.0, -1.5, 0.0, 0.0, 0.0]
+    observation_intermediate_right_joint_positions: [1.30, -0.6, 0.0, -1.5, 0.0, 0.0, 0.0]
+
+    grasp_left_joint_positions: [-0.98, 0.84, -0.83, -2.00, 1.25, 0.29, 0.13]
+    grasp_right_joint_positions: [-0.98, -0.84, 0.93, -2.00, -1.25, 0.60, -0.13]
+    place_right_joint_positions: [-1.011, 0.040, 0.835, -0.9513, -1.956, 0.901, -1.370]
 
     # Initial dual-arm observation posture for execute_box_grasp.
-    box_grasp_left_observation_joint_positions: [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13]
-    box_grasp_right_observation_joint_positions: [0.16, -0.04, 0.20, -2.095894, 0.174647, -0.718606, -0.094098]
+    box_grasp_left_observation_joint_positions: [-0.88, 1.24, -0.70, -2.0, 1.25, 0.1, 0.0]
+    box_grasp_right_observation_joint_positions: [0.86, -0.24, 0.20, -2.0944, 0.174647, -0.618606, 0.104098]
     box_grasp_torso_prepare_positions: [0.61, -0.81, -0.6, 0.0]
     # After both grippers close, lift from the shared deep observation bend to
     # the shallower carry posture. Box placement returns to the deep posture

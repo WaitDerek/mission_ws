@@ -32,7 +32,7 @@ ros2 service call \
       timeout_sec: 30.0}"
 
 ### 到达观测位置
-ros2 action send_goal --feedback  /move_arm_j   task_interfaces/action/MoveArmJoints \ "{left_joints: [-0.88, 0.84, -1.13, -1.80, 1.25, 0.29, 0.13],    right_joints: [-0.98, -0.84, 1.13, -2.00, -1.25, 0.60, -0.13], dry_run: false,  duration: 5.0}"
+ros2 action send_goal --feedback  /move_arm_j   task_interfaces/action/MoveArmJoints \ "{left_joints: [-0.98, 0.84, -0.83, -2.00, 1.25, 0.29, 0.13],    right_joints: [-0.98, -0.84, 0.93, -2.00, -1.25, 0.60, -0.13], dry_run: false,  duration: 5.0}"
 
 ### mission全流程
 ros2 action send_goal --feedback \

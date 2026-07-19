@@ -36,6 +36,17 @@ def _validate_configuration(context):
             f"Unsupported pipeline '{pipeline}'; expected 'grasp' or 'box'"
         )
 
+    grasp_config = LaunchConfiguration("grasp_config_file").perform(context).strip()
+    if (
+        mode == "hardware"
+        and pipeline == "grasp"
+        and grasp_config != "camera_topics_r1pro.yaml"
+    ):
+        raise RuntimeError(
+            "R1 Pro hardware grasp requires "
+            "grasp_config_file:=camera_topics_r1pro.yaml"
+        )
+
     conda_root = LaunchConfiguration("conda_root").perform(context)
     grasp_env = LaunchConfiguration("grasp_conda_env").perform(context)
     vision_env = LaunchConfiguration("vision_conda_env").perform(context)
@@ -294,8 +305,8 @@ def generate_launch_description() -> LaunchDescription:
                 "grasp_config_file",
                 default_value="camera_topics_r1pro.yaml",
                 description=(
-                    "Config filename under grasp_orchestrator/config, for example "
-                    "camera_topics_local_d405.yaml."
+                    "Grasp camera config filename. Hardware mode requires "
+                    "camera_topics_r1pro.yaml."
                 ),
             ),
             DeclareLaunchArgument("grasp_visualize", default_value="false"),

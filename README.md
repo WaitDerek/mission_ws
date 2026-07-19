@@ -19,10 +19,11 @@ enables them with calibrated observation targets and FoundationPose settings.
 They reject goals while `box_mission_enabled` is false and do not publish robot
 commands.
 
-The box grasp sequence initializes the saved dual-arm observation pose, calls
-FoundationPose, transforms the OBB centre from the D405 optical frame into
-`torso_link4`, preserves the F320 model axes and geometric-centre semantics, and
-delegates the two-hand geometry and motion to `/pickup_task`.
+The box grasp sequence moves both arms through the shared collision-clearance
+posture before entering the saved dual-arm observation pose, calls FoundationPose,
+transforms the OBB centre from the D405 optical frame into `torso_link4`, preserves
+the F320 model axes and geometric-centre semantics, and delegates the two-hand
+geometry and motion to `/pickup_task`.
 The configured F320 dimensions are passed explicitly as width and height. Once
 pickup execution succeeds, mission closes both grippers and lifts the torso to
 the shallower box-carry waist posture. A failed `/pickup_task` is
@@ -34,8 +35,9 @@ torso upright.
 
 ### Box grasp sequence
 
-1. Open both grippers and move the torso and both arms to the saved observation
-   posture.
+1. Open both grippers and wait for them to settle, move both arms to the shared
+   intermediate posture, then move the torso and both arms together to the
+   saved box observation posture.
 2. Run FoundationPose, transform the geometric-centre pose into `torso_link4`,
    and call `/pickup_task` with the F320 dimensions. Retry once if it fails.
 3. After `/pickup_task` reports success, close both grippers.
@@ -55,12 +57,12 @@ torso upright.
 
 ### Grasp sequence
 
-1. Start opening both grippers, moving the torso to its preparation target, and
-   calling `/move_arm_j` with the configured dual-arm preparation joints in
-   parallel. Wait for all three preparations to settle before continuing.
+1. Open both grippers and wait for them to settle, call `/move_arm_j` with the
+   shared intermediate dual-arm posture, then move the torso and both arms
+   together to the configured material-observation posture.
 2. Call `/detect_grasp_pose` and receive a grasp-center pose in the D405 color
    optical frame.
-3. Transform the grasp center to `torso_link4`, apply the configured 0.10 m
+3. Transform the grasp center to `torso_link4`, apply the configured 0.03 m
    grasp-center-to-gripper retreat, then use the URDF
    `gripper_link -> arm_link7` transform to generate the `/move_arm_p` target.
    For the parallel-jaw 180-degree symmetry, compare both equivalent branches
@@ -70,8 +72,8 @@ torso upright.
    halfway interpolated pose followed by the final grasp pose. Position uses
    linear interpolation and orientation uses shortest-path quaternion SLERP.
 5. Close the selected gripper.
-6. Publish the torso reset target. The arms remain in the grasp pose so the
-   object can be carried.
+6. Keep the selected gripper closed and return both arms and the torso directly
+   to the configured material-observation posture used before detection.
 
 ### Place sequence
 
@@ -81,7 +83,8 @@ torso upright.
    configured right-arm place joint target. The left arm target is empty and
    remains at its current position.
 3. Open the selected gripper.
-4. Publish the torso reset target, then call `/home` to reset both arms.
+4. Return both arms and the torso directly to the configured material-observation
+   posture; do not reset the torso upright or call `/home`.
 
 The chassis move is open-loop. Calibrate the distance, duration, direction, and
 joint targets in `mission_controller/config/mission.yaml` before hardware use.

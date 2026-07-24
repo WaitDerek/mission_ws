@@ -1,0 +1,16 @@
+# Move the chassis in one direction using the configured speed and duration.
+string direction
+
+---
+
+bool success
+string message
+string direction
+float64 speed
+float64 duration_sec
+
+---
+
+string stage
+string detail
+float64 progress

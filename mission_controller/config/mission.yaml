@@ -4,6 +4,8 @@ mission_controller:
     execute_place_action_name: /execute_place
     execute_box_grasp_action_name: /execute_box_grasp
     execute_box_place_action_name: /execute_box_place
+    execute_box_stack_action_name: /execute_box_stack
+    move_chassis_action_name: /move_chassis
     detect_service_name: /detect_grasp_pose
     box_detect_service_name: /detect_box_grasp_pose
     box_mission_enabled: true
@@ -15,22 +17,38 @@ mission_controller:
     # camera->torso TF only. No object-axis remapping or geometric-centre shift.
     box_object_pose_camera_topic: /object_pose/pose
     box_object_pose_raw_topic: /mission/box_object_pose_raw
-    box_object_pose_model_label: f320
+    box_object_pose_model_label: f455
     box_object_pose_instance_index: 0
     box_object_pose_confidence_threshold: 0.0
+    # ExecuteBoxGrasp.detection_timeout_sec is intentionally ignored. Mission
+    # always uses this fixed FoundationPose result deadline.
     box_object_pose_result_timeout_sec: 60.0
+    # Normalize FoundationPose immediately after Vision returns its
+    # camera-optical-frame pose and before camera->torso TF. F320 resolves its
+    # 180-degree symmetry to X=down/Y=forward/Z=right. F455 is physically
+    # rotated by 90 degrees: X=down, Z=forward/backward and Y=left/right, so
+    # Mission applies local Rx(+/-pi/2) to produce the same canonical axes.
+    # A grossly inverted result whose object X points up is rejected here and
+    # consumes one detection attempt instead of being sent to pickup planning.
+    box_camera_pose_constraint_enabled: true
+    box_camera_pose_axis_min_dot: 0.5
     # Mission transforms the FoundationPose result into torso_link4, then the
     # existing dual-arm pickup task computes the two hand targets from the box
-    # dimensions. These are the validated F320 mesh extents for width/height.
+    # dimensions. F455 presents its long side to the robot, but the two grippers
+    # contact the long side walls and therefore span the 0.350 m box width.
+    # Its canonical gripper orientation remains the same as F320.
     pickup_task_action_name: /pickup_task
     pickup_task_result_timeout_sec: 120.0
-    box_width: 0.357
-    box_height: 0.127
-    box_type: f320
-    # Preserve the FoundationPose F320 model axes (X=down, Y=depth, Z=width)
-    # after camera->torso TF. The r1_pro pickup profile owns the single fixed
-    # box-frame->operation-frame correction, so applying another remap here
-    # would rotate the target twice. Position remains the geometric centre.
+    # A failed pickup plan/IK result triggers a fresh FoundationPose estimate.
+    # If Cartesian execution had already started, Mission first returns both
+    # arms directly to the validated box observation posture.
+    box_detection_attempts: 2
+    box_width: 0.350
+    box_height: 0.1703
+    box_type: f455
+    # The camera-frame constraint above has already normalized either model to
+    # X=down/Y=forward/Z=right. The r1_pro pickup profile owns the single fixed
+    # box-frame->operation-frame correction, so do not rotate a second time.
     box_foundation_to_pickup_rpy: [0.0, 0.0, 0.0]
     arm_pose_action_name: /move_arm_p
     arm_joints_service_name: /move_arm_j
@@ -54,7 +72,14 @@ mission_controller:
     left_gripper_topic: /motion_target/target_position_gripper_left
     right_gripper_topic: /motion_target/target_position_gripper_right
     chassis_topic: /motion_target/target_speed_chassis
-    joint_state_topic: /joint_states
+    # Use the Dual Arm driver's measured 50 Hz arm-only feedback instead of
+    # processing the vendor full-body and gripper streams on /joint_states.
+    joint_state_topic: /dual_arm/joint_states
+    torso_feedback_topic: /hdas/feedback_torso
+    # Raw HDAS gripper feedback uses the same 0..100 opening scale as the
+    # command topics (0=fully closed, 100=fully open).
+    left_gripper_feedback_topic: /hdas/feedback_gripper_left
+    right_gripper_feedback_topic: /hdas/feedback_gripper_right
     left_arm_joint_names: [left_arm_joint1, left_arm_joint2, left_arm_joint3, left_arm_joint4, left_arm_joint5, left_arm_joint6, left_arm_joint7]
     right_arm_joint_names: [right_arm_joint1, right_arm_joint2, right_arm_joint3, right_arm_joint4, right_arm_joint5, right_arm_joint6, right_arm_joint7]
 
@@ -64,6 +89,19 @@ mission_controller:
     arm_joint_target_tolerance: 0.10
     arm_joint_target_wait_timeout_sec: 20.0
     arm_joint_target_stable_samples: 3
+    # Repeated box-grasp calls can reuse the current observation posture when
+    # fresh hardware feedback confirms both arms and the torso are still there.
+    box_observation_ready_check_enabled: true
+    box_observation_feedback_max_age_sec: 2.0
+    box_observation_torso_tolerance: 0.10
+    grasp_observation_ready_check_enabled: true
+    grasp_observation_feedback_max_age_sec: 2.0
+    grasp_observation_torso_tolerance: 0.10
+    # Box release and final straightening use measured HDAS torso feedback,
+    # rather than a fixed delay, before advancing to the next motion.
+    torso_target_tolerance: 0.03
+    torso_target_wait_timeout_sec: 40.0
+    torso_target_stable_samples: 3
 
     default_arm: right
     default_target_frame: torso_link4
@@ -86,11 +124,11 @@ mission_controller:
     # GraspNet +X aligns with gripper -Z; both +Y axes are the finger
     # opening/closing direction.
     grasp_to_gripper_rpy: [0.0, -1.5707963267948966, 0.0]
-    # After the axis mapping, tilt the target gripper 25 degrees backward about
+    # After the axis mapping, tilt the target gripper 20 degrees backward about
     # its local Y axis, then retain the 180-degree local-Z palm flip. This only
     # changes the gripper orientation; the perceived grasp pose and grasp-center
     # position remain unchanged.
-    gripper_target_post_rpy: [0.0, -0.4363323129985824, 3.141592653589793]
+    gripper_target_post_rpy: [0.0, -0.3490658503988659, 3.141592653589793]
     camera_mount_tf_enabled: true
     # flange -> gripper -> D405 is provided by robot_state_publisher from URDF.
     # Mission only connects the CAD D405 axes to the RealSense ROS camera axes.
@@ -107,10 +145,15 @@ mission_controller:
     camera_mount_correction_rpy: [0.0, 0.0, 3.141592653589793]
     camera_tf_timeout_sec: 2.0
     default_detection_timeout_sec: 20.0
-    # Try the two highest-scoring candidates from one image. If both fail, or
-    # stage 2 fails after stage 1 moved the wrist camera, detect once more.
-    grasp_detection_attempts: 2
-    grasp_candidates_per_detection: 2
+    # The detector recently needed slightly more than 30 seconds on hardware.
+    # Enforce a 60-second minimum even when an action goal requests 30 seconds.
+    # Zero attempts means detection/candidate exhaustion retries indefinitely;
+    # cancellation and dependency/runtime errors outside detection still stop.
+    grasp_detection_min_timeout_sec: 60.0
+    grasp_detection_attempts: 0
+    # Execute only the highest-score candidate from each detection. If it
+    # fails, restore observation and capture a new RGB-D frame immediately.
+    grasp_candidates_per_detection: 1
     dependency_wait_timeout_sec: 10.0
     arm_joints_result_timeout_sec: 60.0
     arm_pose_result_timeout_sec: 120.0
@@ -126,6 +169,15 @@ mission_controller:
     torso_settle_sec: 1.0
     arm_settle_sec: 1.0
     gripper_settle_sec: 1.0
+    # Before every FoundationPose request, closed-loop confirm both observation
+    # arms and the waist, then keep the robot motionless for this duration.
+    box_detection_posture_settle_sec: 2.0
+    # After closed-loop confirmation of the box-place torso target, keep holding
+    # the box at that height before opening both grippers.
+    box_place_release_delay_sec: 2.0
+    # /execute_place straightens Torso3, then Torso2, then Torso1. Each stage
+    # is feedback-verified before this extra hold between stages.
+    place_torso_straighten_step_delay_sec: 2.0
 
     # Use the same deeper waist observation posture as execute_box_grasp so
     # the material grasp target remains inside the right-arm reachable space.
@@ -144,30 +196,81 @@ mission_controller:
     # Initial dual-arm observation posture for execute_box_grasp.
     box_grasp_left_observation_joint_positions: [-0.88, 1.24, -0.70, -2.0, 1.25, 0.1, 0.0]
     box_grasp_right_observation_joint_positions: [0.86, -0.24, 0.20, -2.0944, 0.174647, -0.618606, 0.104098]
+    # Recorded from /hdas/feedback_arm_{left,right} on R1 Pro. After each
+    # FoundationPose estimate, move here before starting pickup IK/planning so
+    # the arms leave the collision-prone observation geometry first.
+    box_pickup_clearance_left_joint_positions: [-1.413830, 0.687872, -1.236596, -1.839149, 1.905532, 0.525745, 1.146383]
+    box_pickup_clearance_right_joint_positions: [-1.403617, -0.668723, 1.238298, -1.802128, -1.944043, 0.435319, -1.307021]
     box_grasp_torso_prepare_positions: [0.61, -0.81, -0.6, 0.0]
-    # After both grippers close, lift from the shared deep observation bend to
-    # the shallower carry posture. Box placement returns to the deep posture
-    # before opening both grippers.
-    box_grasp_torso_lift_positions: [0.61, -0.81, -0.21, 0.0]
+    # After both grippers close, move only Torso1 0.20 rad toward zero to lift
+    # the box clear of the table. Keep Torso2/3/4 at the pickup posture, verify
+    # this target from feedback, and only then evaluate gripper retention.
+    box_grasp_torso_lift_positions: [0.41, -0.81, -0.6, 0.0]
     box_place_torso_positions: [0.61, -0.81, -0.6, 0.0]
-    # R1 Pro base convention: -Y is robot-right. Move 0.5 m over 5 seconds.
-    box_place_chassis_distance_x: 0.0
-    box_place_chassis_distance_y: -0.5
-    box_place_chassis_yaw: 0.0
-    box_place_chassis_duration_sec: 5.0
+    # After releasing the box, move only Torso2 farther back before commanding
+    # the fully upright pose. Both stages require closed-loop confirmation.
+    box_place_torso_straighten_intermediate_positions: [0.61, -1.2, -0.6, 0.0]
+
+    # /execute_box_stack begins and ends at the fixed arm posture below with
+    # a fully upright [0, 0, 0, 0] torso. At that highest pose, the operator
+    # manually inserts the F320 box between the open
+    # grippers. Both arms then stay fixed; only the torso changes stacking
+    # height. These four torso rows are deliberately kept in one place for
+    # progressive hardware calibration from level 4 down to level 1.
+    stack_default_left_joint_positions: [-1.133818, 0.120475, -1.197170, -0.672971, 2.354960, 1.046860, 1.240171]
+    stack_default_right_joint_positions: [-1.129491, -0.125152, 1.203598, -0.676157, -2.343158, 1.040511, -1.249240]
+    # Highest loading/retreat waist posture.
+    stack_pickup_torso_positions: [0.0, 0.0, 0.0, 0.0]
+    # Flattened 4x4 rows for the four stack levels. Level 1 is moved inward
+    # from the hardware safety-boundary freeze observed during commissioning;
+    # level 2 is raised from 15 cm to 18 cm, while levels 3/4 remain at
+    # 30/45 cm.
+    stack_level_torso_positions: [
+      1.630000, -2.500000, -0.920000, 0.0,
+      1.356518, -2.506617, -1.049991, 0.0,
+      1.154311, -2.139907, -0.885489, 0.0,
+      0.906723, -1.646855, -0.640023, 0.0
+    ]
+    stack_start_arm_duration_sec: 8.0
+    # Stack-only synchronized torso profile. Torso1 always uses this speed;
+    # torso2/3 speeds are derived from their remaining angle so all moving
+    # torso joints share Torso1's estimated completion time.
+    stack_torso1_speed: 0.1
+    # Fixed Torso3 velocity for every stack level, lowering, and return motion.
+    stack_torso3_speed: 0.13
+    # Hold the confirmed stack waist posture before releasing the box.
+    stack_release_delay_sec: 2.0
+    stack_start_ready_check_enabled: true
+    stack_start_feedback_max_age_sec: 2.0
 
     gripper_open_position: 100.0
     gripper_closed_position: 0.0
     open_gripper_before_grasp: true
+    # 100.0 is open and 0.0 is closed on the current R1 Pro gripper scale.
+    # A close ratio above 95% means the fingers almost met and no material was
+    # retained, so the grasp fails. A ratio at or below 95% means material is
+    # holding the fingers apart and the grasp passes. ExecuteBoxGrasp applies
+    # this threshold to both grippers after the torso lift and fails when either
+    # side exceeds it. Normal ExecuteGrasp restores observation and detects again
+    # after an empty grasp. A retry count of zero means unlimited retries there.
+    # Missing/stale feedback always aborts instead of guessing.
+    grasp_close_check_enabled: true
+    grasp_empty_close_ratio_threshold: 0.95
+    grasp_gripper_feedback_timeout_sec: 2.0
+    grasp_gripper_feedback_max_age_sec: 0.5
+    grasp_max_empty_close_attempts: 0
+    # A direct /move_arm_j observation recovery can occasionally be canceled
+    # just after MoveIt releases the controller. Retry that transient error.
+    grasp_recovery_retry_delay_sec: 1.0
 
-    # Calibrate these fixed-location values before running on hardware.
-    place_chassis_distance_x: -0.5
-    place_chassis_distance_y: 0.0
-    place_chassis_yaw: 0.0
-    place_chassis_duration_sec: 5.0
+    # /move_chassis goals contain only direction. Adjust speed and duration here.
+    # R1 Pro convention: forward/backward use +/-X, left/right use +/-Y.
+    chassis_linear_speed: 0.3
+    chassis_angular_speed: 0.2
+    chassis_move_duration_sec: 3.0
     chassis_publish_hz: 10.0
     chassis_stop_repeat_count: 1
-    max_chassis_linear_speed: 0.2
+    max_chassis_linear_speed: 0.3
     max_chassis_angular_speed: 0.4
 
     home_velocity: 0.05

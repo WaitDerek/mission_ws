@@ -36,6 +36,14 @@ ros2 action send_goal --feedback \
     object_pose_interfaces/action/EstimateObjectPose \
     "{model_label: 'f320', instance_index: 0, confidence_threshold: 0.0}"
 
+ros2 action send_goal \
+  /object_pose/estimate \
+  object_pose_interfaces/action/EstimateObjectPose \
+  "{model_label: 'f455',
+    instance_index: 0,
+    confidence_threshold: 0.0}" \
+  --feedback
+
 ### mission全流程
 ros2 action send_goal --feedback \
   /execute_box_grasp \
@@ -46,22 +54,63 @@ ros2 action send_goal --feedback \
     arm: 'right',
     publish_pose: true,
     detection_timeout_sec: 120.0,
-    dry_run: true}"
+    dry_run: false}"
 
+ros2 action send_goal /execute_box_place \
+  mission_interfaces/action/ExecuteBoxPlace \
+  "{request_id: box_place_test, arm: right, dry_run: false}" \
+  --feedback
 
 ### 实物流程
 ros2 launch mission_controller mission_system.launch.py \
-    mode:=hardware \
-    pipeline:=box \
-    hardware_armed:=false \
-    dry_run:=true
+  mode:=hardware \
+  pipeline:=box \
+  hardware_armed:=false \
+  dry_run:=true \
+  enable_rviz:=false \
+  enable_robot_state_publisher:=false
 
 正式执行：
-
 ros2 launch mission_controller mission_system.launch.py \
-    mode:=hardware \
-    pipeline:=box \
-    hardware_armed:=true \
+  mode:=hardware \
+  pipeline:=box \
+  hardware_armed:=true \
+  dry_run:=false \
+  enable_rviz:=false \
+  enable_robot_state_publisher:=false
 
 dry_run默认false
 hardware_armed默认false
+
+ros2 action send_goal /move_chassis \
+  mission_interfaces/action/MoveChassis \
+  "{direction: left}" \
+  --feedback
+
+ros2 param set /mission_controller chassis_linear_speed 0.5
+ros2 param set /mission_controller chassis_move_duration_sec 3.0
+
+ros2 param get /mission_controller chassis_linear_speed
+ros2 param get /mission_controller chassis_move_duration_sec
+
+更改对象
+ros2 param set /mission_controller box_object_pose_model_label f455
+ros2 param set /mission_controller box_width 0.35
+ros2 param set /mission_controller box_height 0.1703
+ros2 param set /mission_controller box_type f455
+
+ros2 param set /mission_controller box_object_pose_model_label f320
+ros2 param set /mission_controller box_width 0.357
+ros2 param set /mission_controller box_height 0.127
+ros2 param set /mission_controller box_type f320
+
+ros2 param get /mission_controller box_object_pose_model_label
+ros2 param get /mission_controller box_width
+ros2 param get /mission_controller box_height
+ros2 param get /mission_controller box_type
+
+
+ros2 action send_goal /execute_box_stack \
+  mission_interfaces/action/ExecuteBoxStack \
+  "{level: 1}" \
+  --feedback

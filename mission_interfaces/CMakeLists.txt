@@ -14,6 +14,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ExecutePlace.action"
   "action/ExecuteBoxGrasp.action"
   "action/ExecuteBoxPlace.action"
+  "action/ExecuteBoxStack.action"
+  "action/MoveChassis.action"
   DEPENDENCIES geometry_msgs
 )
 

@@ -10,6 +10,8 @@ dual-arm workspace.
 - `/execute_place` (`mission_interfaces/action/ExecutePlace`)
 - `/execute_box_grasp` (`mission_interfaces/action/ExecuteBoxGrasp`)
 - `/execute_box_place` (`mission_interfaces/action/ExecuteBoxPlace`)
+- `/execute_box_stack` (`mission_interfaces/action/ExecuteBoxStack`)
+- `/move_chassis` (`mission_interfaces/action/MoveChassis`)
 
 Only one mission is accepted at a time.
 
@@ -29,9 +31,10 @@ pickup execution succeeds, mission closes both grippers and lifts the torso to
 the shallower box-carry waist posture. A failed `/pickup_task` is
 retried once with the same transformed box pose; two failures abort the box
 grasp before any close or lift command.
-The box place sequence remains separate: move the chassis in robot-right
-(`-Y`), bend the torso, open both grippers, call `/go_ready`, then reset the
-torso upright.
+The box place sequence remains separate: bend the torso, open both grippers,
+call `/go_ready`, then reset the torso upright. Chassis movement is deliberately
+not embedded in either place sequence; call `/move_chassis` explicitly before
+or after a place action as required by the task.
 
 ### Box grasp sequence
 
@@ -42,18 +45,17 @@ torso upright.
    and call `/pickup_task` with the F320 dimensions. Retry once if it fails.
 3. After `/pickup_task` reports success, close both grippers.
 4. Publish `box_grasp_torso_lift_positions` while preserving the final arm
-   targets. This target is the shallower box-carry posture, not the shared
-   deep material/box observation posture.
+   targets. This target is the fully upright `[0, 0, 0, 0]` torso posture.
 
 ### Box place sequence
 
-1. Move the chassis by the configured fixed displacement. R1 Pro robot-right
-   is negative chassis Y.
-2. Publish `box_place_torso_positions` to return to the same waist posture used
+1. Publish `box_place_torso_positions` to return to the same waist posture used
    for box detection.
-3. Open both grippers and wait for them to settle.
-4. Call `/go_ready` for the dual-arm work posture, then publish the upright
-   torso reset target.
+2. Open both grippers and wait for them to settle.
+3. Move only Torso2 from `-0.81` to `-1.20` and verify the configured
+   intermediate waist posture.
+4. Straighten and verify all torso joints at `[0, 0, 0, 0]`, then call
+   `/go_ready` for the dual-arm work posture.
 
 ### Grasp sequence
 
@@ -61,7 +63,12 @@ torso upright.
    shared intermediate dual-arm posture, then move the torso and both arms
    together to the configured material-observation posture.
 2. Call `/detect_grasp_pose` and receive a grasp-center pose in the D405 color
-   optical frame.
+   optical frame. Mission enforces `grasp_detection_min_timeout_sec` (currently
+   60 seconds), even if the action requests a shorter timeout. Detection
+   timeout/failure or failure of the highest-score candidate starts a fresh detection;
+   `grasp_detection_attempts: 0` means this repeats until a candidate executes
+   successfully or the action is canceled. Only one candidate is executed from
+   each RGB-D result (`grasp_candidates_per_detection: 1`).
 3. Transform the grasp center to `torso_link4`, apply the configured 0.03 m
    grasp-center-to-gripper retreat, then use the URDF
    `gripper_link -> arm_link7` transform to generate the `/move_arm_p` target.
@@ -71,23 +78,92 @@ torso upright.
 4. Read the current `arm_link7` TF and execute two `/move_arm_p` stages: the
    halfway interpolated pose followed by the final grasp pose. Position uses
    linear interpolation and orientation uses shortest-path quaternion SLERP.
-5. Close the selected gripper.
-6. Keep the selected gripper closed and return both arms and the torso directly
-   to the configured material-observation posture used before detection.
+5. Close the selected gripper and read a fresh raw HDAS position measurement.
+   Convert it between the configured open and closed positions. A close ratio
+   above `grasp_empty_close_ratio_threshold` (currently 95%) means the fingers
+   nearly met without retaining material, so the grasp failed. A ratio at or
+   below 95% means material is holding the fingers apart.
+6. After an empty close, reopen the selected gripper, return directly
+   to the configured material-observation posture, request a fresh detection,
+   and retry. `grasp_max_empty_close_attempts` is currently `0`, which means
+   unlimited empty-grasp retries: closure feedback alone never aborts the
+   action. If the observation-return `/move_arm_j` is transiently canceled
+   (`error_code=17`), resend the same observation target after
+   `grasp_recovery_retry_delay_sec` instead of aborting. Otherwise, keep the
+   selected gripper closed and return to the observation posture normally.
+7. At the final observation posture, reassert the closed-gripper command and
+   read fresh HDAS feedback. A measured closure above 95% reopens the gripper
+   and starts a fresh detection/grasp attempt; a closure at or below 95%
+   confirms that material remains held and completes the action.
 
 ### Place sequence
 
-1. Publish a constant chassis velocity for the configured distance and duration,
-   then always publish zero velocity.
-2. Publish the configured torso target and call `/move_arm_j` with only the
+1. Publish the configured torso target and call `/move_arm_j` with only the
    configured right-arm place joint target. The left arm target is empty and
    remains at its current position.
-3. Open the selected gripper.
-4. Return both arms and the torso directly to the configured material-observation
-   posture; do not reset the torso upright or call `/home`.
+2. Open the selected gripper.
+3. Return both arms and the torso to the configured material-observation
+   posture.
+4. Straighten and verify Torso3, wait two seconds, then straighten Torso1 and
+   Torso2 together and verify the complete `[0, 0, 0, 0]` posture. The action
+   does not call `/home`.
 
-The chassis move is open-loop. Calibrate the distance, duration, direction, and
-joint targets in `mission_controller/config/mission.yaml` before hardware use.
+### Chassis sequence
+
+`/move_chassis` accepts only one of six directions: `forward`, `backward`,
+`left`, `right`, `clockwise`, or `counterclockwise`. Configure
+`chassis_linear_speed`, `chassis_angular_speed`, and
+`chassis_move_duration_sec` in `mission_controller/config/mission.yaml`.
+The action continuously publishes the configured velocity for the configured
+duration, then always publishes zero velocity on success, failure, or
+cancellation. This is open-loop movement; the nominal displacement is
+`speed * duration`.
+
+### Fixed-level box stack sequence
+
+`/execute_box_stack` accepts only `level` in `[1, 4]`. At goal start, Mission
+checks the fixed arm posture and upright torso. If either is not ready, it moves
+both arms to the configured loading posture over eight seconds while returning
+the torso to zero, then verifies measured feedback. Mission closes both
+grippers, keeps both arms fixed, moves the torso to the waist state for the
+selected level, verifies the measured torso feedback, opens both grippers, and
+raises the torso back to the same highest posture. The four level targets are
+the four rows in `stack_level_torso_positions`. This action does not call
+`/place_task` and does not solve a new arm IK for each level.
+
+After measured torso feedback confirms the selected stack level, Mission holds
+the pose for `stack_release_delay_sec` (currently `2.0 s`) before opening both
+grippers.
+
+Every stack torso move uses Torso1 as the timing reference. Torso1 runs at
+`stack_torso1_speed` (currently `0.1 rad/s`); Mission calculates the remaining
+Torso1 time from measured feedback, then assigns Torso2, Torso3, and Torso4
+their own `remaining_angle / Torso1_time` velocity so all moving waist joints
+are expected to finish together, except Torso3 uses the fixed
+`stack_torso3_speed` setting (currently `0.13 rad/s`) for every stack level,
+including lowering and returning upright.
+
+The current hardware-validated fixed arm posture is:
+
+```text
+left  = [-1.133818,  0.120475, -1.197170, -0.672971,  2.354960, 1.046860,  1.240171]
+right = [-1.129491, -0.125152,  1.203598, -0.676157, -2.343158, 1.040511, -1.249240]
+```
+
+The waist targets are:
+
+```text
+highest manual-load/retreat posture = [0.0, 0.0, 0.0, 0.0]
+level 1 / lowest = [1.630000, -2.500000, -0.920000, 0.0]
+level 2 (18.0 cm) = [1.356518, -2.506617, -1.049991, 0.0]
+level 3 (30.0 cm) = [1.154311, -2.139907, -0.885489, 0.0]
+level 4 (45.0 cm) = [0.906723, -1.646855, -0.640023, 0.0]
+```
+
+Level 1 is moved inward from the hardware safety-boundary freeze observed
+during commissioning. Levels 2 and 3 are linearly
+interpolated from the tested 12.5 cm calibration points; Level 4 is a linear
+extrapolation to 45 cm and must be verified cautiously on hardware.
 
 ## R1PRO command transport
 
@@ -107,31 +183,25 @@ The chassis and gripper publishers follow the examples under
 
 ## Build
 
-Activate `changan`, then source the installed dual-arm and perception
-workspaces before building:
+Source the installed dual-arm and perception workspaces before building:
 
 ```bash
 export DUAL_ARM_WS="<dual-arm-workspace>"
 export GRASP_WS="<grasp-workspace>"
 export MISSION_WS="<mission-workspace>"
 
-conda activate changan
 source "$DUAL_ARM_WS/install/setup.zsh"
 source "$GRASP_WS/install/setup.zsh"
 cd "$MISSION_WS"
-export PYTHONNOUSERSITE=1
 colcon build --merge-install --symlink-install \
   --cmake-args "-DCMAKE_BUILD_TYPE=Release" -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 ```
 
 ## Launch
 
-Start the dual-arm implementation separately. Activate `changan` so the included
-grasp detector and mission controller use that Conda environment, then overlay
-all workspaces:
+Start the dual-arm implementation separately, then overlay all workspaces:
 
 ```bash
-conda activate changan
 source "$DUAL_ARM_WS/install/setup.zsh"
 source "$GRASP_WS/install/setup.zsh"
 source "$MISSION_WS/install/setup.zsh"
@@ -161,7 +231,7 @@ same mission transform functions without sending any robot command:
 
 ```bash
 source /opt/ros/humble/setup.zsh
-source /home/dekc/libraries/ws_moveit2/install/setup.zsh
+source "$MOVEIT2_WS/install/setup.zsh"
 source "$DUAL_ARM_WS/install/setup.zsh"
 source "$GRASP_WS/install/setup.zsh"
 source "$MISSION_WS/install/setup.zsh"
@@ -197,7 +267,7 @@ Use three terminals. First start the R1 Pro planning stack. Keeping its global
 
 ```bash
 source /opt/ros/humble/setup.zsh
-source /home/dekc/libraries/ws_moveit2/install/setup.zsh
+source "$MOVEIT2_WS/install/setup.zsh"
 source "$DUAL_ARM_WS/install/setup.zsh"
 ros2 launch robot_bringup planning_only.launch.py \
   robot_profile:=r1_pro dry_run:=false enable_rviz:=true \
@@ -215,7 +285,7 @@ stack and generate the fixed Graspness target. The planning stack already owns
 
 ```bash
 source /opt/ros/humble/setup.zsh
-source /home/dekc/libraries/ws_moveit2/install/setup.zsh
+source "$MOVEIT2_WS/install/setup.zsh"
 source "$DUAL_ARM_WS/install/setup.zsh"
 source "$GRASP_WS/install/setup.zsh"
 source "$MISSION_WS/install/setup.zsh"
@@ -230,7 +300,7 @@ segments in sequence. The default remains plan-only:
 
 ```bash
 source /opt/ros/humble/setup.zsh
-source /home/dekc/libraries/ws_moveit2/install/setup.zsh
+source "$MOVEIT2_WS/install/setup.zsh"
 source "$DUAL_ARM_WS/install/setup.zsh"
 source "$MISSION_WS/install/setup.zsh"
 ros2 run mission_controller grasp_target_executor
@@ -288,12 +358,28 @@ ros2 action send_goal --feedback \
   "{request_id: place_1, arm: right, dry_run: false}"
 ```
 
+Move the chassis right at 0.3 m/s for 3 seconds:
+
+```bash
+ros2 action send_goal --feedback \
+  /move_chassis mission_interfaces/action/MoveChassis \
+  "{direction: right}"
+```
+
 Execute the complete box place flow after a successful real box grasp:
 
 ```bash
 ros2 action send_goal --feedback \
   /execute_box_place mission_interfaces/action/ExecuteBoxPlace \
   "{request_id: box_place_1, arm: right, dry_run: false}"
+```
+
+Execute the fixed level-4 box stack cycle:
+
+```bash
+ros2 action send_goal --feedback \
+  /execute_box_stack mission_interfaces/action/ExecuteBoxStack \
+  "{level: 4}"
 ```
 
 For a safe integration check, use `dry_run: true`. Direct chassis, torso,

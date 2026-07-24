@@ -12,8 +12,10 @@ from grasp_orchestrator_interfaces.srv import DetectGraspPose
 from mission_interfaces.action import (
     ExecuteBoxGrasp,
     ExecuteBoxPlace,
+    ExecuteBoxStack,
     ExecuteGrasp,
     ExecutePlace,
+    MoveChassis,
 )
 try:
     from object_pose_interfaces.action import EstimateObjectPose
@@ -53,6 +55,15 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 
 VALID_ARMS = {"left", "right"}
+CHASSIS_DIRECTIONS = {
+    "forward": (1.0, 0.0, 0.0),
+    "backward": (-1.0, 0.0, 0.0),
+    "left": (0.0, 1.0, 0.0),
+    "right": (0.0, -1.0, 0.0),
+    "clockwise": (0.0, 0.0, -1.0),
+    "counterclockwise": (0.0, 0.0, 1.0),
+}
+ANGULAR_CHASSIS_DIRECTIONS = {"clockwise", "counterclockwise"}
 
 
 class MissionError(RuntimeError):
@@ -61,6 +72,27 @@ class MissionError(RuntimeError):
 
 class MissionCanceled(MissionError):
     pass
+
+
+class TaskActionError(MissionError):
+    def __init__(self, message: str, error_code: int) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+
+
+class PickupAttemptError(MissionError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: Optional[int],
+        motion_started: bool,
+        first_segment_completed: bool,
+    ) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+        self.motion_started = motion_started
+        self.first_segment_completed = first_segment_completed
 
 
 class TwoStageMotionError(MissionError):
@@ -220,6 +252,12 @@ class MissionController(Node):
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
+        feedback_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+            durability=DurabilityPolicy.VOLATILE,
+        )
         self.torso_publisher = self.create_publisher(
             JointState, self._string("torso_topic"), command_qos
         )
@@ -233,11 +271,35 @@ class MissionController(Node):
         self.latest_joint_positions: dict[str, float] = {}
         self.latest_joint_state_time = 0.0
         self.latest_joint_state_sequence = 0
+        self.latest_torso_positions: list[float] = []
+        self.latest_torso_state_time = 0.0
+        self.latest_torso_state_sequence = 0
+        self.latest_gripper_positions: dict[str, float] = {}
+        self.latest_gripper_state_times = {"left": 0.0, "right": 0.0}
+        self.latest_gripper_state_sequences = {"left": 0, "right": 0}
         self.joint_state_subscription = self.create_subscription(
             JointState,
             self._string("joint_state_topic"),
             self._joint_state_callback,
             20,
+        )
+        self.torso_feedback_subscription = self.create_subscription(
+            JointState,
+            self._string("torso_feedback_topic"),
+            self._torso_feedback_callback,
+            20,
+        )
+        self.left_gripper_feedback_subscription = self.create_subscription(
+            JointState,
+            self._string("left_gripper_feedback_topic"),
+            lambda message: self._gripper_feedback_callback("left", message),
+            feedback_qos,
+        )
+        self.right_gripper_feedback_subscription = self.create_subscription(
+            JointState,
+            self._string("right_gripper_feedback_topic"),
+            lambda message: self._gripper_feedback_callback("right", message),
+            feedback_qos,
         )
         self.chassis_publisher = self.create_publisher(
             TwistStamped, self._string("chassis_topic"), command_qos
@@ -360,7 +422,6 @@ class MissionController(Node):
             self._string("pickup_task_action_name"),
             callback_group=self.client_group,
         )
-
         self.state_lock = threading.Lock()
         self.mission_reserved = False
         self.active_mission = ""
@@ -407,12 +468,32 @@ class MissionController(Node):
             cancel_callback=self._cancel_callback,
             callback_group=self.server_group,
         )
+        self.box_stack_action_server = ActionServer(
+            self,
+            ExecuteBoxStack,
+            self._string("execute_box_stack_action_name"),
+            execute_callback=self._execute_box_stack,
+            goal_callback=self._box_stack_goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=self.server_group,
+        )
+        self.move_chassis_action_server = ActionServer(
+            self,
+            MoveChassis,
+            self._string("move_chassis_action_name"),
+            execute_callback=self._execute_move_chassis,
+            goal_callback=self._move_chassis_goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=self.server_group,
+        )
         self.get_logger().info(
             "mission controller ready: "
             f"grasp={self._string('execute_grasp_action_name')} "
             f"place={self._string('execute_place_action_name')} "
             f"box_grasp={self._string('execute_box_grasp_action_name')} "
-            f"box_place={self._string('execute_box_place_action_name')}"
+            f"box_place={self._string('execute_box_place_action_name')} "
+            f"box_stack={self._string('execute_box_stack_action_name')} "
+            f"chassis={self._string('move_chassis_action_name')}"
         )
 
     def _declare_parameters(self) -> None:
@@ -423,6 +504,8 @@ class MissionController(Node):
                 ("execute_place_action_name", "/execute_place"),
                 ("execute_box_grasp_action_name", "/execute_box_grasp"),
                 ("execute_box_place_action_name", "/execute_box_place"),
+                ("execute_box_stack_action_name", "/execute_box_stack"),
+                ("move_chassis_action_name", "/move_chassis"),
                 ("detect_service_name", "/detect_grasp_pose"),
                 ("box_detect_service_name", "/detect_box_grasp_pose"),
                 ("box_mission_enabled", False),
@@ -434,8 +517,11 @@ class MissionController(Node):
                 ("box_object_pose_instance_index", 0),
                 ("box_object_pose_confidence_threshold", 0.0),
                 ("box_object_pose_result_timeout_sec", 60.0),
+                ("box_camera_pose_constraint_enabled", True),
+                ("box_camera_pose_axis_min_dot", 0.5),
                 ("pickup_task_action_name", "/pickup_task"),
                 ("pickup_task_result_timeout_sec", 120.0),
+                ("box_detection_attempts", 2),
                 ("box_width", 0.357),
                 ("box_height", 0.127),
                 ("box_type", "f320"),
@@ -483,6 +569,15 @@ class MissionController(Node):
                 ),
                 ("chassis_topic", "/motion_target/target_speed_chassis"),
                 ("joint_state_topic", "/joint_states"),
+                ("torso_feedback_topic", "/hdas/feedback_torso"),
+                (
+                    "left_gripper_feedback_topic",
+                    "/hdas/feedback_gripper_left",
+                ),
+                (
+                    "right_gripper_feedback_topic",
+                    "/hdas/feedback_gripper_right",
+                ),
                 (
                     "left_arm_joint_names",
                     [f"left_arm_joint{index}" for index in range(1, 8)],
@@ -495,6 +590,15 @@ class MissionController(Node):
                 ("arm_joint_target_tolerance", 0.10),
                 ("arm_joint_target_wait_timeout_sec", 20.0),
                 ("arm_joint_target_stable_samples", 3),
+                ("box_observation_ready_check_enabled", True),
+                ("box_observation_feedback_max_age_sec", 2.0),
+                ("box_observation_torso_tolerance", 0.10),
+                ("grasp_observation_ready_check_enabled", True),
+                ("grasp_observation_feedback_max_age_sec", 2.0),
+                ("grasp_observation_torso_tolerance", 0.10),
+                ("torso_target_tolerance", 0.03),
+                ("torso_target_wait_timeout_sec", 40.0),
+                ("torso_target_stable_samples", 3),
                 ("default_arm", "right"),
                 ("default_target_frame", "torso_link4"),
                 ("arm_execution_frame", "torso_link4"),
@@ -513,11 +617,11 @@ class MissionController(Node):
                 # Map GraspNet axes to the physical gripper convention.
                 ("grasp_to_gripper_rpy", [0.0, -1.5707963267948966, 0.0]),
                 # Apply after the axis mapping in the target gripper's local
-                # frame: tilt 25 degrees backward about Y while retaining the
+                # frame: tilt 20 degrees backward about Y while retaining the
                 # physical gripper's 180-degree palm flip about Z.
                 (
                     "gripper_target_post_rpy",
-                    [0.0, -0.4363323129985824, 3.141592653589793],
+                    [0.0, -0.3490658503988659, 3.141592653589793],
                 ),
                 ("camera_mount_tf_enabled", True),
                 ("camera_mount_parent_frame", "right_D405_link"),
@@ -536,8 +640,9 @@ class MissionController(Node):
                 ("camera_mount_correction_rpy", [0.0, 0.0, 0.0]),
                 ("camera_tf_timeout_sec", 2.0),
                 ("default_detection_timeout_sec", 20.0),
-                ("grasp_detection_attempts", 2),
-                ("grasp_candidates_per_detection", 2),
+                ("grasp_detection_min_timeout_sec", 60.0),
+                ("grasp_detection_attempts", 0),
+                ("grasp_candidates_per_detection", 1),
                 ("dependency_wait_timeout_sec", 10.0),
                 ("arm_joints_result_timeout_sec", 60.0),
                 ("arm_pose_result_timeout_sec", 120.0),
@@ -551,6 +656,9 @@ class MissionController(Node):
                 ("torso_settle_sec", 1.0),
                 ("arm_settle_sec", 1.0),
                 ("gripper_settle_sec", 1.0),
+                ("box_detection_posture_settle_sec", 2.0),
+                ("box_place_release_delay_sec", 2.0),
+                ("place_torso_straighten_step_delay_sec", 2.0),
                 ("torso_prepare_positions", [0.61, -0.81, -0.60, 0.0]),
                 ("torso_reset_positions", [0.0, 0.0, 0.0, 0.0]),
                 ("torso_velocities", [0.1, 0.1, 0.1, 0.1]),
@@ -591,26 +699,101 @@ class MissionController(Node):
                         0.104098,
                     ],
                 ),
+                (
+                    "box_pickup_clearance_left_joint_positions",
+                    [
+                        -1.413830,
+                        0.687872,
+                        -1.236596,
+                        -1.839149,
+                        1.905532,
+                        0.525745,
+                        1.146383,
+                    ],
+                ),
+                (
+                    "box_pickup_clearance_right_joint_positions",
+                    [
+                        -1.403617,
+                        -0.668723,
+                        1.238298,
+                        -1.802128,
+                        -1.944043,
+                        0.435319,
+                        -1.307021,
+                    ],
+                ),
                 ("box_grasp_torso_prepare_positions", [0.61, -0.81, -0.6, 0.0]),
                 (
                     "box_grasp_torso_lift_positions",
-                    [0.61, -0.81, -0.21, 0.0],
+                    [0.41, -0.81, -0.6, 0.0],
                 ),
                 ("box_place_torso_positions", [0.61, -0.81, -0.6, 0.0]),
-                ("box_place_chassis_distance_x", 0.0),
-                ("box_place_chassis_distance_y", -0.5),
-                ("box_place_chassis_yaw", 0.0),
-                ("box_place_chassis_duration_sec", 5.0),
+                (
+                    "box_place_torso_straighten_intermediate_positions",
+                    [0.61, -1.2, -0.6, 0.0],
+                ),
+                # ExecuteBoxStack starts and ends at this fixed arm posture
+                # with a fully upright torso. The arms remain fixed while the
+                # torso selects one of four calibrated stacking heights.
+                (
+                    "stack_default_left_joint_positions",
+                    [
+                        -1.133818,
+                        0.120475,
+                        -1.197170,
+                        -0.672971,
+                        2.354960,
+                        1.046860,
+                        1.240171,
+                    ],
+                ),
+                (
+                    "stack_default_right_joint_positions",
+                    [
+                        -1.129491,
+                        -0.125152,
+                        1.203598,
+                        -0.676157,
+                        -2.343158,
+                        1.040511,
+                        -1.249240,
+                    ],
+                ),
+                (
+                    "stack_pickup_torso_positions",
+                    [0.0, 0.0, 0.0, 0.0],
+                ),
+                (
+                    "stack_level_torso_positions",
+                    [
+                        1.630000, -2.500000, -0.920000, 0.0,
+                        1.356518, -2.506617, -1.049991, 0.0,
+                        1.154311, -2.139907, -0.885489, 0.0,
+                        0.906723, -1.646855, -0.640023, 0.0,
+                    ],
+                ),
+                ("stack_start_arm_duration_sec", 8.0),
+                ("stack_torso1_speed", 0.1),
+                ("stack_torso3_speed", 0.13),
+                ("stack_release_delay_sec", 2.0),
+                ("stack_start_ready_check_enabled", True),
+                ("stack_start_feedback_max_age_sec", 2.0),
                 ("gripper_open_position", 100.0),
                 ("gripper_closed_position", 0.0),
                 ("open_gripper_before_grasp", True),
-                ("place_chassis_distance_x", -0.5),
-                ("place_chassis_distance_y", 0.0),
-                ("place_chassis_yaw", 0.0),
-                ("place_chassis_duration_sec", 5.0),
+                ("grasp_close_check_enabled", True),
+                ("grasp_empty_close_ratio_threshold", 0.95),
+                ("grasp_gripper_feedback_timeout_sec", 2.0),
+                ("grasp_gripper_feedback_max_age_sec", 0.5),
+                ("grasp_max_empty_close_attempts", 0),
+                ("grasp_recovery_retry_delay_sec", 1.0),
+                ("chassis_linear_speed", 0.3),
+                ("chassis_angular_speed", 0.2),
+                ("chassis_move_duration_sec", 3.0),
                 ("chassis_publish_hz", 10.0),
                 ("chassis_stop_repeat_count", 1),
-                ("max_chassis_linear_speed", 0.2),
+                ("max_chassis_linear_speed", 0.3),
                 ("max_chassis_angular_speed", 0.4),
                 ("home_velocity", 0.05),
             ],
@@ -622,6 +805,8 @@ class MissionController(Node):
             "execute_place_action_name",
             "execute_box_grasp_action_name",
             "execute_box_place_action_name",
+            "execute_box_stack_action_name",
+            "move_chassis_action_name",
             "detect_service_name",
             "box_detect_service_name",
             "box_object_pose_action_name",
@@ -648,6 +833,9 @@ class MissionController(Node):
             "right_gripper_topic",
             "chassis_topic",
             "joint_state_topic",
+            "torso_feedback_topic",
+            "left_gripper_feedback_topic",
+            "right_gripper_feedback_topic",
             "default_target_frame",
             "arm_execution_frame",
             "left_ee_frame",
@@ -686,9 +874,16 @@ class MissionController(Node):
             ("place_right_joint_positions", 7),
             ("box_grasp_left_observation_joint_positions", 7),
             ("box_grasp_right_observation_joint_positions", 7),
+            ("box_pickup_clearance_left_joint_positions", 7),
+            ("box_pickup_clearance_right_joint_positions", 7),
             ("box_grasp_torso_prepare_positions", 4),
             ("box_grasp_torso_lift_positions", 4),
             ("box_place_torso_positions", 4),
+            ("box_place_torso_straighten_intermediate_positions", 4),
+            ("stack_default_left_joint_positions", 7),
+            ("stack_default_right_joint_positions", 7),
+            ("stack_pickup_torso_positions", 4),
+            ("stack_level_torso_positions", 16),
             ("camera_mount_xyz", 3),
             ("camera_mount_rpy", 3),
             ("camera_mount_correction_rpy", 3),
@@ -707,42 +902,90 @@ class MissionController(Node):
             if not all(math.isfinite(value) for value in values):
                 raise ValueError(f"parameter '{name}' contains NaN or Inf")
 
-        for name in ("gripper_open_position", "gripper_closed_position"):
+        for name in (
+            "gripper_open_position",
+            "gripper_closed_position",
+        ):
             value = self._float(name)
             if not 0.0 <= value <= 100.0:
                 raise ValueError(f"parameter '{name}' must be in [0, 100]")
 
+        if math.isclose(
+            self._float("gripper_open_position"),
+            self._float("gripper_closed_position"),
+        ):
+            raise ValueError(
+                "gripper_open_position and gripper_closed_position must differ"
+            )
+        close_ratio = self._float("grasp_empty_close_ratio_threshold")
+        if not 0.0 <= close_ratio <= 1.0:
+            raise ValueError(
+                "grasp_empty_close_ratio_threshold must be in [0, 1]"
+            )
+
         positive_parameters = (
             "default_detection_timeout_sec",
+            "grasp_detection_min_timeout_sec",
             "dependency_wait_timeout_sec",
             "arm_joints_result_timeout_sec",
             "arm_pose_result_timeout_sec",
             "home_result_timeout_sec",
             "go_ready_result_timeout_sec",
             "command_subscriber_wait_timeout_sec",
-            "place_chassis_duration_sec",
-            "box_place_chassis_duration_sec",
+            "chassis_linear_speed",
+            "chassis_angular_speed",
+            "chassis_move_duration_sec",
             "chassis_publish_hz",
             "max_chassis_linear_speed",
             "max_chassis_angular_speed",
             "home_velocity",
             "camera_tf_timeout_sec",
-            "box_object_pose_result_timeout_sec",
             "pickup_task_result_timeout_sec",
             "box_width",
             "box_height",
             "arm_joint_target_tolerance",
             "arm_joint_target_wait_timeout_sec",
+            "box_observation_feedback_max_age_sec",
+            "box_observation_torso_tolerance",
+            "grasp_observation_feedback_max_age_sec",
+            "grasp_observation_torso_tolerance",
+            "torso_target_tolerance",
+            "torso_target_wait_timeout_sec",
+            "stack_start_feedback_max_age_sec",
+            "stack_start_arm_duration_sec",
+            "stack_torso1_speed",
+            "stack_torso3_speed",
+            "grasp_gripper_feedback_timeout_sec",
+            "grasp_gripper_feedback_max_age_sec",
         )
         for name in positive_parameters:
             if not math.isfinite(self._float(name)) or self._float(name) <= 0.0:
                 raise ValueError(f"parameter '{name}' must be finite and positive")
+
+        if self._float("chassis_linear_speed") > self._float(
+            "max_chassis_linear_speed"
+        ) + 1e-9:
+            raise ValueError(
+                "chassis_linear_speed exceeds max_chassis_linear_speed"
+            )
+        if self._float("chassis_angular_speed") > self._float(
+            "max_chassis_angular_speed"
+        ) + 1e-9:
+            raise ValueError(
+                "chassis_angular_speed exceeds max_chassis_angular_speed"
+            )
 
         nonnegative_parameters = (
             "command_repeat_interval_sec",
             "torso_settle_sec",
             "arm_settle_sec",
             "gripper_settle_sec",
+            "box_object_pose_result_timeout_sec",
+            "box_detection_posture_settle_sec",
+            "box_place_release_delay_sec",
+            "stack_release_delay_sec",
+            "grasp_recovery_retry_delay_sec",
+            "place_torso_straighten_step_delay_sec",
         )
         for name in nonnegative_parameters:
             if not math.isfinite(self._float(name)) or self._float(name) < 0.0:
@@ -752,50 +995,35 @@ class MissionController(Node):
             raise ValueError("command_repeat_count must be positive")
         if self._integer("arm_joint_target_stable_samples") <= 0:
             raise ValueError("arm_joint_target_stable_samples must be positive")
-        if self._integer("grasp_detection_attempts") <= 0:
-            raise ValueError("grasp_detection_attempts must be positive")
+        if self._integer("torso_target_stable_samples") <= 0:
+            raise ValueError("torso_target_stable_samples must be positive")
+        if self._integer("grasp_detection_attempts") < 0:
+            raise ValueError(
+                "grasp_detection_attempts must be nonnegative; zero means "
+                "unlimited retries"
+            )
+        if self._integer("box_detection_attempts") <= 0:
+            raise ValueError("box_detection_attempts must be positive")
         if self._integer("grasp_candidates_per_detection") <= 0:
             raise ValueError("grasp_candidates_per_detection must be positive")
+        if self._integer("grasp_max_empty_close_attempts") < 0:
+            raise ValueError(
+                "grasp_max_empty_close_attempts must be nonnegative; "
+                "zero means unlimited retries"
+            )
         if self._integer("chassis_stop_repeat_count") <= 0:
             raise ValueError("chassis_stop_repeat_count must be positive")
         if self._integer("box_object_pose_instance_index") < 0:
             raise ValueError("box_object_pose_instance_index must be nonnegative")
+
         box_confidence = self._float("box_object_pose_confidence_threshold")
         if not 0.0 <= box_confidence <= 1.0:
             raise ValueError(
                 "box_object_pose_confidence_threshold must be in [0, 1]"
             )
-
-        duration = self._float("place_chassis_duration_sec")
-        vx = self._float("place_chassis_distance_x") / duration
-        vy = self._float("place_chassis_distance_y") / duration
-        wz = self._float("place_chassis_yaw") / duration
-        linear_speed = math.hypot(vx, vy)
-        if linear_speed > self._float("max_chassis_linear_speed") + 1e-9:
-            raise ValueError(
-                "configured place chassis linear speed exceeds max_chassis_linear_speed"
-            )
-        if abs(wz) > self._float("max_chassis_angular_speed") + 1e-9:
-            raise ValueError(
-                "configured place chassis angular speed exceeds max_chassis_angular_speed"
-            )
-
-        box_duration = self._float("box_place_chassis_duration_sec")
-        box_vx = self._float("box_place_chassis_distance_x") / box_duration
-        box_vy = self._float("box_place_chassis_distance_y") / box_duration
-        box_wz = self._float("box_place_chassis_yaw") / box_duration
-        if math.hypot(box_vx, box_vy) > self._float(
-            "max_chassis_linear_speed"
-        ) + 1e-9:
-            raise ValueError(
-                "configured box place chassis linear speed exceeds "
-                "max_chassis_linear_speed"
-            )
-        if abs(box_wz) > self._float("max_chassis_angular_speed") + 1e-9:
-            raise ValueError(
-                "configured box place chassis angular speed exceeds "
-                "max_chassis_angular_speed"
-            )
+        box_axis_min_dot = self._float("box_camera_pose_axis_min_dot")
+        if not 0.0 <= box_axis_min_dot <= 1.0:
+            raise ValueError("box_camera_pose_axis_min_dot must be in [0, 1]")
 
         if self._boolean("box_mission_enabled"):
             for name in (
@@ -1548,6 +1776,56 @@ class MissionController(Node):
             "box_place", request.request_id, self._resolve_arm(request.arm)
         )
 
+    def _box_stack_goal_callback(
+        self, request: ExecuteBoxStack.Goal
+    ) -> GoalResponse:
+        if request.level < 1 or request.level > 4:
+            self.get_logger().error(
+                "rejecting box_stack goal: level must be an integer in [1, 4], "
+                f"got {request.level}"
+            )
+            return GoalResponse.REJECT
+        if not self._boolean("box_mission_enabled"):
+            self.get_logger().warning(
+                "rejecting box_stack goal: box_mission_enabled is false"
+            )
+            return GoalResponse.REJECT
+        with self.state_lock:
+            if self.mission_reserved:
+                self.get_logger().warning(
+                    "rejecting box_stack goal: "
+                    f"{self.active_mission} mission is active"
+                )
+                return GoalResponse.REJECT
+            self.mission_reserved = True
+            self.active_mission = "box_stack"
+        self.get_logger().info(f"accepted box_stack goal level={request.level}")
+        return GoalResponse.ACCEPT
+
+    def _move_chassis_goal_callback(
+        self, request: MoveChassis.Goal
+    ) -> GoalResponse:
+        direction = request.direction.strip().lower()
+        if direction not in CHASSIS_DIRECTIONS:
+            self.get_logger().error(
+                "rejecting move_chassis goal: direction must be one of "
+                f"{sorted(CHASSIS_DIRECTIONS)}, got '{request.direction}'"
+            )
+            return GoalResponse.REJECT
+        with self.state_lock:
+            if self.mission_reserved:
+                self.get_logger().warning(
+                    "rejecting move_chassis goal: "
+                    f"{self.active_mission} mission is active"
+                )
+                return GoalResponse.REJECT
+            self.mission_reserved = True
+            self.active_mission = "move_chassis"
+        self.get_logger().info(
+            f"accepted move_chassis goal direction={direction}"
+        )
+        return GoalResponse.ACCEPT
+
     def _cancel_callback(self, _goal_handle) -> CancelResponse:
         with self.state_lock:
             arm_goal_handle = self.active_arm_goal_handle
@@ -1616,6 +1894,39 @@ class MissionController(Node):
         feedback.detail = detail
         feedback.arm = arm
         goal_handle.publish_feedback(feedback)
+
+    @staticmethod
+    def _publish_box_stack_feedback(
+        goal_handle, stage: str, detail: str, level: int
+    ) -> None:
+        feedback = ExecuteBoxStack.Feedback()
+        feedback.stage = stage
+        feedback.detail = detail
+        feedback.level = level
+        goal_handle.publish_feedback(feedback)
+
+    @staticmethod
+    def _publish_move_chassis_feedback(
+        goal_handle, stage: str, detail: str, progress: float
+    ) -> None:
+        feedback = MoveChassis.Feedback()
+        feedback.stage = stage
+        feedback.detail = detail
+        feedback.progress = max(0.0, min(1.0, progress))
+        goal_handle.publish_feedback(feedback)
+
+    def _finalize_action_result(
+        self, result, started_at: float, action_name: str
+    ) -> None:
+        if "elapsed_sec=" in str(result.message):
+            return
+        elapsed_sec = max(0.0, time.monotonic() - started_at)
+        base_message = str(result.message).strip() or f"{action_name} finished"
+        result.message = f"{base_message} (elapsed_sec={elapsed_sec:.3f})"
+        self.get_logger().info(
+            f"{action_name} finished: success={bool(result.success)}, "
+            f"elapsed_sec={elapsed_sec:.3f}"
+        )
 
     @staticmethod
     def _check_canceled(goal_handle, context: str) -> None:
@@ -1730,6 +2041,7 @@ class MissionController(Node):
         goal_handle,
         positions: list[float],
         *,
+        velocities: Optional[list[float]] = None,
         require_subscriber: bool = True,
         honor_cancel: bool = True,
     ) -> None:
@@ -1737,7 +2049,11 @@ class MissionController(Node):
             self.torso_publisher,
             self._string("torso_topic"),
             positions,
-            self._float_array("torso_velocities"),
+            (
+                list(velocities)
+                if velocities is not None
+                else self._float_array("torso_velocities")
+            ),
             goal_handle,
             require_subscriber=require_subscriber,
             honor_cancel=honor_cancel,
@@ -1768,6 +2084,286 @@ class MissionController(Node):
             self.latest_joint_positions.update(positions)
             self.latest_joint_state_time = time.monotonic()
             self.latest_joint_state_sequence += 1
+
+    def _torso_feedback_callback(self, message: JointState) -> None:
+        if len(message.position) < 4:
+            return
+        positions = [float(value) for value in message.position[:4]]
+        if not all(math.isfinite(value) for value in positions):
+            return
+        with self.joint_state_lock:
+            self.latest_torso_positions = positions
+            self.latest_torso_state_time = time.monotonic()
+            self.latest_torso_state_sequence += 1
+
+    def _gripper_feedback_callback(
+        self, arm: str, message: JointState
+    ) -> None:
+        if len(message.position) != 1:
+            return
+        position = float(message.position[0])
+        if not math.isfinite(position):
+            return
+        with self.joint_state_lock:
+            self.latest_gripper_positions[arm] = position
+            self.latest_gripper_state_times[arm] = time.monotonic()
+            self.latest_gripper_state_sequences[arm] += 1
+
+    def _gripper_feedback_sequence(self, arm: str) -> int:
+        with self.joint_state_lock:
+            return self.latest_gripper_state_sequences[arm]
+
+    def _gripper_close_ratio(self, measured_position: float) -> float:
+        open_position = self._float("gripper_open_position")
+        closed_position = self._float("gripper_closed_position")
+        ratio = (
+            (measured_position - open_position)
+            / (closed_position - open_position)
+        )
+        return min(1.0, max(0.0, ratio))
+
+    def _wait_for_gripper_close_feedback(
+        self,
+        goal_handle,
+        arm: str,
+        sequence_before_close: int,
+    ) -> float:
+        timeout_sec = self._float("grasp_gripper_feedback_timeout_sec")
+        max_age_sec = self._float("grasp_gripper_feedback_max_age_sec")
+        deadline = time.monotonic() + timeout_sec
+        latest_position: Optional[float] = None
+        latest_sequence = sequence_before_close
+        latest_age = math.inf
+
+        while time.monotonic() < deadline:
+            self._check_canceled(
+                goal_handle, "while waiting for gripper close feedback"
+            )
+            now = time.monotonic()
+            with self.joint_state_lock:
+                latest_sequence = self.latest_gripper_state_sequences[arm]
+                latest_position = self.latest_gripper_positions.get(arm)
+                latest_age = now - self.latest_gripper_state_times[arm]
+            if (
+                latest_sequence > sequence_before_close
+                and latest_position is not None
+                and latest_age <= max_age_sec
+            ):
+                return latest_position
+            time.sleep(0.02)
+
+        raise MissionError(
+            f"no fresh {arm} gripper feedback after close command within "
+            f"{timeout_sec:.1f}s (topic="
+            f"{self._string(f'{arm}_gripper_feedback_topic')}, "
+            f"sequence={latest_sequence}, age_sec={latest_age:.3f})"
+        )
+
+    def _wait_for_torso_target(
+        self,
+        goal_handle,
+        targets: list[float],
+        context: str,
+    ) -> None:
+        tolerance = self._float("torso_target_tolerance")
+        timeout_sec = self._float("torso_target_wait_timeout_sec")
+        required_stable = self._integer("torso_target_stable_samples")
+        deadline = time.monotonic() + timeout_sec
+        stable_samples = 0
+        last_sequence = -1
+        last_errors: list[float] = []
+
+        while time.monotonic() < deadline:
+            self._check_canceled(goal_handle, f"while {context}")
+            with self.joint_state_lock:
+                sequence = self.latest_torso_state_sequence
+                measured = list(self.latest_torso_positions)
+            if sequence == last_sequence or len(measured) < len(targets):
+                time.sleep(0.02)
+                continue
+            last_sequence = sequence
+            last_errors = [
+                abs(actual - target)
+                for actual, target in zip(measured, targets)
+            ]
+            if max(last_errors, default=0.0) <= tolerance:
+                stable_samples += 1
+                if stable_samples >= required_stable:
+                    self.get_logger().info(
+                        f"verified torso target while {context}: "
+                        f"max_error={max(last_errors, default=0.0):.4f}"
+                    )
+                    return
+            else:
+                stable_samples = 0
+            time.sleep(0.02)
+
+        raise MissionError(
+            f"torso target was not confirmed while {context} within "
+            f"{timeout_sec:.1f}s: max_error="
+            f"{max(last_errors, default=math.inf):.4f}, "
+            f"tolerance={tolerance:.4f}, stable_samples={required_stable}"
+        )
+
+    def _observation_ready(
+        self,
+        *,
+        enabled_parameter: str,
+        left_target_parameter: str,
+        right_target_parameter: str,
+        torso_target_parameter: str,
+        max_age_parameter: str,
+        torso_tolerance_parameter: str,
+        label: str,
+    ) -> tuple[bool, str]:
+        if not self._boolean(enabled_parameter):
+            return False, f"{label} observation readiness check is disabled"
+
+        now = time.monotonic()
+        max_age = self._float(max_age_parameter)
+        with self.joint_state_lock:
+            arm_positions = dict(self.latest_joint_positions)
+            arm_age = now - self.latest_joint_state_time
+            torso_positions = list(self.latest_torso_positions)
+            torso_age = now - self.latest_torso_state_time
+
+        left_names = self._string_array("left_arm_joint_names")
+        right_names = self._string_array("right_arm_joint_names")
+        arm_targets = dict(
+            zip(
+                left_names,
+                self._float_array(left_target_parameter),
+            )
+        )
+        arm_targets.update(
+            zip(
+                right_names,
+                self._float_array(right_target_parameter),
+            )
+        )
+        missing = [name for name in arm_targets if name not in arm_positions]
+        if missing:
+            return False, f"missing arm feedback joints={missing}"
+        if not torso_positions:
+            return False, "torso feedback has not been received"
+        if arm_age > max_age or torso_age > max_age:
+            return (
+                False,
+                "feedback is stale: "
+                f"arms={arm_age:.2f}s, torso={torso_age:.2f}s, "
+                f"limit={max_age:.2f}s",
+            )
+
+        arm_errors = {
+            name: abs(arm_positions[name] - target)
+            for name, target in arm_targets.items()
+        }
+        torso_targets = self._float_array(torso_target_parameter)
+        torso_errors = [
+            abs(actual - target)
+            for actual, target in zip(torso_positions, torso_targets)
+        ]
+        max_arm_error = max(arm_errors.values(), default=0.0)
+        max_torso_error = max(torso_errors, default=0.0)
+        arm_tolerance = self._float("arm_joint_target_tolerance")
+        torso_tolerance = self._float(torso_tolerance_parameter)
+        ready = (
+            max_arm_error <= arm_tolerance
+            and max_torso_error <= torso_tolerance
+        )
+        return (
+            ready,
+            f"max arm error={max_arm_error:.4f} rad "
+            f"(limit={arm_tolerance:.4f}), max torso error="
+            f"{max_torso_error:.4f} (limit={torso_tolerance:.4f})",
+        )
+
+    def _box_observation_ready(self) -> tuple[bool, str]:
+        return self._observation_ready(
+            enabled_parameter="box_observation_ready_check_enabled",
+            left_target_parameter="box_grasp_left_observation_joint_positions",
+            right_target_parameter="box_grasp_right_observation_joint_positions",
+            torso_target_parameter="box_grasp_torso_prepare_positions",
+            max_age_parameter="box_observation_feedback_max_age_sec",
+            torso_tolerance_parameter="box_observation_torso_tolerance",
+            label="box",
+        )
+
+    def _grasp_observation_ready(self) -> tuple[bool, str]:
+        return self._observation_ready(
+            enabled_parameter="grasp_observation_ready_check_enabled",
+            left_target_parameter="grasp_left_joint_positions",
+            right_target_parameter="grasp_right_joint_positions",
+            torso_target_parameter="torso_prepare_positions",
+            max_age_parameter="grasp_observation_feedback_max_age_sec",
+            torso_tolerance_parameter="grasp_observation_torso_tolerance",
+            label="grasp",
+        )
+
+    def _stack_default_ready(self) -> tuple[bool, str]:
+        if not self._boolean("stack_start_ready_check_enabled"):
+            return True, "stack default readiness check is disabled"
+
+        now = time.monotonic()
+        max_age = self._float("stack_start_feedback_max_age_sec")
+        with self.joint_state_lock:
+            arm_positions = dict(self.latest_joint_positions)
+            arm_age = now - self.latest_joint_state_time
+            torso_positions = list(self.latest_torso_positions)
+            torso_age = now - self.latest_torso_state_time
+
+        left_names = self._string_array("left_arm_joint_names")
+        right_names = self._string_array("right_arm_joint_names")
+        targets = dict(
+            zip(
+                left_names,
+                self._float_array("stack_default_left_joint_positions"),
+            )
+        )
+        targets.update(
+            zip(
+                right_names,
+                self._float_array("stack_default_right_joint_positions"),
+            )
+        )
+        missing = [name for name in targets if name not in arm_positions]
+        if missing:
+            return False, f"missing arm feedback joints={missing}"
+        if arm_age > max_age:
+            return (
+                False,
+                f"arm feedback is stale: age={arm_age:.2f}s, limit={max_age:.2f}s",
+            )
+        if len(torso_positions) < 4:
+            return False, "missing torso feedback"
+        if torso_age > max_age:
+            return (
+                False,
+                f"torso feedback is stale: age={torso_age:.2f}s, "
+                f"limit={max_age:.2f}s",
+            )
+
+        errors = {
+            name: abs(arm_positions[name] - target)
+            for name, target in targets.items()
+        }
+        max_error = max(errors.values(), default=0.0)
+        arm_tolerance = self._float("arm_joint_target_tolerance")
+        torso_targets = self._float_array("stack_pickup_torso_positions")
+        torso_error = max(
+            (
+                abs(actual - target)
+                for actual, target in zip(torso_positions, torso_targets)
+            ),
+            default=0.0,
+        )
+        torso_tolerance = self._float("torso_target_tolerance")
+        return (
+            max_error <= arm_tolerance and torso_error <= torso_tolerance,
+            f"max arm error={max_error:.4f} rad "
+            f"(limit={arm_tolerance:.4f}), max torso error="
+            f"{torso_error:.4f} (limit={torso_tolerance:.4f})",
+        )
 
     def _wait_for_arm_joint_targets(
         self,
@@ -1953,6 +2549,53 @@ class MissionController(Node):
         self._prepare_observation_intermediate_arms(goal_handle)
         self._prepare_box_grasp_arms_and_torso(goal_handle)
 
+    def _wait_for_box_detection_posture(
+        self, goal_handle, arm: str
+    ) -> None:
+        self._publish_box_grasp_feedback(
+            goal_handle,
+            "WAITING_FOR_BOX_OBSERVATION",
+            "waiting for measured arm and torso feedback to confirm the box "
+            "observation posture",
+            arm,
+        )
+        self._wait_for_arm_joint_targets(
+            goal_handle,
+            self._float_array("box_grasp_left_observation_joint_positions"),
+            self._float_array("box_grasp_right_observation_joint_positions"),
+        )
+        self._wait_for_torso_target(
+            goal_handle,
+            self._float_array("box_grasp_torso_prepare_positions"),
+            "confirming the box observation torso before detection",
+        )
+        settle_sec = self._float("box_detection_posture_settle_sec")
+        self._publish_box_grasp_feedback(
+            goal_handle,
+            "SETTLING_BOX_OBSERVATION",
+            "box observation arms and torso confirmed; holding still for "
+            f"{settle_sec:.1f}s before FoundationPose",
+            arm,
+        )
+        self._wait_delay(
+            goal_handle,
+            settle_sec,
+            "while holding the confirmed box observation posture before detection",
+        )
+
+    def _prepare_box_pickup_clearance_arms(self, goal_handle) -> None:
+        self._call_arm_joints(
+            goal_handle,
+            self._float_array("box_pickup_clearance_left_joint_positions"),
+            self._float_array("box_pickup_clearance_right_joint_positions"),
+            False,
+        )
+        self._wait_delay(
+            goal_handle,
+            self._float("arm_settle_sec"),
+            "while waiting for the box pickup clearance posture",
+        )
+
     def _make_chassis_message(
         self, linear_x: float, linear_y: float, angular_z: float
     ) -> TwistStamped:
@@ -1983,48 +2626,41 @@ class MissionController(Node):
             if interval_sec > 0.0:
                 time.sleep(interval_sec)
 
-    def _move_chassis(self, goal_handle, dry_run: bool) -> None:
-        duration = self._float("place_chassis_duration_sec")
-        distance_x = self._float("place_chassis_distance_x")
-        distance_y = self._float("place_chassis_distance_y")
-        yaw = self._float("place_chassis_yaw")
-        if dry_run:
-            return
-
+    def _move_chassis_for_duration(
+        self,
+        goal_handle,
+        direction: str,
+        speed: float,
+        duration_sec: float,
+    ) -> None:
+        direction_scale = CHASSIS_DIRECTIONS[direction]
+        vx = direction_scale[0] * speed
+        vy = direction_scale[1] * speed
+        wz = direction_scale[2] * speed
         topic = self._string("chassis_topic")
         self._wait_for_publisher(self.chassis_publisher, topic, goal_handle)
-        vx = distance_x / duration
-        vy = distance_y / duration
-        wz = yaw / duration
+
         period = 1.0 / self._float("chassis_publish_hz")
-        deadline = time.monotonic() + duration
+        started_at = time.monotonic()
+        deadline = started_at + duration_sec
+        last_feedback_at = started_at - 1.0
         try:
             while time.monotonic() < deadline:
                 self._check_canceled(goal_handle, "during chassis motion")
-                self.chassis_publisher.publish(self._make_chassis_message(vx, vy, wz))
-                time.sleep(min(period, max(0.0, deadline - time.monotonic())))
-        finally:
-            self._publish_zero_chassis()
-
-    def _move_box_chassis(self, goal_handle, dry_run: bool) -> None:
-        duration = self._float("box_place_chassis_duration_sec")
-        distance_x = self._float("box_place_chassis_distance_x")
-        distance_y = self._float("box_place_chassis_distance_y")
-        yaw = self._float("box_place_chassis_yaw")
-        if dry_run:
-            return
-
-        topic = self._string("chassis_topic")
-        self._wait_for_publisher(self.chassis_publisher, topic, goal_handle)
-        vx = distance_x / duration
-        vy = distance_y / duration
-        wz = yaw / duration
-        period = 1.0 / self._float("chassis_publish_hz")
-        deadline = time.monotonic() + duration
-        try:
-            while time.monotonic() < deadline:
-                self._check_canceled(goal_handle, "during box chassis motion")
-                self.chassis_publisher.publish(self._make_chassis_message(vx, vy, wz))
+                now = time.monotonic()
+                self.chassis_publisher.publish(
+                    self._make_chassis_message(vx, vy, wz)
+                )
+                if now - last_feedback_at >= 0.5:
+                    progress = min(1.0, (now - started_at) / duration_sec)
+                    self._publish_move_chassis_feedback(
+                        goal_handle,
+                        "MOVING",
+                        f"moving {direction} at {speed:.3f} for "
+                        f"{duration_sec:.3f}s ({progress * 100.0:.0f}%)",
+                        progress,
+                    )
+                    last_feedback_at = now
                 time.sleep(min(period, max(0.0, deadline - time.monotonic())))
         finally:
             self._publish_zero_chassis()
@@ -2100,11 +2736,100 @@ class MissionController(Node):
         action_result = wrapped_result.result
         succeeded = wrapped_result.status == GoalStatus.STATUS_SUCCEEDED
         if not succeeded or not action_result.success:
-            raise MissionError(
+            raise TaskActionError(
                 f"{action_name} failed: {action_result.message} "
-                f"(error_code={action_result.error_code})"
+                f"(error_code={action_result.error_code})",
+                int(action_result.error_code),
             )
         return action_result
+
+    def _stack_level_torso_target(self, level: int) -> list[float]:
+        values = self._float_array("stack_level_torso_positions")
+        start = (level - 1) * 4
+        return values[start : start + 4]
+
+    def _move_stack_torso(
+        self,
+        goal_handle,
+        targets: list[float],
+        context: str,
+    ) -> None:
+        velocities, estimated_duration = self._stack_torso_motion_profile(targets)
+        self.get_logger().info(
+            "stack torso synchronized profile: "
+            f"duration={estimated_duration:.3f}s, velocities="
+            f"{[round(value, 6) for value in velocities]}"
+        )
+        self._publish_torso(goal_handle, targets, velocities=velocities)
+        self._wait_for_torso_target(goal_handle, targets, context)
+
+    def _stack_torso_motion_profile(
+        self,
+        targets: list[float],
+    ) -> tuple[list[float], float]:
+        with self.joint_state_lock:
+            current = list(self.latest_torso_positions)
+        if len(current) < 4:
+            raise MissionError(
+                "cannot calculate synchronized stack torso speeds without "
+                "four measured torso positions"
+            )
+
+        deltas = [
+            abs(target - actual)
+            for actual, target in zip(current[:4], targets)
+        ]
+        torso1_speed = self._float("stack_torso1_speed")
+        if deltas[0] <= 1e-6:
+            if max(deltas, default=0.0) <= 1e-6:
+                return [0.0, 0.0, 0.0, 0.0], 0.0
+            raise MissionError(
+                "cannot synchronize stack torso motion to Torso1 because "
+                "Torso1 has no remaining motion while another torso joint does"
+            )
+
+        duration = deltas[0] / torso1_speed
+        velocities = [delta / duration for delta in deltas]
+        velocities[2] = (
+            self._float("stack_torso3_speed")
+            if deltas[2] > 1e-6
+            else 0.0
+        )
+        return velocities, duration
+
+    def _prepare_stack_start_pose(self, goal_handle) -> str:
+        pickup_torso = self._float_array("stack_pickup_torso_positions")
+        pickup_velocities, pickup_duration = self._stack_torso_motion_profile(
+            pickup_torso
+        )
+        self.get_logger().info(
+            "stack start torso synchronized profile: "
+            f"duration={pickup_duration:.3f}s, velocities="
+            f"{[round(value, 6) for value in pickup_velocities]}"
+        )
+        arm_message = self._call_arm_joints(
+            goal_handle,
+            self._float_array("stack_default_left_joint_positions"),
+            self._float_array("stack_default_right_joint_positions"),
+            False,
+            goal_accepted_callback=lambda: self._publish_torso(
+                goal_handle,
+                pickup_torso,
+                velocities=pickup_velocities,
+            ),
+            duration=self._float("stack_start_arm_duration_sec"),
+        )
+        self._wait_for_torso_target(
+            goal_handle,
+            pickup_torso,
+            "preparing the highest box-loading torso posture",
+        )
+        self._wait_delay(
+            goal_handle,
+            self._float("arm_settle_sec"),
+            "while settling at the fixed box-loading posture",
+        )
+        return arm_message
 
     def _call_arm_joints(
         self,
@@ -2113,6 +2838,7 @@ class MissionController(Node):
         right_positions: list[float],
         dry_run: bool,
         goal_accepted_callback=None,
+        duration: float = 0.0,
     ) -> str:
         if dry_run:
             return "dry run: skipped non-planning /move_arm_j action"
@@ -2121,7 +2847,7 @@ class MissionController(Node):
         action_goal.left_joints = left_positions
         action_goal.right_joints = right_positions
         action_goal.dry_run = False
-        action_goal.duration = 0.0
+        action_goal.duration = float(duration)
         try:
             response = self._call_task_action(
                 goal_handle,
@@ -2170,10 +2896,14 @@ class MissionController(Node):
         # and performs the complete conversion after receiving this response.
         detect_request.target_frame = ""
         detect_request.target_label = int(request.target_label)
-        detect_request.timeout_sec = (
+        requested_timeout_sec = (
             float(request.detection_timeout_sec)
             if request.detection_timeout_sec > 0.0
             else self._float("default_detection_timeout_sec")
+        )
+        detect_request.timeout_sec = max(
+            requested_timeout_sec,
+            self._float("grasp_detection_min_timeout_sec"),
         )
         response = self._wait_future(
             client.call_async(detect_request),
@@ -2260,17 +2990,133 @@ class MissionController(Node):
         result.pose.orientation.w = pickup_orientation[3]
         return result
 
+    def _constrain_box_camera_pose(self, camera_pose: PoseStamped) -> PoseStamped:
+        """Normalize F320/F455 axes before camera-to-robot TF conversion.
+
+        ROS optical coordinates use +X image-right, +Y image-down, and +Z
+        camera-forward.  Downstream dual-arm pickup always expects the
+        canonical F320 convention: object X down, Y camera-forward, and Z
+        image-right.
+
+        F320 only has a 180-degree local-X symmetry to resolve.  F455 is placed
+        90 degrees around object X relative to F320: its Z points forward or
+        backward while Y points left or right.  Apply the corresponding local
+        +/-90-degree X rotation so both models reach the same canonical frame.
+        """
+        if not self._boolean("box_camera_pose_constraint_enabled"):
+            return camera_pose
+
+        values = pose_to_array(camera_pose.pose)
+        orientation = tuple(values[3:])
+        object_x = rotate_vector((1.0, 0.0, 0.0), orientation)
+        object_y = rotate_vector((0.0, 1.0, 0.0), orientation)
+        object_z = rotate_vector((0.0, 0.0, 1.0), orientation)
+        min_dot = self._float("box_camera_pose_axis_min_dot")
+        model_label = self._string("box_object_pose_model_label").strip().lower()
+        x_up_alignment = -object_x[1]
+        if x_up_alignment >= min_dot:
+            raise MissionError(
+                "rejected FoundationPose camera-frame orientation: object X "
+                f"points up (alignment={x_up_alignment:.3f}, "
+                f"threshold={min_dot:.3f}, model={model_label or 'unknown'}); "
+                "requesting a fresh detection instead of planning from a "
+                "grossly inverted pose"
+            )
+
+        if model_label == "f455":
+            forward_alignment = {
+                "x_down": object_x[1],
+                "z_forward": object_z[2],
+                "y_left": -object_y[0],
+            }
+            backward_alignment = {
+                "x_down": object_x[1],
+                "z_backward": -object_z[2],
+                "y_right": object_y[0],
+            }
+            if all(
+                score >= min_dot for score in forward_alignment.values()
+            ):
+                correction_roll = math.pi / 2.0
+                alignment = forward_alignment
+                source_axes = "X down, Z forward, Y left"
+            elif all(
+                score >= min_dot for score in backward_alignment.values()
+            ):
+                correction_roll = -math.pi / 2.0
+                alignment = backward_alignment
+                source_axes = "X down, Z backward, Y right"
+            else:
+                self.get_logger().info(
+                    "kept F455 FoundationPose camera-frame orientation; "
+                    f"forward_alignment={forward_alignment}, "
+                    f"backward_alignment={backward_alignment}, "
+                    f"threshold={min_dot:.3f}"
+                )
+                return camera_pose
+        else:
+            alignment = {
+                "x_down": object_x[1],
+                "y_backward": -object_y[2],
+                "z_left": -object_z[0],
+            }
+            if not all(score >= min_dot for score in alignment.values()):
+                self.get_logger().info(
+                    "kept F320 FoundationPose camera-frame orientation; "
+                    f"symmetry alignment={alignment}, threshold={min_dot:.3f}"
+                )
+                return camera_pose
+            correction_roll = math.pi
+            source_axes = "X down, Y backward, Z left"
+
+        local_x_correction = self._quaternion_from_rpy(
+            correction_roll, 0.0, 0.0
+        )
+        corrected_orientation = quaternion_multiply(
+            orientation, local_x_correction
+        )
+        orientation_norm = math.sqrt(
+            sum(value * value for value in corrected_orientation)
+        )
+
+        corrected = PoseStamped()
+        corrected.header = camera_pose.header
+        corrected.pose.position.x = values[0]
+        corrected.pose.position.y = values[1]
+        corrected.pose.position.z = values[2]
+        corrected.pose.orientation.x = (
+            corrected_orientation[0] / orientation_norm
+        )
+        corrected.pose.orientation.y = (
+            corrected_orientation[1] / orientation_norm
+        )
+        corrected.pose.orientation.z = (
+            corrected_orientation[2] / orientation_norm
+        )
+        corrected.pose.orientation.w = (
+            corrected_orientation[3] / orientation_norm
+        )
+        self.get_logger().info(
+            "normalized FoundationPose camera-frame orientation for "
+            f"{model_label or 'f320'} from [{source_axes}] with local "
+            f"Rx({math.degrees(correction_roll):.1f} deg): "
+            f"alignment={alignment}, threshold={min_dot:.3f}; "
+            "canonical X is down, Y is forward, Z is right"
+        )
+        return corrected
+
     def _call_box_object_pose(self, goal_handle, request, arm: str):
         if self.box_object_pose_client is None or EstimateObjectPose is None:
             raise MissionError(
                 "box grasp requires the object_pose_interfaces package"
             )
         action_name = self._string("box_object_pose_action_name")
-        timeout_sec = (
-            float(request.detection_timeout_sec)
-            if request.detection_timeout_sec > 0.0
-            else self._float("box_object_pose_result_timeout_sec")
-        )
+        # ExecuteBoxGrasp.detection_timeout_sec remains in the action interface
+        # for compatibility, but box perception deliberately ignores it. A
+        # configured value of zero disables the local result deadline so a
+        # first-time FoundationPose model load cannot trigger an immediate,
+        # still-busy retry.
+        timeout_sec = self._float("box_object_pose_result_timeout_sec")
         wait_deadline = time.monotonic() + self._float(
             "dependency_wait_timeout_sec"
         )
@@ -2317,7 +3163,11 @@ class MissionController(Node):
         with self.state_lock:
             self.active_box_object_pose_goal_handle = foundation_handle
         result_future = foundation_handle.get_result_async()
-        deadline = time.monotonic() + timeout_sec
+        deadline = (
+            time.monotonic() + timeout_sec
+            if timeout_sec > 0.0
+            else None
+        )
         try:
             while rclpy.ok() and not result_future.done():
                 if goal_handle.is_cancel_requested:
@@ -2325,7 +3175,7 @@ class MissionController(Node):
                     raise MissionCanceled(
                         f"mission canceled during {action_name}"
                     )
-                if time.monotonic() >= deadline:
+                if deadline is not None and time.monotonic() >= deadline:
                     foundation_handle.cancel_goal_async()
                     raise MissionError(
                         f"timeout waiting for {action_name} result after "
@@ -2353,10 +3203,16 @@ class MissionController(Node):
                 f"ignoring box target_frame '{requested_frame}'; "
                 f"pickup_task requires robot body frame '{target_frame}'"
             )
-        foundation_center_pose = self._transform_detection_pose(
+        constrained_camera_pose = self._constrain_box_camera_pose(
+            foundation_result.pose
+        )
+        raw_foundation_center_pose = self._transform_detection_pose(
             foundation_result.pose, target_frame
         )
-        self.box_object_pose_raw_publisher.publish(foundation_center_pose)
+        foundation_center_pose = self._transform_detection_pose(
+            constrained_camera_pose, target_frame
+        )
+        self.box_object_pose_raw_publisher.publish(raw_foundation_center_pose)
         pickup_box_pose = self._make_pickup_box_pose(foundation_center_pose)
         self.box_object_pose_publisher.publish(pickup_box_pose)
         self.get_logger().info(
@@ -2367,69 +3223,263 @@ class MissionController(Node):
         return foundation_result, pickup_box_pose
 
     def _forward_pickup_task_feedback(
-        self, goal_handle, arm: str, attempt: int, feedback_message
+        self,
+        goal_handle,
+        arm: str,
+        detection_attempt: int,
+        detection_attempts: int,
+        attempt_state: dict[str, bool],
+        feedback_message,
     ) -> None:
         feedback = feedback_message.feedback
+        if feedback.stage == "APPROACHING":
+            attempt_state["motion_started"] = True
+            if "segment 2/" in feedback.detail:
+                # PickupSkill only reports segment 2 after segment 1 returned
+                # successfully, so this is a reliable recovery boundary.
+                attempt_state["first_segment_completed"] = True
         self._publish_box_grasp_feedback(
             goal_handle,
             f"PICKUP_{feedback.stage}",
-            f"attempt {attempt}/2: {feedback.detail} "
+            f"detection {detection_attempt}/{detection_attempts}: "
+            f"{feedback.detail} "
             f"(progress={feedback.progress:.0%})",
             arm,
         )
 
     def _call_pickup_task(
-        self, goal_handle, box_pose: PoseStamped, dry_run: bool, arm: str
+        self,
+        goal_handle,
+        box_pose: PoseStamped,
+        dry_run: bool,
+        arm: str,
+        detection_attempt: int,
+        detection_attempts: int,
     ) -> str:
         action_name = self._string("pickup_task_action_name")
+        attempt_state = {
+            "motion_started": False,
+            "first_segment_completed": False,
+        }
+        self._publish_box_grasp_feedback(
+            goal_handle,
+            "PICKUP_ATTEMPT",
+            f"calling {action_name} for detection "
+            f"{detection_attempt}/{detection_attempts}",
+            arm,
+        )
+        pickup_goal = PickupTask.Goal()
+        pickup_goal.box_pose = box_pose
+        pickup_goal.box_width = self._float("box_width")
+        pickup_goal.box_height = self._float("box_height")
+        pickup_goal.box_type = self._string("box_type")
+        pickup_goal.dry_run = dry_run
+        try:
+            pickup_result = self._call_task_action(
+                goal_handle,
+                self.pickup_task_client,
+                action_name,
+                pickup_goal,
+                self._float("pickup_task_result_timeout_sec"),
+                "active_pickup_task_goal_handle",
+                feedback_callback=lambda message: (
+                    self._forward_pickup_task_feedback(
+                        goal_handle,
+                        arm,
+                        detection_attempt,
+                        detection_attempts,
+                        attempt_state,
+                        message,
+                    )
+                ),
+            )
+        except MissionCanceled:
+            raise
+        except MissionError as exc:
+            raise PickupAttemptError(
+                str(exc),
+                error_code=getattr(exc, "error_code", None),
+                motion_started=attempt_state["motion_started"],
+                first_segment_completed=attempt_state[
+                    "first_segment_completed"
+                ],
+            ) from exc
+        return str(pickup_result.message)
+
+    def _recover_box_observation(
+        self, goal_handle, arm: str, reason: str, dry_run: bool
+    ) -> None:
+        self._publish_box_grasp_feedback(
+            goal_handle,
+            "RECOVERING_BOX_OBSERVATION",
+            f"{reason}; returning directly to the box observation posture "
+            "before re-detection",
+            arm,
+        )
+        if not dry_run:
+            # Do not revisit the broad initialization waypoint here. The arms
+            # are already on the pickup path, so return directly to the
+            # validated final box observation joints while restoring the torso.
+            self._prepare_box_grasp_arms_and_torso(goal_handle)
+
+    def _detect_and_execute_box_pickup(
+        self, goal_handle, request, arm: str, motion_state: dict[str, bool]
+    ):
+        detection_attempts = self._integer("box_detection_attempts")
         failures: list[str] = []
-        for attempt in (1, 2):
+
+        for detection_attempt in range(1, detection_attempts + 1):
+            clearance_active = False
+            if not request.dry_run:
+                self._wait_for_box_detection_posture(goal_handle, arm)
             self._publish_box_grasp_feedback(
                 goal_handle,
-                "PICKUP_ATTEMPT",
-                f"calling {action_name} (attempt {attempt}/2)",
+                "DETECTING_BOX",
+                "requesting FoundationPose object pose estimation "
+                f"(attempt {detection_attempt}/{detection_attempts})",
                 arm,
             )
-            pickup_goal = PickupTask.Goal()
-            pickup_goal.box_pose = box_pose
-            pickup_goal.box_width = self._float("box_width")
-            pickup_goal.box_height = self._float("box_height")
-            pickup_goal.box_type = self._string("box_type")
-            pickup_goal.dry_run = dry_run
             try:
-                pickup_result = self._call_task_action(
-                    goal_handle,
-                    self.pickup_task_client,
-                    action_name,
-                    pickup_goal,
-                    self._float("pickup_task_result_timeout_sec"),
-                    "active_pickup_task_goal_handle",
-                    feedback_callback=lambda message, current=attempt: (
-                        self._forward_pickup_task_feedback(
-                            goal_handle, arm, current, message
-                        )
-                    ),
+                detection, object_pose = self._call_box_object_pose(
+                    goal_handle, request, arm
                 )
-                return str(pickup_result.message)
             except MissionCanceled:
                 raise
             except MissionError as exc:
-                failures.append(str(exc))
-                if attempt == 2:
-                    raise MissionError(
-                        f"{action_name} failed twice: " + " | ".join(failures)
-                    ) from exc
-                self.get_logger().warning(
-                    f"{action_name} attempt 1/2 failed; retrying once: {exc}"
+                failure = (
+                    f"detection {detection_attempt}/{detection_attempts} "
+                    f"failed: {exc}"
                 )
+                failures.append(failure)
+                self.get_logger().warning(failure)
+                if detection_attempt < detection_attempts:
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "REDETECTING_BOX",
+                        "FoundationPose failed; requesting one fresh detection",
+                        arm,
+                    )
+                continue
+
+            self._check_canceled(goal_handle, "after FoundationPose estimation")
+            if not request.dry_run:
                 self._publish_box_grasp_feedback(
                     goal_handle,
-                    "RETRYING_PICKUP",
-                    f"attempt 1/2 failed; retrying once: {exc}",
+                    "MOVING_TO_PICKUP_CLEARANCE",
+                    "moving both arms from the observation posture to the "
+                    "recorded collision-clearance posture before pickup "
+                    "planning",
                     arm,
                 )
+                try:
+                    self._prepare_box_pickup_clearance_arms(goal_handle)
+                    clearance_active = True
+                except MissionCanceled:
+                    raise
+                except MissionError as exc:
+                    failure = (
+                        f"detection {detection_attempt}/{detection_attempts} "
+                        f"clearance posture failed: {exc}"
+                    )
+                    failures.append(failure)
+                    self.get_logger().warning(failure)
+                    self._recover_box_observation(
+                        goal_handle,
+                        arm,
+                        "clearance posture failed or stopped before pickup",
+                        request.dry_run,
+                    )
+                    if detection_attempt < detection_attempts:
+                        self._publish_box_grasp_feedback(
+                            goal_handle,
+                            "REDETECTING_BOX",
+                            "observation posture was restored after the "
+                            "clearance move failed; capturing a fresh "
+                            "FoundationPose estimate",
+                            arm,
+                        )
+                    continue
 
-        raise MissionError(f"{action_name} failed without a result")
+            self._publish_box_grasp_feedback(
+                goal_handle,
+                "PLANNING_BOX_PICKUP",
+                f"sending detection {detection_attempt}/{detection_attempts} "
+                f"torso-frame box pose to "
+                f"{self._string('pickup_task_action_name')}",
+                arm,
+            )
+            try:
+                arm_message = self._call_pickup_task(
+                    goal_handle,
+                    object_pose,
+                    request.dry_run,
+                    arm,
+                    detection_attempt,
+                    detection_attempts,
+                )
+                if not request.dry_run:
+                    motion_state["started"] = True
+                return detection, object_pose, arm_message
+            except MissionCanceled:
+                raise
+            except PickupAttemptError as exc:
+                motion_state["started"] = (
+                    motion_state["started"] or exc.motion_started
+                )
+                failure = (
+                    f"detection {detection_attempt}/{detection_attempts} "
+                    f"pickup failed: {exc}"
+                )
+                failures.append(failure)
+                self.get_logger().warning(failure)
+
+                if clearance_active or exc.motion_started:
+                    recovery_reason = (
+                        "pickup stage 2 failed after the 10 cm pre-grasp "
+                        "segment completed"
+                        if exc.first_segment_completed
+                        else (
+                            "pickup execution failed after arm motion started"
+                            if exc.motion_started
+                            else "pickup IK/planning failed from the clearance "
+                            "posture"
+                        )
+                    )
+                    self._recover_box_observation(
+                        goal_handle,
+                        arm,
+                        recovery_reason,
+                        request.dry_run,
+                    )
+
+                if detection_attempt < detection_attempts:
+                    if exc.error_code == 1 and not exc.motion_started:
+                        retry_reason = (
+                            "pickup IK/planning failed before arm execution; "
+                            "capturing a fresh FoundationPose estimate"
+                        )
+                    elif exc.motion_started:
+                        retry_reason = (
+                            "pickup execution failed and observation posture "
+                            "was restored; capturing a fresh FoundationPose "
+                            "estimate"
+                        )
+                    else:
+                        retry_reason = (
+                            "pickup failed before arm execution; capturing a "
+                            "fresh FoundationPose estimate"
+                        )
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "REDETECTING_BOX",
+                        retry_reason,
+                        arm,
+                    )
+
+        raise MissionError(
+            "box pickup exhausted fresh-detection attempts: "
+            + " | ".join(failures)
+        )
 
     def _forward_arm_feedback(self, goal_handle, arm: str, feedback_message) -> None:
         feedback = feedback_message.feedback
@@ -2641,15 +3691,12 @@ class MissionController(Node):
             return False
 
     def _execute_box_grasp(self, goal_handle) -> ExecuteBoxGrasp.Result:
+        started_at = time.monotonic()
         request = goal_handle.request
         arm = self._resolve_arm(request.arm)
         result = ExecuteBoxGrasp.Result()
         result.arm = arm
-        torso_prepared = False
-        joint_preparation_started = False
-        joint_preparation_complete = False
-        cartesian_motion_started = False
-        completed = False
+        motion_state = {"started": False}
 
         try:
             self._publish_box_grasp_feedback(
@@ -2674,26 +3721,32 @@ class MissionController(Node):
                     arm,
                 )
                 self._prepare_box_grasp_grippers(goal_handle)
-                self._publish_box_grasp_feedback(
-                    goal_handle,
-                    "PREPARING_BOX_OBSERVATION",
-                    "moving through the intermediate arms, then the final "
-                    "box observation posture",
-                    arm,
+                observation_ready, readiness_detail = (
+                    self._box_observation_ready()
                 )
-                torso_prepared = True
-                joint_preparation_started = True
-                self._prepare_box_grasp_concurrently(goal_handle)
-                joint_preparation_complete = True
+                if observation_ready:
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "BOX_OBSERVATION_READY",
+                        "arms and torso are already at the box observation "
+                        f"posture; skipping preparation ({readiness_detail})",
+                        arm,
+                    )
+                else:
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "PREPARING_BOX_OBSERVATION",
+                        "box observation posture is not ready; moving through "
+                        "the intermediate arms, then the final observation "
+                        f"posture ({readiness_detail})",
+                        arm,
+                    )
+                    self._prepare_box_grasp_concurrently(goal_handle)
 
-            self._publish_box_grasp_feedback(
-                goal_handle,
-                "DETECTING_BOX",
-                "requesting FoundationPose object pose estimation",
-                arm,
-            )
-            detection, object_pose = self._call_box_object_pose(
-                goal_handle, request, arm
+            detection, object_pose, result.arm_message = (
+                self._detect_and_execute_box_pickup(
+                    goal_handle, request, arm, motion_state
+                )
             )
             # ExecuteBoxGrasp predates the box-level pickup delegation. Keep
             # this field populated with the transformed box pose for callers.
@@ -2705,19 +3758,6 @@ class MissionController(Node):
             result.object_id = int(request.target_label)
             if request.publish_pose:
                 self.box_object_pose_publisher.publish(object_pose)
-
-            self._check_canceled(goal_handle, "after FoundationPose estimation")
-            self._publish_box_grasp_feedback(
-                goal_handle,
-                "PLANNING_BOX_PICKUP",
-                f"sending torso-frame box pose to "
-                f"{self._string('pickup_task_action_name')}",
-                arm,
-            )
-            cartesian_motion_started = True
-            result.arm_message = self._call_pickup_task(
-                goal_handle, object_pose, request.dry_run, arm
-            )
 
             if request.dry_run:
                 self._publish_box_grasp_feedback(
@@ -2733,6 +3773,10 @@ class MissionController(Node):
                     "closing both grippers after pickup execution",
                     arm,
                 )
+                feedback_sequences = {
+                    gripper_arm: self._gripper_feedback_sequence(gripper_arm)
+                    for gripper_arm in ("left", "right")
+                }
                 self._publish_both_grippers(
                     goal_handle, self._float("gripper_closed_position")
                 )
@@ -2743,21 +3787,79 @@ class MissionController(Node):
                     "while waiting for both box grippers to close",
                 )
 
+                torso_lift_target = self._float_array(
+                    "box_grasp_torso_lift_positions"
+                )
                 self._publish_box_grasp_feedback(
                     goal_handle,
-                    "LIFTING_BOX_WITH_TORSO",
-                    "lifting the torso while maintaining the pickup arm targets",
+                    "LIFTING_BOX_TORSO1_CLEARANCE",
+                    "moving Torso1 0.20 rad toward zero while holding "
+                    "Torso2/3/4 at the pickup posture",
                     arm,
                 )
-                self._publish_torso(
-                    goal_handle,
-                    self._float_array("box_grasp_torso_lift_positions"),
-                )
+                self._publish_torso(goal_handle, torso_lift_target)
                 result.torso_lift_command_published = True
-                self._wait_delay(
+                self._wait_for_torso_target(
                     goal_handle,
-                    self._float("torso_settle_sec"),
-                    "while waiting for the box torso lift",
+                    torso_lift_target,
+                    "confirming the Torso1 box-clearance lift",
+                )
+
+                self._publish_box_grasp_feedback(
+                    goal_handle,
+                    "VERIFYING_BOX_GRASP",
+                    "Torso1 clearance lift confirmed; checking both grippers "
+                    "for retained material",
+                    arm,
+                )
+                measured_positions = {
+                    gripper_arm: self._wait_for_gripper_close_feedback(
+                        goal_handle,
+                        gripper_arm,
+                        feedback_sequences[gripper_arm],
+                    )
+                    for gripper_arm in ("left", "right")
+                }
+                close_ratios = {
+                    gripper_arm: self._gripper_close_ratio(position)
+                    for gripper_arm, position in measured_positions.items()
+                }
+                empty_threshold = self._float(
+                    "grasp_empty_close_ratio_threshold"
+                )
+                empty_grippers = [
+                    gripper_arm
+                    for gripper_arm, close_ratio in close_ratios.items()
+                    if close_ratio > empty_threshold
+                ]
+                close_detail = ", ".join(
+                    f"{gripper_arm}: measured="
+                    f"{measured_positions[gripper_arm]:.3f}, "
+                    f"close_ratio={close_ratios[gripper_arm]:.1%}"
+                    for gripper_arm in ("left", "right")
+                )
+                if empty_grippers:
+                    detail = (
+                        "box grasp failed because "
+                        f"{'/'.join(empty_grippers)} gripper closed beyond "
+                        f"the {empty_threshold:.1%} empty-grasp threshold; "
+                        f"{close_detail}"
+                    )
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "EMPTY_BOX_GRASP_DETECTED",
+                        detail,
+                        arm,
+                    )
+                    raise MissionError(detail)
+
+                self._publish_box_grasp_feedback(
+                    goal_handle,
+                    "BOX_GRASP_CONFIRMED",
+                    "both grippers retained the box below the empty-grasp "
+                    f"threshold after the Torso1 clearance lift "
+                    f"({close_detail})",
+                    arm,
                 )
 
             result.success = True
@@ -2766,9 +3868,11 @@ class MissionController(Node):
                 if request.dry_run
                 else "box grasp mission completed"
             )
+            self._finalize_action_result(
+                result, started_at, "execute_box_grasp"
+            )
             self._publish_box_grasp_feedback(goal_handle, "DONE", result.message, arm)
             goal_handle.succeed()
-            completed = True
             return result
         except MissionCanceled as exc:
             result.success = False
@@ -2788,36 +3892,23 @@ class MissionController(Node):
             goal_handle.abort()
             return result
         finally:
-            safe_to_reset = all(
-                (
-                    torso_prepared,
-                    not cartesian_motion_started,
-                    not joint_preparation_started or joint_preparation_complete,
-                )
-            )
-            if not completed and not request.dry_run and safe_to_reset:
-                self._safe_pre_arm_torso_reset(goal_handle)
+            # A failed box pickup deliberately retains the validated box
+            # observation posture. In particular, an IK/planning failure must
+            # not publish torso_reset_positions=[0, 0, 0, 0]. A subsequent
+            # action can detect the retained posture and skip initialization.
             self._release_goal()
+            self._finalize_action_result(
+                result, started_at, "execute_box_grasp"
+            )
 
     def _execute_box_place(self, goal_handle) -> ExecuteBoxPlace.Result:
+        started_at = time.monotonic()
         request = goal_handle.request
         arm = self._resolve_arm(request.arm)
         result = ExecuteBoxPlace.Result()
         result.arm = arm
-        result.chassis_distance_x = self._float("box_place_chassis_distance_x")
-        result.chassis_distance_y = self._float("box_place_chassis_distance_y")
-        result.chassis_yaw = self._float("box_place_chassis_yaw")
-        result.chassis_duration_sec = self._float("box_place_chassis_duration_sec")
 
         try:
-            self._publish_box_place_feedback(
-                goal_handle,
-                "MOVING_CHASSIS",
-                "moving chassis to the configured box place location",
-                arm,
-            )
-            self._move_box_chassis(goal_handle, request.dry_run)
-
             if request.dry_run:
                 self._publish_box_place_feedback(
                     goal_handle,
@@ -2835,10 +3926,30 @@ class MissionController(Node):
                 self._publish_torso(
                     goal_handle, self._float_array("box_place_torso_positions")
                 )
+                self._publish_box_place_feedback(
+                    goal_handle,
+                    "WAITING_FOR_TORSO_BEND",
+                    "waiting for measured torso feedback to confirm the box "
+                    "place bend before releasing the grippers",
+                    arm,
+                )
+                self._wait_for_torso_target(
+                    goal_handle,
+                    self._float_array("box_place_torso_positions"),
+                    "confirming the box place torso bend",
+                )
+                self._publish_box_place_feedback(
+                    goal_handle,
+                    "HOLDING_AT_BOX_PLACE_HEIGHT",
+                    "box place torso target confirmed; holding for "
+                    f"{self._float('box_place_release_delay_sec'):.1f}s "
+                    "before releasing the grippers",
+                    arm,
+                )
                 self._wait_delay(
                     goal_handle,
-                    self._float("torso_settle_sec"),
-                    "while waiting for box place torso bend",
+                    self._float("box_place_release_delay_sec"),
+                    "while holding the confirmed box place height before release",
                 )
 
                 self._publish_box_place_feedback(
@@ -2857,26 +3968,69 @@ class MissionController(Node):
                     "while waiting for box release",
                 )
 
-            self._publish_box_place_feedback(
-                goal_handle,
-                "RESTORING_ROBOT",
-                "returning both arms to ready and resetting the torso",
-                arm,
-            )
-            self._call_go_ready(goal_handle, request.dry_run)
-            result.ready_completed = True
+                self._publish_box_place_feedback(
+                    goal_handle,
+                    "LIFTING_ARMS_AFTER_RELEASE",
+                    "moving both released arms to the box pickup clearance "
+                    "posture while keeping the torso bent",
+                    arm,
+                )
+                self._prepare_box_pickup_clearance_arms(goal_handle)
 
             if not request.dry_run:
+                torso_intermediate = self._float_array(
+                    "box_place_torso_straighten_intermediate_positions"
+                )
+                self._publish_box_place_feedback(
+                    goal_handle,
+                    "POSITIONING_TORSO2_FOR_STRAIGHTENING",
+                    "moving torso2 from the box-place bend to the configured "
+                    "intermediate posture before full straightening",
+                    arm,
+                )
+                self._publish_torso(goal_handle, torso_intermediate)
+                self._wait_for_torso_target(
+                    goal_handle,
+                    torso_intermediate,
+                    "confirming the torso2 box-place intermediate posture",
+                )
+
+                self._publish_box_place_feedback(
+                    goal_handle,
+                    "STRAIGHTENING_TORSO",
+                    "torso2 intermediate posture confirmed; straightening "
+                    "and verifying all torso joints before moving the arms "
+                    "to the fixed ready posture",
+                    arm,
+                )
                 self._publish_torso(
                     goal_handle, self._float_array("torso_reset_positions")
                 )
                 result.torso_reset_command_published = True
+                self._wait_for_torso_target(
+                    goal_handle,
+                    self._float_array("torso_reset_positions"),
+                    "confirming the straight torso posture",
+                )
+
+            self._publish_box_place_feedback(
+                goal_handle,
+                "RETURNING_ARMS_TO_READY",
+                "returning both arms to the fixed ready posture after the "
+                "torso is straight",
+                arm,
+            )
+            self._call_go_ready(goal_handle, request.dry_run)
+            result.ready_completed = True
 
             result.success = True
             result.message = (
                 "box place dry run completed"
                 if request.dry_run
                 else "box place mission completed"
+            )
+            self._finalize_action_result(
+                result, started_at, "execute_box_place"
             )
             self._publish_box_place_feedback(goal_handle, "DONE", result.message, arm)
             goal_handle.succeed()
@@ -2899,9 +4053,164 @@ class MissionController(Node):
             goal_handle.abort()
             return result
         finally:
-            if not request.dry_run:
-                self._publish_zero_chassis()
             self._release_goal()
+            self._finalize_action_result(
+                result, started_at, "execute_box_place"
+            )
+
+    def _execute_box_stack(self, goal_handle) -> ExecuteBoxStack.Result:
+        started_at = time.monotonic()
+        level = int(goal_handle.request.level)
+        result = ExecuteBoxStack.Result()
+        result.level = level
+        target_torso = self._stack_level_torso_target(level)
+        pickup_torso = self._float_array("stack_pickup_torso_positions")
+        result.target_torso_positions = target_torso
+
+        try:
+            self._publish_box_stack_feedback(
+                goal_handle,
+                "INITIALIZING",
+                "checking the fixed highest box-loading arm and torso posture",
+                level,
+            )
+            ready, readiness_detail = self._stack_default_ready()
+            if not ready:
+                self._publish_box_stack_feedback(
+                    goal_handle,
+                    "PREPARING_START_POSE",
+                    "current posture is not the fixed highest loading posture; "
+                    f"moving both arms and torso into place ({readiness_detail})",
+                    level,
+                )
+                result.arm_message = self._prepare_stack_start_pose(goal_handle)
+
+            self._publish_box_stack_feedback(
+                goal_handle,
+                "CLOSING_GRIPPERS",
+                "closing both grippers around the manually loaded box",
+                level,
+            )
+            self._publish_both_grippers(
+                goal_handle, self._float("gripper_closed_position")
+            )
+            result.gripper_closed = True
+            self._wait_delay(
+                goal_handle,
+                self._float("gripper_settle_sec"),
+                "while waiting for the manually loaded box to be gripped",
+            )
+
+            self._publish_box_stack_feedback(
+                goal_handle,
+                "LOWERING_TORSO",
+                f"holding both arms fixed while lowering the torso to level {level}",
+                level,
+            )
+            self._move_stack_torso(
+                goal_handle,
+                target_torso,
+                f"lowering the held box to stack level {level}",
+            )
+            fixed_message = "both arms remained at the fixed loading posture"
+            result.arm_message = (
+                f"start={result.arm_message}; {fixed_message}"
+                if result.arm_message
+                else fixed_message
+            )
+
+            self._publish_box_stack_feedback(
+                goal_handle,
+                "WAITING_TO_RELEASE",
+                "torso target confirmed; holding the box for "
+                f"{self._float('stack_release_delay_sec'):.1f}s before release",
+                level,
+            )
+            self._wait_delay(
+                goal_handle,
+                self._float("stack_release_delay_sec"),
+                "while holding the confirmed stack posture before release",
+            )
+
+            self._publish_box_stack_feedback(
+                goal_handle,
+                "OPENING_GRIPPERS",
+                "opening both grippers after the place trajectory completed",
+                level,
+            )
+            self._publish_both_grippers(
+                goal_handle, self._float("gripper_open_position")
+            )
+            result.gripper_opened = True
+            self._wait_delay(
+                goal_handle,
+                self._float("gripper_settle_sec"),
+                "while waiting for the stacked box to be released",
+            )
+
+            self._publish_box_stack_feedback(
+                goal_handle,
+                "RETREATING",
+                "raising the torso back to the highest loading posture so both "
+                "grippers clear the released box",
+                level,
+            )
+            self._move_stack_torso(
+                goal_handle,
+                pickup_torso,
+                "raising both fixed arms clear of the released box",
+            )
+            result.retreat_completed = True
+
+            self._publish_box_stack_feedback(
+                goal_handle,
+                "RETURNING_READY",
+                "highest manual-load posture restored; arms stayed fixed",
+                level,
+            )
+            result.ready_completed = True
+
+            result.success = True
+            result.message = (
+                f"box stack level {level} completed by closed-loop torso motion"
+            )
+            self._finalize_action_result(result, started_at, "execute_box_stack")
+            self._publish_box_stack_feedback(
+                goal_handle, "DONE", result.message, level
+            )
+            goal_handle.succeed()
+            return result
+        except MissionCanceled as exc:
+            result.success = False
+            result.message = str(exc)
+            self._publish_box_stack_feedback(
+                goal_handle, "CANCELLED", result.message, level
+            )
+            goal_handle.canceled()
+            return result
+        except MissionError as exc:
+            result.success = False
+            result.message = str(exc)
+            self.get_logger().error(result.message)
+            self._publish_box_stack_feedback(
+                goal_handle, "FAILED", result.message, level
+            )
+            goal_handle.abort()
+            return result
+        except Exception as exc:  # noqa: BLE001
+            result.success = False
+            result.message = f"unexpected box stack mission error: {exc}"
+            self.get_logger().error(result.message)
+            self._publish_box_stack_feedback(
+                goal_handle, "FAILED", result.message, level
+            )
+            goal_handle.abort()
+            return result
+        finally:
+            self._release_goal()
+            self._finalize_action_result(
+                result, started_at, "execute_box_stack"
+            )
 
     def _recover_grasp_observation(
         self, goal_handle, arm: str, reason: str, dry_run: bool
@@ -2918,23 +4227,63 @@ class MissionController(Node):
             # Cartesian approach path.  Going through the broad intermediate
             # posture adds an unnecessary detour here; command the validated
             # final observation posture directly while restoring the torso.
-            self._prepare_grasp_arms_and_torso(goal_handle)
+            recovery_attempt = 0
+            while True:
+                recovery_attempt += 1
+                try:
+                    self._prepare_grasp_arms_and_torso(goal_handle)
+                    return
+                except MissionCanceled:
+                    raise
+                except MissionError as exc:
+                    error_text = str(exc).lower()
+                    transient_cancel = (
+                        "trajectory execution canceled" in error_text
+                        or "error_code=17" in error_text
+                    )
+                    if not transient_cancel:
+                        raise
+                    detail = (
+                        "observation recovery /move_arm_j was canceled "
+                        f"transiently (attempt {recovery_attempt}): {exc}; "
+                        "retrying the same observation target"
+                    )
+                    self.get_logger().warning(detail)
+                    self._publish_grasp_feedback(
+                        goal_handle,
+                        "RETRYING_OBSERVATION_RECOVERY",
+                        detail,
+                        arm,
+                    )
+                    self._wait_delay(
+                        goal_handle,
+                        self._float("grasp_recovery_retry_delay_sec"),
+                        "before retrying canceled observation recovery",
+                    )
 
     def _detect_and_execute_grasp(
         self, goal_handle, request, arm: str, motion_state: dict[str, bool]
     ) -> tuple[GraspCandidate, PoseStamped, str]:
-        detection_attempts = self._integer("grasp_detection_attempts")
+        max_detection_attempts = self._integer("grasp_detection_attempts")
+        unlimited_detection_retries = max_detection_attempts == 0
         candidates_per_detection = self._integer(
             "grasp_candidates_per_detection"
         )
         failures: list[str] = []
+        detection_attempt = 0
 
-        for detection_attempt in range(1, detection_attempts + 1):
+        while True:
+            detection_attempt += 1
+            detection_attempt_label = (
+                str(detection_attempt)
+                if unlimited_detection_retries
+                else f"{detection_attempt}/{max_detection_attempts}"
+            )
             self._publish_grasp_feedback(
                 goal_handle,
                 "DETECTING",
                 f"requesting grasp pose detection "
-                f"(attempt {detection_attempt}/{detection_attempts})",
+                f"(attempt {detection_attempt_label})",
                 arm,
             )
             try:
@@ -2946,15 +4295,21 @@ class MissionController(Node):
             except MissionError as exc:
                 failure = f"detection {detection_attempt} failed: {exc}"
                 failures.append(failure)
+                failures[:] = failures[-20:]
                 self.get_logger().warning(failure)
-                if detection_attempt < detection_attempts:
+                if (
+                    unlimited_detection_retries
+                    or detection_attempt < max_detection_attempts
+                ):
                     self._publish_grasp_feedback(
                         goal_handle,
                         "REDETECTING",
-                        "detection failed; requesting one fresh detection",
+                        "detection failed or timed out; requesting a fresh "
+                        "detection instead of aborting the grasp action",
                         arm,
                     )
-                continue
+                    continue
+                break
             for candidate_index, candidate in enumerate(candidates, start=1):
                 self._check_canceled(goal_handle, "before grasp candidate execution")
                 try:
@@ -2967,12 +4322,13 @@ class MissionController(Node):
                         f"{candidate_index} target preparation failed: {exc}"
                     )
                     failures.append(failure)
+                    failures[:] = failures[-20:]
                     self.get_logger().warning(failure)
                     continue
                 self._publish_grasp_feedback(
                     goal_handle,
                     "EXECUTING_GRASP_CANDIDATE",
-                    f"detection {detection_attempt}/{detection_attempts}, "
+                    f"detection {detection_attempt_label}, "
                     f"candidate {candidate_index}/{len(candidates)}, "
                     f"score={candidate.score:.4f}",
                     arm,
@@ -2994,6 +4350,7 @@ class MissionController(Node):
                         f"{candidate_index} failed: {exc}"
                     )
                     failures.append(failure)
+                    failures[:] = failures[-20:]
                     self.get_logger().warning(failure)
 
                     self._recover_grasp_observation(
@@ -3013,13 +4370,18 @@ class MissionController(Node):
                             arm,
                         )
 
-            if detection_attempt < detection_attempts:
+            if (
+                unlimited_detection_retries
+                or detection_attempt < max_detection_attempts
+            ):
                 self._publish_grasp_feedback(
                     goal_handle,
                     "REDETECTING",
                     "available candidates failed; capturing a fresh detection",
                     arm,
                 )
+                continue
+            break
 
         raise MissionError(
             "grasp execution exhausted detection/candidate retries: "
@@ -3027,6 +4389,7 @@ class MissionController(Node):
         )
 
     def _execute_grasp(self, goal_handle) -> ExecuteGrasp.Result:
+        started_at = time.monotonic()
         request = goal_handle.request
         arm = self._resolve_arm(request.arm)
         result = ExecuteGrasp.Result()
@@ -3058,50 +4421,89 @@ class MissionController(Node):
                         arm,
                     )
                     self._prepare_grasp_grippers(goal_handle)
-                self._publish_grasp_feedback(
-                    goal_handle,
-                    "PREPARING",
-                    "moving through the intermediate arms, then entering the "
-                    "final observation posture after opening both grippers"
-                    if self._boolean("open_gripper_before_grasp")
-                    else "moving through the intermediate arms, then entering "
-                    "the final observation posture",
-                    arm,
+                observation_ready, readiness_detail = (
+                    self._grasp_observation_ready()
                 )
-                torso_prepared = True
-                joint_preparation_started = True
-                self._prepare_grasp_concurrently(
-                    goal_handle,
-                    False,
-                )
-                joint_preparation_complete = True
+                if observation_ready:
+                    self._publish_grasp_feedback(
+                        goal_handle,
+                        "GRASP_OBSERVATION_READY",
+                        "arms and torso are already at the grasp observation "
+                        f"posture; skipping preparation ({readiness_detail})",
+                        arm,
+                    )
+                else:
+                    self._publish_grasp_feedback(
+                        goal_handle,
+                        "PREPARING",
+                        "grasp observation posture is not ready; moving "
+                        "through the intermediate arms, then entering the "
+                        f"final observation posture ({readiness_detail})",
+                        arm,
+                    )
+                    torso_prepared = True
+                    joint_preparation_started = True
+                    self._prepare_grasp_concurrently(
+                        goal_handle,
+                        False,
+                    )
+                    joint_preparation_complete = True
 
-            detection, grasp_pose_execution, arm_message = (
-                self._detect_and_execute_grasp(
-                    goal_handle, request, arm, motion_state
-                )
+            close_check_enabled = (
+                not request.dry_run
+                and self._boolean("grasp_close_check_enabled")
             )
-            result.grasp_pose = grasp_pose_execution
-            result.score = float(detection.score)
-            result.width = float(detection.width)
-            result.height = float(detection.height)
-            result.depth = float(detection.depth)
-            result.object_id = int(detection.object_id)
-            if request.publish_pose:
-                self.grasp_pose_publisher.publish(grasp_pose_execution)
-            result.arm_message = arm_message
+            max_grasp_attempts = (
+                self._integer("grasp_max_empty_close_attempts")
+                if close_check_enabled
+                else 1
+            )
+            unlimited_empty_grasp_retries = (
+                close_check_enabled and max_grasp_attempts == 0
+            )
+            measured_gripper_position: Optional[float] = None
+            grasp_attempt = 0
 
-            if request.dry_run:
+            while True:
+                grasp_attempt += 1
+                attempt_label = (
+                    str(grasp_attempt)
+                    if unlimited_empty_grasp_retries
+                    else f"{grasp_attempt}/{max_grasp_attempts}"
+                )
+                detection, grasp_pose_execution, arm_message = (
+                    self._detect_and_execute_grasp(
+                        goal_handle, request, arm, motion_state
+                    )
+                )
+                result.grasp_pose = grasp_pose_execution
+                result.score = float(detection.score)
+                result.width = float(detection.width)
+                result.height = float(detection.height)
+                result.depth = float(detection.depth)
+                result.object_id = int(detection.object_id)
+                if request.publish_pose:
+                    self.grasp_pose_publisher.publish(grasp_pose_execution)
+                result.arm_message = arm_message
+
+                if request.dry_run:
+                    self._publish_grasp_feedback(
+                        goal_handle,
+                        "DRY_RUN_COMPLETE",
+                        "arm plan succeeded; direct close and observation "
+                        "return were skipped",
+                        arm,
+                    )
+                    break
+
                 self._publish_grasp_feedback(
                     goal_handle,
-                    "DRY_RUN_COMPLETE",
-                    "arm plan succeeded; direct close and observation return were skipped",
+                    "CLOSING_GRIPPER",
+                    f"closing selected gripper (grasp attempt "
+                    f"{attempt_label})",
                     arm,
                 )
-            else:
-                self._publish_grasp_feedback(
-                    goal_handle, "CLOSING_GRIPPER", "closing selected gripper", arm
-                )
+                feedback_sequence = self._gripper_feedback_sequence(arm)
                 self._publish_gripper(
                     goal_handle, arm, self._float("gripper_closed_position")
                 )
@@ -3112,6 +4514,80 @@ class MissionController(Node):
                     "while waiting for gripper close",
                 )
 
+                if close_check_enabled:
+                    measured_gripper_position = (
+                        self._wait_for_gripper_close_feedback(
+                            goal_handle, arm, feedback_sequence
+                        )
+                    )
+                    close_ratio = self._gripper_close_ratio(
+                        measured_gripper_position
+                    )
+                    empty_close_ratio_threshold = self._float(
+                        "grasp_empty_close_ratio_threshold"
+                    )
+                    if close_ratio > empty_close_ratio_threshold:
+                        detail = (
+                            f"{arm} gripper closed too far without retaining "
+                            f"material: "
+                            f"measured={measured_gripper_position:.3f}, "
+                            f"close_ratio={close_ratio:.1%}, "
+                            f"empty_threshold="
+                            f"{empty_close_ratio_threshold:.1%}, grasp "
+                            f"attempt={attempt_label}"
+                        )
+                        self.get_logger().warning(detail)
+                        self._publish_grasp_feedback(
+                            goal_handle,
+                            "EMPTY_GRASP_DETECTED",
+                            detail,
+                            arm,
+                        )
+                        self._publish_gripper(
+                            goal_handle,
+                            arm,
+                            self._float("gripper_open_position"),
+                        )
+                        self._wait_delay(
+                            goal_handle,
+                            self._float("gripper_settle_sec"),
+                            "while reopening after an empty grasp",
+                        )
+                        self._recover_grasp_observation(
+                            goal_handle,
+                            arm,
+                            "empty grasp detected",
+                            False,
+                        )
+                        result.torso_reset_command_published = True
+                        if (
+                            not unlimited_empty_grasp_retries
+                            and grasp_attempt >= max_grasp_attempts
+                        ):
+                            raise MissionError(
+                                f"grasp failed after {max_grasp_attempts} empty "
+                                f"grasp attempts; {detail}"
+                            )
+                        self._publish_grasp_feedback(
+                            goal_handle,
+                            "RETRYING_EMPTY_GRASP",
+                            "observation posture restored; requesting a fresh "
+                            "detection for the next grasp attempt",
+                            arm,
+                        )
+                        continue
+
+                    self._publish_grasp_feedback(
+                        goal_handle,
+                        "GRASP_CONFIRMED",
+                        f"material retained an opening in the {arm} gripper "
+                        f"(measured={measured_gripper_position:.3f}, "
+                        f"close_ratio={close_ratio:.1%}, "
+                        f"empty_threshold="
+                        f"{empty_close_ratio_threshold:.1%})",
+                        arm,
+                    )
+
                 self._publish_grasp_feedback(
                     goal_handle,
                     "RETURNING_TO_OBSERVATION",
@@ -3121,12 +4597,113 @@ class MissionController(Node):
                 self._prepare_grasp_arms_and_torso(goal_handle)
                 result.torso_reset_command_published = True
 
+                if close_check_enabled:
+                    self._publish_grasp_feedback(
+                        goal_handle,
+                        "FINAL_GRASP_VERIFICATION",
+                        "observation posture restored; reasserting the closed "
+                        "gripper command and reading fresh feedback before "
+                        "completing the action",
+                        arm,
+                    )
+                    final_feedback_sequence = (
+                        self._gripper_feedback_sequence(arm)
+                    )
+                    self._publish_gripper(
+                        goal_handle,
+                        arm,
+                        self._float("gripper_closed_position"),
+                    )
+                    self._wait_delay(
+                        goal_handle,
+                        self._float("gripper_settle_sec"),
+                        "while settling the final grasp verification",
+                    )
+                    measured_gripper_position = (
+                        self._wait_for_gripper_close_feedback(
+                            goal_handle,
+                            arm,
+                            final_feedback_sequence,
+                        )
+                    )
+                    close_ratio = self._gripper_close_ratio(
+                        measured_gripper_position
+                    )
+                    empty_close_ratio_threshold = self._float(
+                        "grasp_empty_close_ratio_threshold"
+                    )
+                    if close_ratio > empty_close_ratio_threshold:
+                        detail = (
+                            f"final grasp verification detected an empty grasp "
+                            f"after returning to observation: {arm} gripper "
+                            f"closed more than "
+                            f"{empty_close_ratio_threshold:.1%}, indicating "
+                            f"that no material remains between the fingers "
+                            f"(measured={measured_gripper_position:.3f}, "
+                            f"close_ratio={close_ratio:.1%})"
+                        )
+                        self.get_logger().warning(detail)
+                        self._publish_grasp_feedback(
+                            goal_handle,
+                            "FINAL_EMPTY_GRASP_DETECTED",
+                            detail,
+                            arm,
+                        )
+                        self._publish_gripper(
+                            goal_handle,
+                            arm,
+                            self._float("gripper_open_position"),
+                        )
+                        self._wait_delay(
+                            goal_handle,
+                            self._float("gripper_settle_sec"),
+                            "while reopening after final empty-grasp "
+                            "verification",
+                        )
+                        if (
+                            not unlimited_empty_grasp_retries
+                            and grasp_attempt >= max_grasp_attempts
+                        ):
+                            raise MissionError(
+                                f"grasp failed after {max_grasp_attempts} "
+                                f"empty grasp attempts; {detail}"
+                            )
+                        self._publish_grasp_feedback(
+                            goal_handle,
+                            "RETRYING_FINAL_EMPTY_GRASP",
+                            "gripper reopened at the observation posture; "
+                            "requesting a fresh detection for the next grasp "
+                            "attempt",
+                            arm,
+                        )
+                        continue
+
+                    self._publish_grasp_feedback(
+                        goal_handle,
+                        "FINAL_GRASP_CONFIRMED",
+                        f"material remains between the gripper fingers after "
+                        f"returning to observation "
+                        f"(measured={measured_gripper_position:.3f}, "
+                        f"close_ratio={close_ratio:.1%}, "
+                        f"empty_threshold="
+                        f"{empty_close_ratio_threshold:.1%})",
+                        arm,
+                    )
+                break
+
             result.success = True
             result.message = (
                 "grasp dry run completed"
                 if request.dry_run
-                else "grasp mission completed"
+                else (
+                    "grasp mission completed"
+                    if measured_gripper_position is None
+                    else "grasp mission completed; retained-object gripper "
+                    f"close ratio confirmed at {close_ratio:.1%} "
+                    f"(measured={measured_gripper_position:.3f})"
+                )
             )
+            self._finalize_action_result(result, started_at, "execute_grasp")
             self._publish_grasp_feedback(goal_handle, "DONE", result.message, arm)
             goal_handle.succeed()
             completed = True
@@ -3161,26 +4738,16 @@ class MissionController(Node):
                     goal_handle
                 )
             self._release_goal()
+            self._finalize_action_result(result, started_at, "execute_grasp")
 
     def _execute_place(self, goal_handle) -> ExecutePlace.Result:
+        started_at = time.monotonic()
         request = goal_handle.request
         arm = self._resolve_arm(request.arm)
         result = ExecutePlace.Result()
         result.arm = arm
-        result.chassis_distance_x = self._float("place_chassis_distance_x")
-        result.chassis_distance_y = self._float("place_chassis_distance_y")
-        result.chassis_yaw = self._float("place_chassis_yaw")
-        result.chassis_duration_sec = self._float("place_chassis_duration_sec")
 
         try:
-            self._publish_place_feedback(
-                goal_handle,
-                "MOVING_CHASSIS",
-                "moving chassis to the configured fixed place location",
-                arm,
-            )
-            self._move_chassis(goal_handle, request.dry_run)
-
             if request.dry_run:
                 self._publish_place_feedback(
                     goal_handle,
@@ -3226,30 +4793,25 @@ class MissionController(Node):
                     goal_handle, arm, self._float("gripper_open_position")
                 )
                 result.gripper_command_published = True
-                self._wait_delay(
-                    goal_handle,
-                    self._float("gripper_settle_sec"),
-                    "while waiting for object release",
-                )
-
-            if not request.dry_run:
                 self._publish_place_feedback(
                     goal_handle,
-                    "RETURNING_TO_OBSERVATION",
-                    "returning both arms and torso directly to the grasp "
-                    "observation posture",
+                    "RELEASE_COMPLETE",
+                    "gripper open command published; post-release arm and "
+                    "torso motions are disabled",
                     arm,
                 )
-                self._prepare_grasp_arms_and_torso(goal_handle)
-                result.torso_reset_command_published = True
-                result.home_completed = False
+
+            result.home_completed = False
+            result.torso_reset_command_published = False
 
             result.success = True
             result.message = (
-                "place dry run completed"
+                "place dry run completed; post-release motions skipped"
                 if request.dry_run
-                else "place mission completed"
+                else "place mission completed immediately after gripper release; "
+                "post-release motions skipped"
             )
+            self._finalize_action_result(result, started_at, "execute_place")
             self._publish_place_feedback(goal_handle, "DONE", result.message, arm)
             goal_handle.succeed()
             return result
@@ -3271,9 +4833,68 @@ class MissionController(Node):
             goal_handle.abort()
             return result
         finally:
-            if not request.dry_run:
-                self._publish_zero_chassis()
             self._release_goal()
+            self._finalize_action_result(result, started_at, "execute_place")
+
+    def _execute_move_chassis(self, goal_handle) -> MoveChassis.Result:
+        started_at = time.monotonic()
+        request = goal_handle.request
+        direction = request.direction.strip().lower()
+        speed = self._float(
+            "chassis_angular_speed"
+            if direction in ANGULAR_CHASSIS_DIRECTIONS
+            else "chassis_linear_speed"
+        )
+        duration_sec = self._float("chassis_move_duration_sec")
+        result = MoveChassis.Result()
+        result.direction = direction
+        result.speed = speed
+        result.duration_sec = duration_sec
+
+        try:
+            self._publish_move_chassis_feedback(
+                goal_handle,
+                "STARTING",
+                f"starting {direction} chassis motion at "
+                f"{speed:.3f} for {duration_sec:.3f}s",
+                0.0,
+            )
+            self._move_chassis_for_duration(
+                goal_handle,
+                direction,
+                speed,
+                duration_sec,
+            )
+
+            result.success = True
+            result.message = "chassis motion completed"
+            self._finalize_action_result(result, started_at, "move_chassis")
+            self._publish_move_chassis_feedback(
+                goal_handle, "DONE", result.message, 1.0
+            )
+            goal_handle.succeed()
+            return result
+        except MissionCanceled as exc:
+            result.success = False
+            result.message = str(exc)
+            goal_handle.canceled()
+            return result
+        except MissionError as exc:
+            result.success = False
+            result.message = str(exc)
+            self.get_logger().error(result.message)
+            goal_handle.abort()
+            return result
+        except Exception as exc:  # noqa: BLE001
+            result.success = False
+            result.message = f"unexpected chassis motion error: {exc}"
+            self.get_logger().error(result.message)
+            goal_handle.abort()
+            return result
+        finally:
+            self._publish_zero_chassis()
+            self._release_goal()
+            self._finalize_action_result(result, started_at, "move_chassis")
 
 
 def main(args: Optional[list[str]] = None) -> None:

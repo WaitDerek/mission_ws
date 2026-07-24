@@ -1,7 +1,5 @@
 """Start the R1 Pro planning stack, Mission, and one perception pipeline."""
 
-import os
-
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -9,12 +7,11 @@ from launch.actions import (
     IncludeLaunchDescription,
     LogInfo,
     OpaqueFunction,
-    SetEnvironmentVariable,
+    TimerAction,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
-    EnvironmentVariable,
     LaunchConfiguration,
     PathJoinSubstitution,
     PythonExpression,
@@ -47,32 +44,30 @@ def _validate_configuration(context):
             "grasp_config_file:=camera_topics_r1pro.yaml"
         )
 
-    conda_root = LaunchConfiguration("conda_root").perform(context)
-    grasp_env = LaunchConfiguration("grasp_conda_env").perform(context)
-    vision_env = LaunchConfiguration("vision_conda_env").perform(context)
-    grasp_python = os.path.join(conda_root, "envs", grasp_env, "bin", "python")
-    if not os.access(grasp_python, os.X_OK):
+    try:
+        perception_delay = float(
+            LaunchConfiguration("perception_start_delay_sec").perform(context)
+        )
+        mission_delay = float(
+            LaunchConfiguration("mission_start_delay_sec").perform(context)
+        )
+    except ValueError as exc:
+        raise RuntimeError("staged startup delays must be numeric") from exc
+    if perception_delay < 0.0:
+        raise RuntimeError("perception_start_delay_sec must be nonnegative")
+    if mission_delay <= perception_delay:
         raise RuntimeError(
-            f"Python for Dual Arm, Mission, and Grasp is not executable: "
-            f"{grasp_python}"
+            "mission_start_delay_sec must be greater than "
+            "perception_start_delay_sec"
         )
-
-    selected_env = grasp_env
-    if pipeline == "box":
-        vision_python = os.path.join(
-            conda_root, "envs", vision_env, "bin", "python"
-        )
-        if not os.access(vision_python, os.X_OK):
-            raise RuntimeError(
-                f"Python for Vision is not executable: {vision_python}"
-            )
-        selected_env = vision_env
 
     return [
         LogInfo(
             msg=(
-                f"Mission system: dual_arm + mission + {pipeline} "
-                f"(mode: {mode}, conda env: {selected_env})"
+                f"Mission system: dual_arm + {pipeline} + mission "
+                f"(mode: {mode}); staged startup order: "
+                f"dual_arm@0s -> {pipeline}@{perception_delay:g}s -> "
+                f"mission@{mission_delay:g}s"
             )
         )
     ]
@@ -81,9 +76,6 @@ def _validate_configuration(context):
 def generate_launch_description() -> LaunchDescription:
     mode = LaunchConfiguration("mode")
     pipeline = LaunchConfiguration("pipeline")
-    conda_root = LaunchConfiguration("conda_root")
-    grasp_conda_env = LaunchConfiguration("grasp_conda_env")
-    vision_conda_env = LaunchConfiguration("vision_conda_env")
 
     grasp_condition = IfCondition(
         PythonExpression(["'", pipeline, "'.lower() == 'grasp'"])
@@ -98,9 +90,6 @@ def generate_launch_description() -> LaunchDescription:
         PythonExpression(["'", mode, "'.lower() == 'hardware'"])
     )
 
-    grasp_python_bin = PathJoinSubstitution(
-        [conda_root, "envs", grasp_conda_env, "bin"]
-    )
     grasp_config_file = PathJoinSubstitution(
         [
             FindPackageShare("grasp_orchestrator"),
@@ -108,10 +97,6 @@ def generate_launch_description() -> LaunchDescription:
             LaunchConfiguration("grasp_config_file"),
         ]
     )
-    vision_python = PathJoinSubstitution(
-        [conda_root, "envs", vision_conda_env, "bin", "python"]
-    )
-
     simulation_dual_arm = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             PathJoinSubstitution(
@@ -152,7 +137,9 @@ def generate_launch_description() -> LaunchDescription:
             "galaxy_enable_native_cartesian": LaunchConfiguration(
                 "galaxy_enable_native_cartesian"
             ),
-            "enable_robot_state_publisher": "true",
+            "enable_robot_state_publisher": LaunchConfiguration(
+                "enable_robot_state_publisher"
+            ),
             "enable_move_group": "true",
             "enable_rviz": LaunchConfiguration("enable_rviz"),
             "enable_fake_ros2_control": "false",
@@ -224,21 +211,24 @@ def generate_launch_description() -> LaunchDescription:
         }.items(),
     )
 
+    perception_start = TimerAction(
+        period=LaunchConfiguration("perception_start_delay_sec"),
+        actions=[grasp, box],
+    )
+    mission_start = TimerAction(
+        period=LaunchConfiguration("mission_start_delay_sec"),
+        actions=[mission],
+    )
+
     runtime = GroupAction(
         actions=[
-            # Dual Arm, Mission, and Grasp use changan. The Vision executable is
-            # a wrapper that honors OBJECT_POSE_PYTHON, so it remains isolated.
-            SetEnvironmentVariable(
-                "PATH",
-                [grasp_python_bin, os.pathsep, EnvironmentVariable("PATH")],
-            ),
-            SetEnvironmentVariable("PYTHONNOUSERSITE", "1"),
-            SetEnvironmentVariable("OBJECT_POSE_PYTHON", vision_python),
+            # Start the planning/hardware stack first. MoveIt initialization is
+            # intentionally given its own startup window before perception
+            # loads a model and Mission begins creating its action clients.
             simulation_dual_arm,
             hardware_dual_arm,
-            mission,
-            grasp,
-            box,
+            perception_start,
+            mission_start,
         ]
     )
 
@@ -257,26 +247,8 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="grasp",
                 description="Perception pipeline: grasp or box.",
             ),
-            DeclareLaunchArgument(
-                "conda_root",
-                default_value=EnvironmentVariable(
-                    "MISSION_CONDA_ROOT", default_value="/home/dekc/anaconda3"
-                ),
-            ),
-            DeclareLaunchArgument(
-                "grasp_conda_env",
-                default_value=EnvironmentVariable(
-                    "MISSION_GRASP_CONDA_ENV", default_value="changan"
-                ),
-            ),
-            DeclareLaunchArgument(
-                "vision_conda_env",
-                default_value=EnvironmentVariable(
-                    "MISSION_VISION_CONDA_ENV", default_value="foundationpose"
-                ),
-            ),
             DeclareLaunchArgument("robot_profile", default_value="r1_pro"),
-            DeclareLaunchArgument("planning_pipeline", default_value="ompl"),
+            DeclareLaunchArgument("planning_pipeline", default_value="stomp"),
             DeclareLaunchArgument("dry_run", default_value="false"),
             DeclareLaunchArgument("enable_rviz", default_value="true"),
             DeclareLaunchArgument("robot_ip", default_value="auto"),
@@ -291,9 +263,34 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument(
                 "galaxy_enable_native_cartesian", default_value="false"
             ),
+            DeclareLaunchArgument(
+                "enable_robot_state_publisher",
+                default_value="true",
+                description=(
+                    "Start the Dual Arm robot_state_publisher. Set false when "
+                    "the R1 Pro native bringup already publishes the required "
+                    "robot TF tree."
+                ),
+            ),
             DeclareLaunchArgument("enable_fk_pose_publisher", default_value="true"),
             DeclareLaunchArgument("use_sim_time", default_value="false"),
             DeclareLaunchArgument("log_level", default_value="info"),
+            DeclareLaunchArgument(
+                "perception_start_delay_sec",
+                default_value="0.0",
+                description=(
+                    "Seconds after launch before starting the selected grasp or "
+                    "box perception pipeline. Dual Arm starts immediately."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "mission_start_delay_sec",
+                default_value="30.0",
+                description=(
+                    "Seconds after launch before starting Mission. Keep this "
+                    "greater than perception_start_delay_sec."
+                ),
+            ),
             DeclareLaunchArgument(
                 "mission_config_file",
                 default_value=PathJoinSubstitution(
@@ -315,7 +312,7 @@ def generate_launch_description() -> LaunchDescription:
             ),
             DeclareLaunchArgument(
                 "box_config_file",
-                default_value="object_pose_hd.yaml",
+                default_value="object_pose_r1pro.yaml",
                 description=(
                     "Config filename under object_pose_ros/config for the box "
                     "FoundationPose pipeline."

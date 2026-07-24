@@ -32,7 +32,7 @@ ros2 service call \
       timeout_sec: 30.0}"
 
 ### 到达观测位置
-ros2 action send_goal --feedback  /move_arm_j   task_interfaces/action/MoveArmJoints \ "{left_joints: [-0.98, 0.84, -0.83, -2.00, 1.25, 0.29, 0.13],    right_joints: [-0.98, -0.84, 0.93, -2.00, -1.25, 0.60, -0.13], dry_run: false,  duration: 5.0}"
+ros2 action send_goal --feedback  /move_arm_j   task_interfaces/action/MoveArmJoints \ "{left_joints: [-0.98, 0.84, -0.83, -2.10, 1.25, 0.29, 0.13],    right_joints: [-0.98, -0.84, 0.93, -2.00, -1.25, 0.60, -0.13], dry_run: false,  duration: 5.0}"
 
 ### mission全流程
 ros2 action send_goal --feedback \
@@ -46,22 +46,35 @@ ros2 action send_goal --feedback \
       detection_timeout_sec: 30.0,
       dry_run: false}"
 
+ros2 action send_goal /execute_place \
+  mission_interfaces/action/ExecutePlace \
+  "{request_id: place_test, arm: right, dry_run: false}" \
+  --feedback
+
 
 ### 实物流程
+cd galaxea/install/startup_config/share/startup_config/script
+./robot_startup.sh boot ../sessions.d/ATCStandard/R1PROBody.d/
+
 ros2 launch mission_controller mission_system.launch.py \
     mode:=hardware \
     pipeline:=grasp \
-    grasp_config_file:=camera_topics_local_d405.yaml \
     hardware_armed:=false \
+    enable_rviz:=false \
     dry_run:=true
 
 确认反馈、订阅者和急停后，执行实物模式：
 
 ros2 launch mission_controller mission_system.launch.py \
-    mode:=hardware \
-    pipeline:=grasp \
-    grasp_config_file:=camera_topics_local_d405.yaml \
-    hardware_armed:=true \
+  mode:=hardware \
+  pipeline:=grasp \
+  hardware_armed:=true \
+  enable_rviz:=false \
+  enable_robot_state_publisher:=false
 
 dry_run默认false
 hardware_armed默认false
+
+python3 -m http.server 8765 \
+  --bind 0.0.0.0 \
+  --directory /home/nvidia/code/grasp_ws/runtime/graspness

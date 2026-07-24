@@ -12,6 +12,12 @@ mission_controller:
     arm_joints_result_timeout_sec: 2.0
     arm_pose_result_timeout_sec: 2.0
     verify_arm_joint_targets: false
+    # The isolated mock publishes synthetic full arm feedback here. Override
+    # the hardware profile's /dual_arm/joint_states topic for this test only.
+    joint_state_topic: /joint_states
+    torso_target_tolerance: 0.03
+    torso_target_wait_timeout_sec: 2.0
+    torso_target_stable_samples: 1
     home_result_timeout_sec: 2.0
     go_ready_result_timeout_sec: 2.0
     require_command_subscribers: true
@@ -21,15 +27,15 @@ mission_controller:
     torso_settle_sec: 0.05
     arm_settle_sec: 0.05
     gripper_settle_sec: 0.05
-    box_grasp_torso_lift_positions: [0.61, -0.81, -0.21, 0.0]
+    box_detection_posture_settle_sec: 0.05
+    box_place_release_delay_sec: 0.05
+    place_torso_straighten_step_delay_sec: 0.05
+    box_grasp_torso_lift_positions: [0.41, -0.81, -0.6, 0.0]
     box_place_torso_positions: [0.61, -0.81, -0.6, 0.0]
-    box_place_chassis_distance_x: 0.0
-    box_place_chassis_distance_y: -0.02
-    box_place_chassis_yaw: 0.0
-    box_place_chassis_duration_sec: 0.2
-    place_chassis_distance_x: -0.02
-    place_chassis_distance_y: 0.0
-    place_chassis_yaw: 0.0
-    place_chassis_duration_sec: 0.2
+    box_place_torso_straighten_intermediate_positions: [0.61, -1.2, -0.6, 0.0]
+    move_chassis_action_name: /move_chassis
+    chassis_linear_speed: 0.1
+    chassis_angular_speed: 0.2
+    chassis_move_duration_sec: 0.2
     chassis_publish_hz: 20.0
     chassis_stop_repeat_count: 2

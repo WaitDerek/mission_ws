@@ -39,7 +39,6 @@ ros2 action send_goal --feedback \
     /execute_grasp \
     mission_interfaces/action/ExecuteGrasp \
     "{request_id: 'grasp_sim_test',
-      target_frame: 'torso_link4',
       target_label: 0,
       arm: 'right',
       publish_pose: true,
@@ -56,13 +55,6 @@ ros2 action send_goal /execute_place \
 cd galaxea/install/startup_config/share/startup_config/script
 ./robot_startup.sh boot ../sessions.d/ATCStandard/R1PROBody.d/
 
-ros2 launch mission_controller mission_system.launch.py \
-    mode:=hardware \
-    pipeline:=grasp \
-    hardware_armed:=false \
-    enable_rviz:=false \
-    dry_run:=true
-
 确认反馈、订阅者和急停后，执行实物模式：
 
 ros2 launch mission_controller mission_system.launch.py \
@@ -70,11 +62,13 @@ ros2 launch mission_controller mission_system.launch.py \
   pipeline:=grasp \
   hardware_armed:=true \
   enable_rviz:=false \
-  enable_robot_state_publisher:=false
+  enable_robot_state_publisher:=false \
+  dry_run:=false
 
-dry_run默认false
+dry_run默认false，true模式不进行运动
 hardware_armed默认false
 
+### 网页可视化
 python3 -m http.server 8765 \
   --bind 0.0.0.0 \
   --directory /home/nvidia/code/grasp_ws/runtime/graspness

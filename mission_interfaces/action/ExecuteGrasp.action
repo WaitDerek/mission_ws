@@ -1,6 +1,5 @@
-# Execute one complete grasp mission.
+# Execute one material grasp in the robot-configured execution frame.
 string request_id
-string target_frame
 int32 target_label
 string arm
 bool publish_pose

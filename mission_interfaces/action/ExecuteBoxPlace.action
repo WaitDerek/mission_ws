@@ -1,13 +1,11 @@
-# Execute a box place mission with box-specific preparation.
+# Execute a dual-arm box place mission.
 string request_id
-string arm
 bool dry_run
 
 ---
 
 bool success
 string message
-string arm
 bool gripper_command_published
 bool ready_completed
 bool torso_reset_command_published
@@ -16,4 +14,3 @@ bool torso_reset_command_published
 
 string stage
 string detail
-string arm

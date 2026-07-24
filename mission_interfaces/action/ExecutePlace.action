@@ -9,8 +9,6 @@ bool success
 string message
 string arm
 bool gripper_command_published
-bool home_completed
-bool torso_reset_command_published
 
 ---
 

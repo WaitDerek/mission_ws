@@ -49,28 +49,15 @@ ros2 action send_goal --feedback \
   /execute_box_grasp \
   mission_interfaces/action/ExecuteBoxGrasp \
   "{request_id: 'f320_camera_sim_test',
-    target_frame: 'torso_link4',
     target_label: -1,
-    arm: 'right',
-    publish_pose: true,
-    detection_timeout_sec: 120.0,
     dry_run: false}"
 
 ros2 action send_goal /execute_box_place \
   mission_interfaces/action/ExecuteBoxPlace \
-  "{request_id: box_place_test, arm: right, dry_run: false}" \
+  "{request_id: box_place_test, dry_run: false}" \
   --feedback
 
 ### 实物流程
-ros2 launch mission_controller mission_system.launch.py \
-  mode:=hardware \
-  pipeline:=box \
-  hardware_armed:=false \
-  dry_run:=true \
-  enable_rviz:=false \
-  enable_robot_state_publisher:=false
-
-正式执行：
 ros2 launch mission_controller mission_system.launch.py \
   mode:=hardware \
   pipeline:=box \
@@ -79,7 +66,7 @@ ros2 launch mission_controller mission_system.launch.py \
   enable_rviz:=false \
   enable_robot_state_publisher:=false
 
-dry_run默认false
+dry_run默认false，true模式不进行运动
 hardware_armed默认false
 
 ros2 action send_goal /move_chassis \

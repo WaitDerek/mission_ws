@@ -15,6 +15,16 @@ dual-arm workspace.
 
 Only one mission is accepted at a time.
 
+The executable is assembled from small task-domain modules:
+
+- `mission_controller.py`: ROS node construction, parameters, and goal admission.
+- `action_runtime.py`: shared command publication, fresh-feedback checks,
+  readiness checks, dependency calls, and cancellation-aware waits.
+- `material_actions.py` / `box_actions.py`: mission-stage ordering.
+- `grasp_support.py` / `box_support.py`: perception transforms and delegated
+  arm execution.
+- `stack_action.py` / `chassis_action.py`: independent stack and chassis flows.
+
 The box actions are registered separately from the material actions. The node's
 safe fallback keeps them disabled, while the shipped R1 Pro configuration
 enables them with calibrated observation targets and FoundationPose settings.
@@ -24,17 +34,18 @@ commands.
 The box grasp sequence moves both arms through the shared collision-clearance
 posture before entering the saved dual-arm observation pose, calls FoundationPose,
 transforms the OBB centre from the D405 optical frame into `torso_link4`, preserves
-the F320 model axes and geometric-centre semantics, and delegates the two-hand
+the configured model axes and geometric-centre semantics, and delegates the two-hand
 geometry and motion to `/pickup_task`.
-The configured F320 dimensions are passed explicitly as width and height. Once
-pickup execution succeeds, mission closes both grippers and lifts the torso to
-the shallower box-carry waist posture. A failed `/pickup_task` is
-retried once with the same transformed box pose; two failures abort the box
-grasp before any close or lift command.
+The configured box dimensions are passed explicitly as width and height. Once
+pickup execution succeeds, mission closes both grippers and requires fresh
+feedback proving that both retained the box. Only then may it lift the torso to
+the shallower box-carry waist posture. A failed `/pickup_task` restores the
+observation posture and retries once from a fresh FoundationPose result; two
+failures abort before any close or lift command.
 The box place sequence remains separate: bend the torso, open both grippers,
-call `/go_ready`, then reset the torso upright. Chassis movement is deliberately
-not embedded in either place sequence; call `/move_chassis` explicitly before
-or after a place action as required by the task.
+clear the released box, straighten the torso, then call `/go_ready`. Chassis
+movement is deliberately not embedded in either place sequence; call
+`/move_chassis` explicitly before or after a place action as required.
 
 ### Box grasp sequence
 
@@ -42,10 +53,13 @@ or after a place action as required by the task.
    intermediate posture, then move the torso and both arms together to the
    saved box observation posture.
 2. Run FoundationPose, transform the geometric-centre pose into `torso_link4`,
-   and call `/pickup_task` with the F320 dimensions. Retry once if it fails.
-3. After `/pickup_task` reports success, close both grippers.
-4. Publish `box_grasp_torso_lift_positions` while preserving the final arm
-   targets. This target is the fully upright `[0, 0, 0, 0]` torso posture.
+   and call `/pickup_task` with the configured dimensions. Restore the
+   observation posture, capture a fresh pose, and retry once if it fails.
+3. After `/pickup_task` reports success, close both grippers and require fresh
+   feedback from both sides. An empty or stale-feedback result aborts without
+   lifting.
+4. Only after both grippers pass the retained-object check, publish
+   `box_grasp_torso_lift_positions` while preserving the final arm targets.
 
 ### Box place sequence
 
@@ -347,7 +361,7 @@ validated:
 ```bash
 ros2 action send_goal --feedback \
   /execute_grasp mission_interfaces/action/ExecuteGrasp \
-  "{request_id: grasp_1, target_frame: torso_link, target_label: 0, arm: right, publish_pose: true, detection_timeout_sec: 20.0, dry_run: false}"
+  "{request_id: grasp_1, target_label: 0, arm: right, publish_pose: true, detection_timeout_sec: 20.0, dry_run: false}"
 ```
 
 Execute the configured place flow:
@@ -371,7 +385,7 @@ Execute the complete box place flow after a successful real box grasp:
 ```bash
 ros2 action send_goal --feedback \
   /execute_box_place mission_interfaces/action/ExecuteBoxPlace \
-  "{request_id: box_place_1, arm: right, dry_run: false}"
+  "{request_id: box_place_1, dry_run: false}"
 ```
 
 Execute the fixed level-4 box stack cycle:

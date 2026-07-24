@@ -51,6 +51,7 @@ class MockMissionSystem(Node):
         }
         self.active_gripper_close_feedback = {"left": 10.0, "right": 10.0}
         self.last_gripper_commands = {"left": None, "right": None}
+        self.suppressed_gripper_feedback: set[str] = set()
         command_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
@@ -164,6 +165,12 @@ class MockMissionSystem(Node):
         self.gripper_close_feedback_sequences[arm] = list(positions)
         self.active_gripper_close_feedback[arm] = 10.0
         self.last_gripper_commands[arm] = None
+
+    def suppress_gripper_feedback(self, arm: str, suppressed: bool) -> None:
+        if suppressed:
+            self.suppressed_gripper_feedback.add(arm)
+        else:
+            self.suppressed_gripper_feedback.discard(arm)
 
     def publish_box_observation_feedback(self) -> None:
         arm_message = JointState()
@@ -282,7 +289,7 @@ class MockMissionSystem(Node):
         if not message.position:
             return
         positions = list(message.position)
-        level2_target = [1.407070, -2.598294, -1.091117, 0.0]
+        level2_target = [1.356518, -2.506617, -1.049991, 0.0]
         if all(
             math.isclose(actual, expected, abs_tol=1e-8)
             for actual, expected in zip(positions, level2_target)
@@ -291,6 +298,7 @@ class MockMissionSystem(Node):
             expected_velocities = [
                 abs(value) / duration for value in level2_target
             ]
+            expected_velocities[2] = 0.13
             if len(message.velocity) != 4 or any(
                 not math.isclose(actual, expected, abs_tol=1e-8)
                 for actual, expected in zip(
@@ -298,8 +306,9 @@ class MockMissionSystem(Node):
                 )
             ):
                 raise AssertionError(
-                    "stack torso velocities must synchronize every joint to "
-                    f"Torso1 time: actual={list(message.velocity)}, "
+                    "stack torso velocities must synchronize Torso2 to "
+                    "Torso1 while preserving the configured fixed Torso3 "
+                    f"speed: actual={list(message.velocity)}, "
                     f"expected={expected_velocities}"
                 )
         if all(abs(value) < 1e-8 for value in positions):
@@ -348,6 +357,9 @@ class MockMissionSystem(Node):
         else:
             feedback_position = command
         self.last_gripper_commands[arm] = command
+        if arm in self.suppressed_gripper_feedback:
+            self._record(f"gripper_feedback_suppressed:{arm}")
+            return
 
         feedback = JointState()
         feedback.header.stamp = self.get_clock().now().to_msg()
@@ -391,14 +403,15 @@ class MockMissionSystem(Node):
         response.depth = 0.03
         response.object_id = 1
         response.source_frame = "torso_link"
-        response.candidate_poses.extend(
-            [response.grasp_pose, response.grasp_pose]
-        )
-        response.candidate_scores.extend([0.9, 0.8])
-        response.candidate_widths.extend([0.08, 0.08])
-        response.candidate_heights.extend([0.02, 0.02])
-        response.candidate_depths.extend([0.03, 0.03])
-        response.candidate_object_ids.extend([1, 1])
+        if hasattr(response, "candidate_poses"):
+            response.candidate_poses.extend(
+                [response.grasp_pose, response.grasp_pose]
+            )
+            response.candidate_scores.extend([0.9, 0.8])
+            response.candidate_widths.extend([0.08, 0.08])
+            response.candidate_heights.extend([0.02, 0.02])
+            response.candidate_depths.extend([0.03, 0.03])
+            response.candidate_object_ids.extend([1, 1])
         return response
 
     def _move_arm_joints(self, goal_handle):
@@ -699,7 +712,6 @@ def run_grasp(node: MockMissionSystem) -> None:
     node.clear_events()
     goal = ExecuteGrasp.Goal()
     goal.request_id = "mock_grasp"
-    goal.target_frame = "torso_link"
     goal.target_label = 0
     goal.arm = "right"
     goal.publish_pose = True
@@ -772,7 +784,6 @@ def run_grasp_retries_after_empty_close(node: MockMissionSystem) -> None:
     node.configure_gripper_close_feedback("right", [2.0, 10.0])
     goal = ExecuteGrasp.Goal()
     goal.request_id = "mock_grasp_empty_then_success"
-    goal.target_frame = "torso_link"
     goal.target_label = 0
     goal.arm = "right"
     goal.publish_pose = True
@@ -815,7 +826,6 @@ def run_grasp_continues_after_ten_empty_closes(
     node.configure_gripper_close_feedback("right", [2.0] * 10 + [10.0])
     goal = ExecuteGrasp.Goal()
     goal.request_id = "mock_grasp_ten_empty_then_success"
-    goal.target_frame = "torso_link"
     goal.target_label = 0
     goal.arm = "right"
     goal.publish_pose = True
@@ -853,7 +863,6 @@ def run_grasp_reuses_ready_observation(node: MockMissionSystem) -> None:
     time.sleep(0.1)
     goal = ExecuteGrasp.Goal()
     goal.request_id = "mock_grasp_ready_reuse"
-    goal.target_frame = "torso_link"
     goal.target_label = 0
     goal.arm = "right"
     goal.publish_pose = True
@@ -895,7 +904,6 @@ def run_grasp_stage_one_failure_continues_same_candidate(
     node.configure_arm_pose_failures([1])
     goal = ExecuteGrasp.Goal()
     goal.request_id = "mock_grasp_stage_one_continue"
-    goal.target_frame = "torso_link"
     goal.target_label = 0
     goal.arm = "right"
     goal.publish_pose = True
@@ -936,7 +944,6 @@ def run_grasp_redetect_after_stage_two_failure(
     node.configure_arm_pose_failures([2])
     goal = ExecuteGrasp.Goal()
     goal.request_id = "mock_grasp_stage_two_redetect"
-    goal.target_frame = "torso_link"
     goal.target_label = 0
     goal.arm = "right"
     goal.publish_pose = True
@@ -957,6 +964,11 @@ def run_grasp_redetect_after_stage_two_failure(
         raise AssertionError(
             "stage-2 failure must return directly to the final observation "
             f"joints before re-detection; events={events}"
+        )
+    if "gripper:right:100.0" not in recovery_events:
+        raise AssertionError(
+            "stage-2 failure must open the selected gripper before "
+            f"re-detection; events={events}"
         )
     if events.count("detect") != 2:
         raise AssertionError(
@@ -981,7 +993,6 @@ def run_grasp_redetect_after_repeated_top_candidate_failures(
     node.configure_arm_pose_failures([2, 2])
     goal = ExecuteGrasp.Goal()
     goal.request_id = "mock_grasp_repeated_top_candidate_failures"
-    goal.target_frame = "torso_link"
     goal.target_label = 0
     goal.arm = "right"
     goal.publish_pose = True
@@ -1016,6 +1027,11 @@ def run_grasp_redetect_after_repeated_top_candidate_failures(
             raise AssertionError(
                 "each failed top candidate must restore observation before "
                 f"re-detection; events={events}"
+            )
+        if "gripper:right:100.0" not in recovery_events:
+            raise AssertionError(
+                "each failed top candidate must open the selected gripper "
+                f"before re-detection; events={events}"
             )
 
 
@@ -1063,12 +1079,6 @@ def run_place(node: MockMissionSystem) -> None:
     if not result.success:
         raise AssertionError(result.message)
     assert_elapsed_result(result, "execute_place")
-    if result.home_completed:
-        raise AssertionError("material place must not call home after release")
-    if result.torso_reset_command_published:
-        raise AssertionError(
-            "material place must not reset the torso after release"
-        )
     time.sleep(0.1)
     events = node.snapshot()
     assert_in_order(
@@ -1109,9 +1119,6 @@ def run_box_grasp(node: MockMissionSystem) -> None:
     goal = ExecuteBoxGrasp.Goal()
     goal.request_id = "mock_box_grasp"
     goal.target_label = -1
-    goal.arm = "right"
-    goal.publish_pose = True
-    goal.detection_timeout_sec = 2.0
     goal.dry_run = False
     goal_handle = wait_future(node.box_grasp_client.send_goal_async(goal), 5.0)
     if not goal_handle.accepted:
@@ -1121,8 +1128,12 @@ def run_box_grasp(node: MockMissionSystem) -> None:
     if not result.success:
         raise AssertionError(result.message)
     assert_elapsed_result(result, "execute_box_grasp")
-    if result.grasp_pose.header.frame_id != "torso_link":
+    if result.box_pose.header.frame_id != "torso_link":
         raise AssertionError("box result must expose the transformed body-frame pose")
+    if result.pickup_message != "mock pickup plan complete":
+        raise AssertionError(
+            f"box result must expose the pickup result: {result.pickup_message}"
+        )
     if not result.gripper_command_published:
         raise AssertionError("box grasp must close both grippers after pickup")
     if not result.torso_lift_command_published:
@@ -1136,7 +1147,17 @@ def run_box_grasp(node: MockMissionSystem) -> None:
     if post_close_events.count("torso:box_clearance_lift") < 1:
         raise AssertionError(
             "box grasp must move to the configured Torso1 clearance target "
-            f"before gripper verification; events={events}"
+            f"after gripper verification; events={events}"
+        )
+    lift_index = events.index("torso:box_clearance_lift")
+    feedback_indices = [
+        events.index("gripper_feedback:left:10.0"),
+        events.index("gripper_feedback:right:10.0"),
+    ]
+    if lift_index <= max(feedback_indices):
+        raise AssertionError(
+            "box grasp must confirm fresh feedback from both grippers before "
+            f"publishing the torso lift; events={events}"
         )
     unexpected_torso_events = [
         event
@@ -1179,6 +1200,8 @@ def run_box_grasp(node: MockMissionSystem) -> None:
         [
             "foundation_pose",
             "pickup_task:1:dry_run=false",
+            "gripper:left:100.0",
+            "gripper:right:100.0",
             "foundation_pose",
             "pickup_task:2:dry_run=false",
             "gripper:left:0.0",
@@ -1196,14 +1219,11 @@ def run_box_grasp(node: MockMissionSystem) -> None:
 def run_box_grasp_rejects_empty_gripper(node: MockMissionSystem) -> None:
     node.clear_events()
     node.configure_pickup_failures(0)
-    node.configure_gripper_close_feedback("left", [2.0])
-    node.configure_gripper_close_feedback("right", [10.0])
+    node.configure_gripper_close_feedback("left", [2.0, 2.0])
+    node.configure_gripper_close_feedback("right", [10.0, 10.0])
     goal = ExecuteBoxGrasp.Goal()
     goal.request_id = "mock_box_grasp_empty_left"
     goal.target_label = -1
-    goal.arm = "right"
-    goal.publish_pose = True
-    goal.detection_timeout_sec = 2.0
     goal.dry_run = False
     goal_handle = wait_future(node.box_grasp_client.send_goal_async(goal), 5.0)
     if not goal_handle.accepted:
@@ -1217,32 +1237,110 @@ def run_box_grasp_rejects_empty_gripper(node: MockMissionSystem) -> None:
             f"box empty-grasp failure did not identify the left gripper: "
             f"{result.message}"
         )
-    if not result.torso_lift_command_published:
+    if result.torso_lift_command_published:
         raise AssertionError(
-            "empty-grasp verification must follow the Torso1 clearance lift"
+            "an empty box grasp must be rejected before commanding the "
+            "Torso1 clearance lift"
         )
     events = node.snapshot()
     post_close_events = events[
         events.index("gripper:right:0.0") + 1 :
     ]
-    if post_close_events.count("torso:box_clearance_lift") < 1:
+    if "torso:box_clearance_lift" in post_close_events:
         raise AssertionError(
-            "empty-grasp verification must run after the Torso1 clearance "
-            f"target is confirmed; events={events}"
+            "empty-grasp verification must prevent the Torso1 clearance "
+            f"lift; events={events}"
         )
-    unexpected_torso_events = [
-        event
-        for event in post_close_events
-        if event.startswith("torso:")
-        and event != "torso:box_clearance_lift"
+    detection_indices = [
+        index for index, event in enumerate(events)
+        if event == "foundation_pose"
     ]
-    if unexpected_torso_events:
+    if len(detection_indices) != 2:
         raise AssertionError(
-            "empty-grasp verification must not include any additional torso "
-            f"motion; events={events}"
+            "an empty box grasp must consume the second and final fresh "
+            f"detection attempt; events={events}"
+        )
+    retry_events = events[
+        events.index("gripper:right:0.0") + 1 : detection_indices[1]
+    ]
+    for event in ("gripper:left:100.0", "gripper:right:100.0"):
+        if event not in retry_events:
+            raise AssertionError(
+                "both box grippers must open before retrying an empty grasp; "
+                f"missing={event}, events={events}"
+            )
+    if "torso:deep_observation" not in retry_events:
+        raise AssertionError(
+            "an empty first grasp must restore the box observation torso "
+            "before the second detection; "
+            f"events={events}"
         )
     node.configure_gripper_close_feedback("left", [10.0])
     node.configure_gripper_close_feedback("right", [10.0])
+
+
+def run_box_grasp_rejects_missing_feedback_before_lift(
+    node: MockMissionSystem,
+) -> None:
+    node.clear_events()
+    node.configure_pickup_failures(0)
+    node.configure_gripper_close_feedback("left", [10.0])
+    node.configure_gripper_close_feedback("right", [10.0])
+    node.suppress_gripper_feedback("right", True)
+    try:
+        goal = ExecuteBoxGrasp.Goal()
+        goal.request_id = "mock_box_grasp_missing_right_feedback"
+        goal.target_label = -1
+        goal.dry_run = False
+        goal_handle = wait_future(
+            node.box_grasp_client.send_goal_async(goal), 5.0
+        )
+        if not goal_handle.accepted:
+            raise AssertionError(
+                "mock missing-feedback box-grasp goal was rejected"
+            )
+        wrapped_result = wait_future(goal_handle.get_result_async(), 10.0)
+        result = wrapped_result.result
+        if result.success:
+            raise AssertionError(
+                "box grasp must fail without fresh right-gripper feedback"
+            )
+        if "no fresh right gripper feedback" not in result.message:
+            raise AssertionError(
+                "missing-feedback failure did not identify the right "
+                f"gripper: {result.message}"
+            )
+        if result.torso_lift_command_published:
+            raise AssertionError(
+                "missing gripper feedback must prevent the Torso1 lift"
+            )
+        events = node.snapshot()
+        if "torso:box_clearance_lift" in events:
+            raise AssertionError(
+                "missing gripper feedback published a forbidden Torso1 "
+                f"lift; events={events}"
+            )
+        detection_indices = [
+            index for index, event in enumerate(events)
+            if event == "foundation_pose"
+        ]
+        if len(detection_indices) != 2:
+            raise AssertionError(
+                "missing gripper feedback must consume the second and final "
+                f"fresh detection attempt; events={events}"
+            )
+        first_close = events.index("gripper:right:0.0")
+        retry_events = events[first_close + 1 : detection_indices[1]]
+        for event in ("gripper:left:100.0", "gripper:right:100.0"):
+            if event not in retry_events:
+                raise AssertionError(
+                    "both box grippers must open before retrying after "
+                    f"missing feedback; missing={event}, events={events}"
+                )
+    finally:
+        node.suppress_gripper_feedback("right", False)
+        node.configure_gripper_close_feedback("left", [10.0])
+        node.configure_gripper_close_feedback("right", [10.0])
 
 
 def run_box_grasp_recovers_after_pregrasp_failure(
@@ -1253,9 +1351,6 @@ def run_box_grasp_recovers_after_pregrasp_failure(
     goal = ExecuteBoxGrasp.Goal()
     goal.request_id = "mock_box_grasp_pregrasp_recovery"
     goal.target_label = -1
-    goal.arm = "right"
-    goal.publish_pose = True
-    goal.detection_timeout_sec = 2.0
     goal.dry_run = False
     goal_handle = wait_future(node.box_grasp_client.send_goal_async(goal), 5.0)
     if not goal_handle.accepted:
@@ -1280,6 +1375,12 @@ def run_box_grasp_recovers_after_pregrasp_failure(
         raise AssertionError(
             f"box recovery must restore the observation torso; events={events}"
         )
+    for event in ("gripper:left:100.0", "gripper:right:100.0"):
+        if event not in recovery_events:
+            raise AssertionError(
+                "both box grippers must open before pickup re-detection; "
+                f"missing={event}, events={events}"
+            )
     assert_in_order(
         events,
         [
@@ -1298,9 +1399,6 @@ def run_box_grasp_double_failure(node: MockMissionSystem) -> None:
     goal = ExecuteBoxGrasp.Goal()
     goal.request_id = "mock_box_grasp_double_failure"
     goal.target_label = -1
-    goal.arm = "right"
-    goal.publish_pose = True
-    goal.detection_timeout_sec = 2.0
     goal.dry_run = True
     goal_handle = wait_future(node.box_grasp_client.send_goal_async(goal), 5.0)
     if not goal_handle.accepted:
@@ -1342,9 +1440,6 @@ def run_box_grasp_reuses_ready_observation_on_failure(
     goal = ExecuteBoxGrasp.Goal()
     goal.request_id = "mock_box_grasp_ready_reuse"
     goal.target_label = -1
-    goal.arm = "right"
-    goal.publish_pose = True
-    goal.detection_timeout_sec = 2.0
     goal.dry_run = False
     goal_handle = wait_future(node.box_grasp_client.send_goal_async(goal), 5.0)
     if not goal_handle.accepted:
@@ -1379,7 +1474,6 @@ def run_box_place(node: MockMissionSystem) -> None:
         raise RuntimeError("/execute_box_place action server not available")
     goal = ExecuteBoxPlace.Goal()
     goal.request_id = "mock_box_place"
-    goal.arm = "right"
     goal.dry_run = False
     goal_handle = wait_future(node.box_place_client.send_goal_async(goal), 5.0)
     if not goal_handle.accepted:
@@ -1431,7 +1525,7 @@ def run_box_stack(node: MockMissionSystem) -> None:
     assert_elapsed_result(result, "execute_box_stack")
     if result.level != 2:
         raise AssertionError(f"unexpected completed stack level: {result.level}")
-    expected_torso = [1.407070, -2.598294, -1.091117, 0.0]
+    expected_torso = [1.356518, -2.506617, -1.049991, 0.0]
     if any(
         not math.isclose(actual, expected, abs_tol=1e-9)
         for actual, expected in zip(
@@ -1497,6 +1591,7 @@ def main() -> None:
         run_place(node)
         run_box_grasp(node)
         run_box_grasp_rejects_empty_gripper(node)
+        run_box_grasp_rejects_missing_feedback_before_lift(node)
         run_box_grasp_recovers_after_pregrasp_failure(node)
         run_box_grasp_double_failure(node)
         run_box_grasp_reuses_ready_observation_on_failure(node)

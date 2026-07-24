@@ -20,8 +20,7 @@ mission_controller:
     box_object_pose_model_label: f455
     box_object_pose_instance_index: 0
     box_object_pose_confidence_threshold: 0.0
-    # ExecuteBoxGrasp.detection_timeout_sec is intentionally ignored. Mission
-    # always uses this fixed FoundationPose result deadline.
+    # Mission always uses this fixed FoundationPose result deadline.
     box_object_pose_result_timeout_sec: 60.0
     # Normalize FoundationPose immediately after Vision returns its
     # camera-optical-frame pose and before camera->torso TF. F320 resolves its
@@ -104,7 +103,6 @@ mission_controller:
     torso_target_stable_samples: 3
 
     default_arm: right
-    default_target_frame: torso_link4
     arm_execution_frame: torso_link4
     left_ee_frame: left_arm_link7
     right_ee_frame: right_arm_link7
@@ -202,9 +200,9 @@ mission_controller:
     box_pickup_clearance_left_joint_positions: [-1.413830, 0.687872, -1.236596, -1.839149, 1.905532, 0.525745, 1.146383]
     box_pickup_clearance_right_joint_positions: [-1.403617, -0.668723, 1.238298, -1.802128, -1.944043, 0.435319, -1.307021]
     box_grasp_torso_prepare_positions: [0.61, -0.81, -0.6, 0.0]
-    # After both grippers close, move only Torso1 0.20 rad toward zero to lift
-    # the box clear of the table. Keep Torso2/3/4 at the pickup posture, verify
-    # this target from feedback, and only then evaluate gripper retention.
+    # After both grippers close and fresh feedback confirms box retention, move
+    # only Torso1 0.20 rad toward zero to lift the box clear of the table. Keep
+    # Torso2/3/4 at the pickup posture and verify the lift target from feedback.
     box_grasp_torso_lift_positions: [0.41, -0.81, -0.6, 0.0]
     box_place_torso_positions: [0.61, -0.81, -0.6, 0.0]
     # After releasing the box, move only Torso2 farther back before commanding
@@ -232,9 +230,8 @@ mission_controller:
       0.906723, -1.646855, -0.640023, 0.0
     ]
     stack_start_arm_duration_sec: 8.0
-    # Stack-only synchronized torso profile. Torso1 always uses this speed;
-    # torso2/3 speeds are derived from their remaining angle so all moving
-    # torso joints share Torso1's estimated completion time.
+    # Stack-only torso profile. Torso1 always uses this speed and Torso2 is
+    # synchronized to Torso1's estimated completion time.
     stack_torso1_speed: 0.1
     # Fixed Torso3 velocity for every stack level, lowering, and return motion.
     stack_torso3_speed: 0.13
@@ -250,9 +247,10 @@ mission_controller:
     # A close ratio above 95% means the fingers almost met and no material was
     # retained, so the grasp fails. A ratio at or below 95% means material is
     # holding the fingers apart and the grasp passes. ExecuteBoxGrasp applies
-    # this threshold to both grippers after the torso lift and fails when either
-    # side exceeds it. Normal ExecuteGrasp restores observation and detects again
-    # after an empty grasp. A retry count of zero means unlimited retries there.
+    # this threshold to both grippers before the torso lift and prevents lifting
+    # when either side exceeds it. Normal ExecuteGrasp restores observation and
+    # detects again after an empty grasp. A retry count of zero means unlimited
+    # retries there.
     # Missing/stale feedback always aborts instead of guessing.
     grasp_close_check_enabled: true
     grasp_empty_close_ratio_threshold: 0.95

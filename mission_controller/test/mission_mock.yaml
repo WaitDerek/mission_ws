@@ -27,6 +27,7 @@ mission_controller:
     torso_settle_sec: 0.05
     arm_settle_sec: 0.05
     gripper_settle_sec: 0.05
+    grasp_gripper_feedback_timeout_sec: 0.5
     box_detection_posture_settle_sec: 0.05
     box_place_release_delay_sec: 0.05
     place_torso_straighten_step_delay_sec: 0.05

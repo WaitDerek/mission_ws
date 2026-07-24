@@ -1,24 +1,19 @@
-# Execute a box grasp mission with box-specific preparation and perception.
+# Execute a dual-arm box grasp in the robot-configured execution frame.
 string request_id
-string target_frame
 int32 target_label
-string arm
-bool publish_pose
-float64 detection_timeout_sec
 bool dry_run
 
 ---
 
 bool success
 string message
-geometry_msgs/PoseStamped grasp_pose
+# Geometric-center box pose transformed into the configured execution frame.
+geometry_msgs/PoseStamped box_pose
 float64 score
 float64 width
 float64 height
-float64 depth
 int32 object_id
-string arm
-string arm_message
+string pickup_message
 bool gripper_command_published
 bool torso_lift_command_published
 
@@ -26,4 +21,3 @@ bool torso_lift_command_published
 
 string stage
 string detail
-string arm

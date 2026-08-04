@@ -12,20 +12,17 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
         (f"share/{package_name}/config", glob("config/*.yaml")),
-        (f"share/{package_name}/config", glob("config/*.rviz")),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
     maintainer="dekc",
     maintainer_email="dekc@example.com",
-    description="Mission-level grasp and place action orchestration.",
+    description="RealBot box-grasp and box-place mission orchestration.",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
             "mission_controller = mission_controller.mission_controller:main",
-            "grasp_preview_publisher = mission_controller.grasp_preview_publisher:main",
-            "grasp_target_executor = mission_controller.grasp_target_executor:main",
         ],
     },
 )

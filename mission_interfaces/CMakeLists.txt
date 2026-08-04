@@ -10,12 +10,8 @@ find_package(geometry_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "action/ExecuteGrasp.action"
-  "action/ExecutePlace.action"
   "action/ExecuteBoxGrasp.action"
   "action/ExecuteBoxPlace.action"
-  "action/ExecuteBoxStack.action"
-  "action/MoveChassis.action"
   DEPENDENCIES geometry_msgs
 )
 

@@ -4,7 +4,10 @@ import time
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped
+from rclpy.duration import Duration
 from task_interfaces.action import PickupTask
+from tf2_geometry_msgs import do_transform_pose_stamped
+from tf2_ros import TransformException
 
 try:
     from object_pose_interfaces.action import EstimateObjectPose
@@ -23,6 +26,79 @@ from .common import (
 
 class BoxSupportMixin:
     """FoundationPose normalization and dual-arm pickup delegation."""
+
+    @staticmethod
+    def _quaternion_from_rpy(
+        roll: float, pitch: float, yaw: float
+    ) -> tuple[float, float, float, float]:
+        cr = math.cos(roll * 0.5)
+        sr = math.sin(roll * 0.5)
+        cp = math.cos(pitch * 0.5)
+        sp = math.sin(pitch * 0.5)
+        cy = math.cos(yaw * 0.5)
+        sy = math.sin(yaw * 0.5)
+        return (
+            sr * cp * cy - cr * sp * sy,
+            cr * sp * cy + sr * cp * sy,
+            cr * cp * sy - sr * sp * cy,
+            cr * cp * cy + sr * sp * sy,
+        )
+
+    def _publish_camera_mount_tf(self) -> None:
+        if not self._boolean("camera_mount_tf_enabled"):
+            self.get_logger().info("camera mount TF publication disabled")
+            return
+
+        xyz = self._float_array("camera_mount_xyz")
+        mount_quaternion = self._quaternion_from_rpy(
+            *self._float_array("camera_mount_rpy")
+        )
+        correction_quaternion = self._quaternion_from_rpy(
+            *self._float_array("camera_mount_correction_rpy")
+        )
+        qx, qy, qz, qw = quaternion_multiply(
+            correction_quaternion, mount_quaternion
+        )
+        transform = TransformStamped()
+        transform.header.stamp = self.get_clock().now().to_msg()
+        transform.header.frame_id = self._string("camera_mount_parent_frame").lstrip("/")
+        transform.child_frame_id = self._string("camera_mount_child_frame").lstrip("/")
+        transform.transform.translation.x = xyz[0]
+        transform.transform.translation.y = xyz[1]
+        transform.transform.translation.z = xyz[2]
+        transform.transform.rotation.x = qx
+        transform.transform.rotation.y = qy
+        transform.transform.rotation.z = qz
+        transform.transform.rotation.w = qw
+        self.camera_static_broadcaster.sendTransform(transform)
+
+    def _transform_detection_pose(
+        self, pose: PoseStamped, target_frame: str
+    ) -> PoseStamped:
+        source_frame = pose.header.frame_id.strip().lstrip("/")
+        target_frame = target_frame.strip().lstrip("/")
+        if not source_frame:
+            raise MissionError("box detector returned an empty source frame")
+        if not target_frame or source_frame == target_frame:
+            pose.header.frame_id = target_frame or source_frame
+            return pose
+
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                target_frame,
+                source_frame,
+                rclpy.time.Time(),
+                timeout=Duration(seconds=self._float("camera_tf_timeout_sec")),
+            )
+            transformed = do_transform_pose_stamped(pose, transform)
+        except TransformException as exc:
+            raise MissionError(
+                f"box pose transform {source_frame} -> {target_frame} failed: {exc}"
+            ) from exc
+
+        transformed.header.frame_id = target_frame
+        transformed.header.stamp = self.get_clock().now().to_msg()
+        return transformed
 
     def _box_object_pose_camera_callback(self, pose: PoseStamped) -> None:
         """Publish the raw box pose after camera->execution-frame TF only."""
@@ -438,7 +514,7 @@ class BoxSupportMixin:
             gripper_arm: self._gripper_close_ratio(position)
             for gripper_arm, position in measured_positions.items()
         }
-        empty_threshold = self._float("grasp_empty_close_ratio_threshold")
+        empty_threshold = self._float("box_empty_close_ratio_threshold")
         empty_grippers = [
             gripper_arm
             for gripper_arm, close_ratio in close_ratios.items()

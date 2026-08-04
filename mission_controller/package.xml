@@ -3,7 +3,7 @@
 <package format="3">
   <name>mission_controller</name>
   <version>0.1.0</version>
-  <description>Mission-level grasp and place action orchestration.</description>
+  <description>RealBot box-grasp and box-place mission orchestration.</description>
   <maintainer email="dekc@example.com">dekc</maintainer>
   <license>Apache-2.0</license>
 
@@ -13,22 +13,16 @@
   <depend>action_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
-  <depend>visualization_msgs</depend>
-  <depend>grasp_orchestrator_interfaces</depend>
   <depend>mission_interfaces</depend>
   <depend>object_pose_interfaces</depend>
   <depend>task_interfaces</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>tf2_ros</depend>
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
-  <exec_depend>grasp_orchestrator</exec_depend>
-  <exec_depend>moveit_ros_visualization</exec_depend>
   <exec_depend>object_pose_ros</exec_depend>
   <exec_depend>robot_bringup</exec_depend>
-  <exec_depend>robot_state_publisher</exec_depend>
-  <exec_depend>rviz2</exec_depend>
-  <exec_depend>tf2_ros</exec_depend>
-  <exec_depend>xacro</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

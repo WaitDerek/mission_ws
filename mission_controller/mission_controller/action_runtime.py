@@ -1,12 +1,11 @@
 import math
 import time
-from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 import rclpy
 from action_msgs.msg import GoalStatus
 from sensor_msgs.msg import JointState
-from task_interfaces.action import GoReady, Home, MoveArmJoints
+from task_interfaces.action import GoReady, MoveArmJoints
 
 from .common import (
     VALID_ARMS,
@@ -53,19 +52,6 @@ class ActionRuntimeMixin:
                 return
         raise MissionError(
             f"timeout waiting for service {service_name} after {timeout_sec:.1f}s"
-        )
-
-    def _wait_for_action_server(self, goal_handle) -> None:
-        action_name = self._string("arm_pose_action_name")
-        timeout_sec = self._float("dependency_wait_timeout_sec")
-        deadline = time.monotonic() + timeout_sec
-        while time.monotonic() < deadline:
-            self._check_canceled(goal_handle, f"while waiting for {action_name}")
-            remaining = max(0.0, deadline - time.monotonic())
-            if self.arm_pose_client.wait_for_server(timeout_sec=min(0.5, remaining)):
-                return
-        raise MissionError(
-            f"timeout waiting for action {action_name} after {timeout_sec:.1f}s"
         )
 
     def _wait_future(
@@ -232,8 +218,8 @@ class ActionRuntimeMixin:
         arm: str,
         sequence_before_close: int,
     ) -> float:
-        timeout_sec = self._float("grasp_gripper_feedback_timeout_sec")
-        max_age_sec = self._float("grasp_gripper_feedback_max_age_sec")
+        timeout_sec = self._float("box_gripper_feedback_timeout_sec")
+        max_age_sec = self._float("box_gripper_feedback_max_age_sec")
         deadline = time.monotonic() + timeout_sec
         latest_position: Optional[float] = None
         latest_sequence = sequence_before_close
@@ -393,82 +379,6 @@ class ActionRuntimeMixin:
             label="box",
         )
 
-    def _grasp_observation_ready(self) -> tuple[bool, str]:
-        return self._observation_ready(
-            enabled_parameter="grasp_observation_ready_check_enabled",
-            left_target_parameter="grasp_left_joint_positions",
-            right_target_parameter="grasp_right_joint_positions",
-            torso_target_parameter="torso_prepare_positions",
-            max_age_parameter="grasp_observation_feedback_max_age_sec",
-            torso_tolerance_parameter="grasp_observation_torso_tolerance",
-            label="grasp",
-        )
-
-    def _stack_default_ready(self) -> tuple[bool, str]:
-        if not self._boolean("stack_start_ready_check_enabled"):
-            return True, "stack default readiness check is disabled"
-
-        now = time.monotonic()
-        max_age = self._float("stack_start_feedback_max_age_sec")
-        with self.joint_state_lock:
-            arm_positions = dict(self.latest_joint_positions)
-            arm_age = now - self.latest_joint_state_time
-            torso_positions = list(self.latest_torso_positions)
-            torso_age = now - self.latest_torso_state_time
-
-        left_names = self._string_array("left_arm_joint_names")
-        right_names = self._string_array("right_arm_joint_names")
-        targets = dict(
-            zip(
-                left_names,
-                self._float_array("stack_default_left_joint_positions"),
-            )
-        )
-        targets.update(
-            zip(
-                right_names,
-                self._float_array("stack_default_right_joint_positions"),
-            )
-        )
-        missing = [name for name in targets if name not in arm_positions]
-        if missing:
-            return False, f"missing arm feedback joints={missing}"
-        if arm_age > max_age:
-            return (
-                False,
-                f"arm feedback is stale: age={arm_age:.2f}s, limit={max_age:.2f}s",
-            )
-        if len(torso_positions) < 4:
-            return False, "missing torso feedback"
-        if torso_age > max_age:
-            return (
-                False,
-                f"torso feedback is stale: age={torso_age:.2f}s, "
-                f"limit={max_age:.2f}s",
-            )
-
-        errors = {
-            name: abs(arm_positions[name] - target)
-            for name, target in targets.items()
-        }
-        max_error = max(errors.values(), default=0.0)
-        arm_tolerance = self._float("arm_joint_target_tolerance")
-        torso_targets = self._float_array("stack_pickup_torso_positions")
-        torso_error = max(
-            (
-                abs(actual - target)
-                for actual, target in zip(torso_positions, torso_targets)
-            ),
-            default=0.0,
-        )
-        torso_tolerance = self._float("torso_target_tolerance")
-        return (
-            max_error <= arm_tolerance and torso_error <= torso_tolerance,
-            f"max arm error={max_error:.4f} rad "
-            f"(limit={arm_tolerance:.4f}), max torso error="
-            f"{torso_error:.4f} (limit={torso_tolerance:.4f})",
-        )
-
     def _wait_for_arm_joint_targets(
         self,
         goal_handle,
@@ -606,42 +516,11 @@ class ActionRuntimeMixin:
             for arm in arms
         }
 
-    def _prepare_grasp_grippers(self, goal_handle) -> None:
-        self._open_grippers(
-            goal_handle,
-            ("left", "right"),
-            "while waiting for gripper preparation",
-        )
-
-    def _prepare_grasp_torso(self, goal_handle) -> None:
-        self._publish_torso(
-            goal_handle, self._float_array("torso_prepare_positions")
-        )
-        self._wait_delay(
-            goal_handle,
-            self._float("torso_settle_sec"),
-            "while waiting for torso preparation",
-        )
-
-    def _prepare_grasp_arms_and_torso(self, goal_handle) -> None:
+    def _prepare_box_grasp_intermediate_arms(self, goal_handle) -> None:
         self._call_arm_joints(
             goal_handle,
-            self._float_array("grasp_left_joint_positions"),
-            self._float_array("grasp_right_joint_positions"),
-            False,
-            goal_accepted_callback=lambda: self._prepare_grasp_torso(goal_handle),
-        )
-        self._wait_delay(
-            goal_handle,
-            self._float("arm_settle_sec"),
-            "while waiting for synchronized arm and torso preparation",
-        )
-
-    def _prepare_observation_intermediate_arms(self, goal_handle) -> None:
-        self._call_arm_joints(
-            goal_handle,
-            self._float_array("observation_intermediate_left_joint_positions"),
-            self._float_array("observation_intermediate_right_joint_positions"),
+            self._float_array("box_grasp_intermediate_left_joint_positions"),
+            self._float_array("box_grasp_intermediate_right_joint_positions"),
             False,
         )
         self._wait_delay(
@@ -649,28 +528,6 @@ class ActionRuntimeMixin:
             self._float("arm_settle_sec"),
             "while waiting for intermediate arm preparation",
         )
-
-    def _prepare_grasp_concurrently(
-        self, goal_handle, open_grippers: bool
-    ) -> None:
-        intermediate_tasks = [self._prepare_observation_intermediate_arms]
-        if open_grippers:
-            intermediate_tasks.insert(0, self._prepare_grasp_grippers)
-
-        with ThreadPoolExecutor(
-            max_workers=len(intermediate_tasks),
-            thread_name_prefix="grasp_intermediate",
-        ) as executor:
-            futures = [
-                executor.submit(task, goal_handle) for task in intermediate_tasks
-            ]
-            for future in futures:
-                future.result()
-
-        # Dispatch the torso target as soon as the final /move_arm_j goal is
-        # accepted.  The arm trajectory and waist motion therefore begin in
-        # the same phase instead of two independent worker threads racing.
-        self._prepare_grasp_arms_and_torso(goal_handle)
 
     def _prepare_box_grasp_grippers(self, goal_handle) -> None:
         self._open_grippers(
@@ -707,7 +564,7 @@ class ActionRuntimeMixin:
         )
 
     def _prepare_box_grasp_concurrently(self, goal_handle) -> None:
-        self._prepare_observation_intermediate_arms(goal_handle)
+        self._prepare_box_grasp_intermediate_arms(goal_handle)
         self._prepare_box_grasp_arms_and_torso(goal_handle)
 
     def _wait_for_box_detection_posture(self, goal_handle) -> None:
@@ -880,21 +737,6 @@ class ActionRuntimeMixin:
         )
         return str(response.message)
 
-    def _call_home(self, goal_handle, dry_run: bool) -> str:
-        action_name = self._string("home_service_name")
-        action_goal = Home.Goal()
-        action_goal.dry_run = dry_run
-        action_goal.duration = 0.0
-        response = self._call_task_action(
-            goal_handle,
-            self.home_client,
-            action_name,
-            action_goal,
-            self._float("home_result_timeout_sec"),
-            "active_home_goal_handle",
-        )
-        return str(response.message)
-
     def _call_go_ready(self, goal_handle, dry_run: bool) -> str:
         action_name = self._string("go_ready_action_name")
         action_goal = GoReady.Goal()
@@ -909,16 +751,3 @@ class ActionRuntimeMixin:
             "active_go_ready_goal_handle",
         )
         return str(response.message)
-
-    def _safe_pre_arm_torso_reset(self, goal_handle) -> bool:
-        try:
-            self._publish_torso(
-                goal_handle,
-                self._float_array("torso_reset_positions"),
-                require_subscriber=False,
-                honor_cancel=False,
-            )
-            return True
-        except Exception as exc:  # noqa: BLE001
-            self.get_logger().error(f"failed to publish torso cleanup command: {exc}")
-            return False

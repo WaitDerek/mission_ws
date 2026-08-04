@@ -1,4 +1,6 @@
-# Execute one material grasp in the robot-configured execution frame.
+# Execute the G1-D badge tracking sequence.
+# Legacy goal fields remain for command-line compatibility; G1-D always uses
+# the left arm and the configured badge model.
 string request_id
 int32 target_label
 string arm

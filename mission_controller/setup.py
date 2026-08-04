@@ -19,13 +19,11 @@ setup(
     zip_safe=True,
     maintainer="dekc",
     maintainer_email="dekc@example.com",
-    description="Mission-level grasp and place action orchestration.",
+    description="G1-D badge tracking mission controller.",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
             "mission_controller = mission_controller.mission_controller:main",
-            "grasp_preview_publisher = mission_controller.grasp_preview_publisher:main",
-            "grasp_target_executor = mission_controller.grasp_target_executor:main",
         ],
     },
 )

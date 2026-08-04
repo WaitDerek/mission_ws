@@ -1,1 +1,1 @@
-"""Mission-level grasp and place orchestration."""
+"""G1-D badge tracking mission controller."""

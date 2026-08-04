@@ -1,66 +1,14 @@
 import math
-from dataclasses import dataclass
-from typing import Optional
 
-from geometry_msgs.msg import Pose, PoseStamped
-
-
-VALID_ARMS = {"left", "right"}
-CHASSIS_DIRECTIONS = {
-    "forward": (1.0, 0.0, 0.0),
-    "backward": (-1.0, 0.0, 0.0),
-    "left": (0.0, 1.0, 0.0),
-    "right": (0.0, -1.0, 0.0),
-    "clockwise": (0.0, 0.0, -1.0),
-    "counterclockwise": (0.0, 0.0, 1.0),
-}
-ANGULAR_CHASSIS_DIRECTIONS = {"clockwise", "counterclockwise"}
+from geometry_msgs.msg import Pose
 
 
 class MissionError(RuntimeError):
-    pass
+    """Expected failure in the G1-D grasp sequence."""
 
 
 class MissionCanceled(MissionError):
-    pass
-
-
-class TaskActionError(MissionError):
-    def __init__(self, message: str, error_code: int) -> None:
-        super().__init__(message)
-        self.error_code = error_code
-
-
-class PickupAttemptError(MissionError):
-    def __init__(
-        self,
-        message: str,
-        *,
-        error_code: Optional[int],
-        motion_started: bool,
-        first_segment_completed: bool,
-    ) -> None:
-        super().__init__(message)
-        self.error_code = error_code
-        self.motion_started = motion_started
-        self.first_segment_completed = first_segment_completed
-
-
-class TwoStageMotionError(MissionError):
-    def __init__(self, stage: int, stage_one_completed: bool, message: str) -> None:
-        super().__init__(message)
-        self.stage = stage
-        self.stage_one_completed = stage_one_completed
-
-
-@dataclass
-class GraspCandidate:
-    pose: PoseStamped
-    score: float
-    width: float
-    height: float
-    depth: float
-    object_id: int
+    """The client canceled the active grasp sequence."""
 
 
 def pose_to_array(pose: Pose) -> list[float]:
@@ -74,12 +22,11 @@ def pose_to_array(pose: Pose) -> list[float]:
         float(pose.orientation.w),
     ]
     if not all(math.isfinite(value) for value in values):
-        raise MissionError("grasp pose contains NaN or Inf")
-
-    quaternion_norm = math.sqrt(sum(value * value for value in values[3:]))
-    if quaternion_norm < 1e-8:
-        raise MissionError("grasp pose quaternion has zero norm")
-    values[3:] = [value / quaternion_norm for value in values[3:]]
+        raise MissionError("pose contains NaN or Inf")
+    norm = math.sqrt(sum(value * value for value in values[3:]))
+    if norm < 1e-8:
+        raise MissionError("pose quaternion has zero norm")
+    values[3:] = [value / norm for value in values[3:]]
     return values
 
 
@@ -117,19 +64,15 @@ def compose_poses(parent_pose: Pose, child_pose: Pose) -> Pose:
     """Compose T_reference_parent with T_parent_child."""
     parent_values = pose_to_array(parent_pose)
     child_values = pose_to_array(child_pose)
-    parent_orientation = tuple(parent_values[3:])
-    child_in_reference = rotate_vector(
-        tuple(child_values[:3]), parent_orientation
-    )
-    orientation = quaternion_multiply(
-        parent_orientation, tuple(child_values[3:])
-    )
+    parent_quaternion = tuple(parent_values[3:])
+    child_position = rotate_vector(tuple(child_values[:3]), parent_quaternion)
+    orientation = quaternion_multiply(parent_quaternion, tuple(child_values[3:]))
     orientation_norm = math.sqrt(sum(value * value for value in orientation))
 
     result = Pose()
-    result.position.x = parent_values[0] + child_in_reference[0]
-    result.position.y = parent_values[1] + child_in_reference[1]
-    result.position.z = parent_values[2] + child_in_reference[2]
+    result.position.x = parent_values[0] + child_position[0]
+    result.position.y = parent_values[1] + child_position[1]
+    result.position.z = parent_values[2] + child_position[2]
     result.orientation.x = orientation[0] / orientation_norm
     result.orientation.y = orientation[1] / orientation_norm
     result.orientation.z = orientation[2] / orientation_norm
@@ -137,43 +80,54 @@ def compose_poses(parent_pose: Pose, child_pose: Pose) -> Pose:
     return result
 
 
-def interpolate_pose(start_pose: Pose, target_pose: Pose, fraction: float) -> Pose:
-    """Interpolate position linearly and orientation along the shortest arc."""
-    if not 0.0 <= fraction <= 1.0:
-        raise MissionError("pose interpolation fraction must be in [0, 1]")
+def pose_from_transform(values: list[float]) -> Pose:
+    """Convert a row-major homogeneous 4x4 matrix into a ROS pose."""
+    if len(values) != 16:
+        raise MissionError("transform must contain exactly 16 values")
+    matrix = [float(value) for value in values]
+    if not all(math.isfinite(value) for value in matrix):
+        raise MissionError("transform contains NaN or Inf")
+    if any(abs(value - expected) > 1e-6 for value, expected in zip(
+        matrix[12:16], [0.0, 0.0, 0.0, 1.0]
+    )):
+        raise MissionError("transform last row must be [0, 0, 0, 1]")
 
-    start = pose_to_array(start_pose)
-    target = pose_to_array(target_pose)
-    start_quaternion = start[3:]
-    target_quaternion = target[3:]
-    dot = sum(a * b for a, b in zip(start_quaternion, target_quaternion))
-    if dot < 0.0:
-        target_quaternion = [-value for value in target_quaternion]
-        dot = -dot
-    dot = max(-1.0, min(1.0, dot))
-
-    if dot > 0.9995:
-        orientation = [
-            a + fraction * (b - a)
-            for a, b in zip(start_quaternion, target_quaternion)
-        ]
+    m00, m01, m02 = matrix[0:3]
+    m10, m11, m12 = matrix[4:7]
+    m20, m21, m22 = matrix[8:11]
+    trace = m00 + m11 + m22
+    if trace > 0.0:
+        scale = 2.0 * math.sqrt(trace + 1.0)
+        qw = 0.25 * scale
+        qx = (m21 - m12) / scale
+        qy = (m02 - m20) / scale
+        qz = (m10 - m01) / scale
+    elif m00 > m11 and m00 > m22:
+        scale = 2.0 * math.sqrt(max(1.0 + m00 - m11 - m22, 0.0))
+        qx = 0.25 * scale
+        qy = (m01 + m10) / scale
+        qz = (m02 + m20) / scale
+        qw = (m21 - m12) / scale
+    elif m11 > m22:
+        scale = 2.0 * math.sqrt(max(1.0 + m11 - m00 - m22, 0.0))
+        qx = (m01 + m10) / scale
+        qy = 0.25 * scale
+        qz = (m12 + m21) / scale
+        qw = (m02 - m20) / scale
     else:
-        theta = math.acos(dot)
-        scale = math.sin(theta)
-        start_scale = math.sin((1.0 - fraction) * theta) / scale
-        target_scale = math.sin(fraction * theta) / scale
-        orientation = [
-            start_scale * a + target_scale * b
-            for a, b in zip(start_quaternion, target_quaternion)
-        ]
-    orientation_norm = math.sqrt(sum(value * value for value in orientation))
+        scale = 2.0 * math.sqrt(max(1.0 + m22 - m00 - m11, 0.0))
+        qx = (m02 + m20) / scale
+        qy = (m12 + m21) / scale
+        qz = 0.25 * scale
+        qw = (m10 - m01) / scale
 
-    result = Pose()
-    result.position.x = start[0] + fraction * (target[0] - start[0])
-    result.position.y = start[1] + fraction * (target[1] - start[1])
-    result.position.z = start[2] + fraction * (target[2] - start[2])
-    result.orientation.x = orientation[0] / orientation_norm
-    result.orientation.y = orientation[1] / orientation_norm
-    result.orientation.z = orientation[2] / orientation_norm
-    result.orientation.w = orientation[3] / orientation_norm
-    return result
+    quaternion_norm = math.sqrt(qx * qx + qy * qy + qz * qz + qw * qw)
+    if quaternion_norm < 1e-8:
+        raise MissionError("transform rotation has zero norm")
+    pose = Pose()
+    pose.position.x, pose.position.y, pose.position.z = matrix[3], matrix[7], matrix[11]
+    pose.orientation.x = qx / quaternion_norm
+    pose.orientation.y = qy / quaternion_norm
+    pose.orientation.z = qz / quaternion_norm
+    pose.orientation.w = qw / quaternion_norm
+    return pose

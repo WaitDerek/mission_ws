@@ -1,8 +1,13 @@
 """Start RealBot dual-arm bringup, box perception, and Mission."""
 
+import os
+from pathlib import Path
+import shutil
+
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    ExecuteProcess,
     GroupAction,
     IncludeLaunchDescription,
     LogInfo,
@@ -11,8 +16,44 @@ from launch.actions import (
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
+from launch.substitutions import (
+    FindExecutable,
+    LaunchConfiguration,
+    PathJoinSubstitution,
+    PythonExpression,
+)
 from launch_ros.substitutions import FindPackageShare
+
+
+def _default_box_perception_root() -> str:
+    """Find the perception checkout without binding the launch file to a user."""
+    explicit_root = os.environ.get("OBJECT_POSE_ROOT", "").strip()
+    if explicit_root:
+        return str(Path(explicit_root).expanduser().resolve())
+
+    launch_path = Path(__file__).resolve()
+    marker = Path("scripts/start_object_pose_action.sh")
+    for ancestor in launch_path.parents:
+        if (ancestor / marker).is_file():
+            return str(ancestor)
+
+        vision_source = ancestor / "vision_ws" / "src"
+        if not vision_source.is_dir():
+            continue
+        for candidate in sorted(vision_source.iterdir()):
+            if candidate.is_dir() and (candidate / marker).is_file():
+                return str(candidate.resolve())
+    return ""
+
+
+def _clean_runtime_path() -> str:
+    """Keep ROS and system commands while excluding user environment paths."""
+    entries: list[str] = []
+    ros2_executable = shutil.which("ros2")
+    if ros2_executable:
+        entries.append(str(Path(ros2_executable).resolve().parent))
+    entries.extend(os.defpath.split(os.pathsep))
+    return os.pathsep.join(dict.fromkeys(entries))
 
 
 def _validate_configuration(context):
@@ -21,6 +62,18 @@ def _validate_configuration(context):
         raise RuntimeError(
             f"Unsupported mode '{mode}'; explicitly pass "
             "mode:=simulation or mode:=hardware"
+        )
+
+    direct_motion_backend = (
+        LaunchConfiguration("direct_motion_backend").perform(context).strip().lower()
+    )
+    if direct_motion_backend not in {"python_sdk", "ros_service"}:
+        raise RuntimeError(
+            "direct_motion_backend must be python_sdk or ros_service"
+        )
+    if mode == "simulation" and direct_motion_backend == "python_sdk":
+        raise RuntimeError(
+            "direct_motion_backend=python_sdk is only valid with mode:=hardware"
         )
 
     perception_delay = float(
@@ -35,25 +88,65 @@ def _validate_configuration(context):
             "perception_start_delay_sec, and both delays must be valid"
         )
 
+    perception_enabled = (
+        LaunchConfiguration("enable_box_perception")
+        .perform(context)
+        .strip()
+        .lower()
+        in {"1", "true", "yes", "on"}
+    )
+    if perception_enabled:
+        required_files = {
+            "box perception start script": LaunchConfiguration(
+                "box_perception_script"
+            ).perform(context),
+            "box perception config": LaunchConfiguration("box_config_file").perform(
+                context
+            ),
+        }
+        missing = [
+            f"{label}: {path or '<empty>'}"
+            for label, path in required_files.items()
+            if not path or not Path(path).is_file()
+        ]
+        if missing:
+            raise RuntimeError(
+                "Cannot locate box perception files ("
+                + "; ".join(missing)
+                + "). Set OBJECT_POSE_ROOT or pass box_perception_root:=..."
+            )
+
     return [
         LogInfo(
             msg=(
-                f"Mission system: dual_arm + box perception + mission "
+                f"Mission system: dual_arm + optional box perception + mission "
                 f"(mode: {mode}); startup order: "
                 f"dual_arm@0s -> box@{perception_delay:g}s -> "
-                f"mission@{mission_delay:g}s"
+                f"mission@{mission_delay:g}s; direct_motion_backend="
+                f"{direct_motion_backend}"
             )
         )
     ]
 
 
 def generate_launch_description() -> LaunchDescription:
+    box_perception_root_default = _default_box_perception_root()
+    clean_runtime_path = _clean_runtime_path()
     mode = LaunchConfiguration("mode")
+    direct_motion_backend = LaunchConfiguration("direct_motion_backend")
     simulation_condition = IfCondition(
         PythonExpression(["'", mode, "'.lower() == 'simulation'"])
     )
     hardware_condition = IfCondition(
-        PythonExpression(["'", mode, "'.lower() == 'hardware'"])
+        PythonExpression(
+            [
+                "'",
+                mode,
+                "'.lower() == 'hardware' and '",
+                direct_motion_backend,
+                "'.lower() == 'ros_service'",
+            ]
+        )
     )
 
     simulation_dual_arm = IncludeLaunchDescription(
@@ -101,22 +194,29 @@ def generate_launch_description() -> LaunchDescription:
         }.items(),
     )
 
-    box_perception = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            PathJoinSubstitution(
-                [FindPackageShare("object_pose_ros"), "launch", "object_pose_action.launch.py"]
-            )
-        ),
-        launch_arguments={
-            "config_file": PathJoinSubstitution(
-                [
-                    FindPackageShare("object_pose_ros"),
-                    "config",
-                    LaunchConfiguration("box_config_file"),
-                ]
-            ),
-            "server_output": LaunchConfiguration("box_server_output"),
-        }.items(),
+    box_perception = ExecuteProcess(
+        cmd=[
+            FindExecutable(name="env"),
+            "-u",
+            "PYTHONHOME",
+            "-u",
+            "PYTHONPATH",
+            "-u",
+            "CONDA_PREFIX",
+            "-u",
+            "CONDA_DEFAULT_ENV",
+            f"PATH={clean_runtime_path}",
+            "ROS_DOMAIN_ID=0",
+            "ROS_LOCALHOST_ONLY=0",
+            FindExecutable(name="bash"),
+            LaunchConfiguration("box_perception_script"),
+            LaunchConfiguration("box_camera_source"),
+            ["config_file:=", LaunchConfiguration("box_config_file")],
+            ["camera_model:=", LaunchConfiguration("box_camera_model")],
+            ["server_output:=", LaunchConfiguration("box_server_output")],
+        ],
+        output="screen",
+        condition=IfCondition(LaunchConfiguration("enable_box_perception")),
     )
 
     mission = IncludeLaunchDescription(
@@ -130,6 +230,7 @@ def generate_launch_description() -> LaunchDescription:
             "require_command_subscribers": PythonExpression(
                 ["'", mode, "'.lower() == 'hardware'"]
             ),
+            "direct_motion_backend": direct_motion_backend,
         }.items(),
     )
 
@@ -151,6 +252,14 @@ def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
             DeclareLaunchArgument("mode", default_value="required"),
+            DeclareLaunchArgument(
+                "direct_motion_backend",
+                default_value="python_sdk",
+                description=(
+                    "Motion owner: python_sdk uses the RealMan Python SDK and "
+                    "skips hardware_driver; ros_service uses /realbot/movel."
+                ),
+            ),
             DeclareLaunchArgument("robot_profile", default_value="realbot"),
             DeclareLaunchArgument("planning_pipeline", default_value="ompl"),
             DeclareLaunchArgument("dry_run", default_value="false"),
@@ -169,7 +278,39 @@ def generate_launch_description() -> LaunchDescription:
                     [FindPackageShare("mission_controller"), "config", "mission.yaml"]
                 ),
             ),
-            DeclareLaunchArgument("box_config_file", default_value="object_pose.yaml"),
+            DeclareLaunchArgument(
+                "box_perception_root",
+                default_value=box_perception_root_default,
+                description=(
+                    "Perception source checkout. Defaults to OBJECT_POSE_ROOT "
+                    "or a sibling vision_ws checkout discovered from this file."
+                ),
+            ),
+            DeclareLaunchArgument(
+                "box_perception_script",
+                default_value=PathJoinSubstitution(
+                    [
+                        LaunchConfiguration("box_perception_root"),
+                        "scripts",
+                        "start_object_pose_action.sh",
+                    ]
+                ),
+            ),
+            DeclareLaunchArgument(
+                "box_config_file",
+                default_value=PathJoinSubstitution(
+                    [
+                        LaunchConfiguration("box_perception_root"),
+                        "ros2",
+                        "object_pose_ros",
+                        "config",
+                        "object_pose_bigbox.yaml",
+                    ]
+                ),
+            ),
+            DeclareLaunchArgument("enable_box_perception", default_value="true"),
+            DeclareLaunchArgument("box_camera_source", default_value="d435i"),
+            DeclareLaunchArgument("box_camera_model", default_value="d435i"),
             DeclareLaunchArgument("box_server_output", default_value="screen"),
             OpaqueFunction(function=_validate_configuration),
             runtime,

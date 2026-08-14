@@ -1,7 +1,8 @@
 # Changan mission workspace
 
-这个工作区只保留 RealBot 双臂的两个 Mission action：
+这个工作区提供三个 RealBot 双臂 Mission Action：
 
+- `/execute_adaptive_box_grasp` (`mission_interfaces/action/ExecuteAdaptiveBoxGrasp`)
 - `/execute_box_grasp` (`mission_interfaces/action/ExecuteBoxGrasp`)
 - `/execute_box_place` (`mission_interfaces/action/ExecuteBoxPlace`)
 
@@ -56,6 +57,11 @@ ros2 launch mission_controller mission_system.launch.py \
 
 ```zsh
 ros2 action send_goal --feedback \
+  /execute_adaptive_box_grasp \
+  mission_interfaces/action/ExecuteAdaptiveBoxGrasp \
+  "{task_id: box-001, target_instance_index: -1, dry_run: true}"
+
+ros2 action send_goal --feedback \
   /execute_box_grasp \
   mission_interfaces/action/ExecuteBoxGrasp \
   "{dry_run: false}"
@@ -65,6 +71,18 @@ ros2 action send_goal --feedback \
   mission_interfaces/action/ExecuteBoxPlace \
   "{dry_run: false}"
 ```
+
+`/execute_adaptive_box_grasp` 的任务流是：
+
+1. 调用 `/object_pose/estimate`，严格使用检测结果自带时间戳查询 TF，仅一次转换并冻结 `object_pose_base`。
+2. 由箱体 Pose、宽度和抓取参数生成并冻结 `left_grasp_pose_base`、`right_grasp_pose_base`。
+3. 将左右抓取位从 `base_link` 转换到各自机械臂基座，并用夹具中心偏移换算为 `Link8` SDK 目标。
+4. 直接并发调用左右 RealMan Python SDK `rm_movel` 到达抓取位置。
+5. 将冻结的左右抓取位置沿 `base_link +Z` 偏移，再执行第二次 `rm_movel` 完成抬升。
+
+这个 Action 不调用 `/move_arm_p`、`/move_torso_p` 或其他 dual_arm 规划接口，也不自动移动腰部、闭合夹爪或验证夹取结果。`dry_run=true` 只验证检测、冻结坐标及 SDK 目标换算，不连接机械臂或发送物理运动。
+
+因为绕过了 MoveIt，这条路径没有 IK 预检查、碰撞检查或轨迹规划；SDK 拒绝不可达目标时 Action 会执行双臂 slow-stop 并失败。底盘、腰部和目标物在整个 Action 中必须保持不动，否则冻结到 `base_link` 的目标不再有效。
 
 Box grasp 会使用 `box_grasp_*_joint_positions` 进入观测姿态，调用
 `/object_pose/estimate` 和 `/pickup_task`，闭合双夹爪并确认反馈后抬升躯干。

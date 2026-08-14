@@ -1,0 +1,38 @@
+# Detect and freeze a box target in base_link, then execute the frozen grasp
+# and lift targets directly with the native RealMan SDK rm_movel API.
+
+# Goal
+string task_id
+int32 CONFIGURED_INSTANCE_INDEX=-1
+int32 target_instance_index
+bool dry_run
+
+---
+# Result error codes.
+int32 ERROR_NONE=0
+int32 ERROR_INVALID_GOAL=1
+int32 ERROR_DETECTION=2
+int32 ERROR_TF_FREEZE=3
+int32 ERROR_GRASP_TARGET=4
+int32 ERROR_GRASP_MOVEL=5
+int32 ERROR_LIFT_MOVEL=6
+int32 ERROR_CANCELED=7
+int32 ERROR_INTERNAL=8
+
+bool success
+int32 error_code
+string message
+string failure_stage
+string task_id
+geometry_msgs/PoseStamped object_pose_base
+geometry_msgs/PoseStamped left_grasp_pose_base
+geometry_msgs/PoseStamped right_grasp_pose_base
+float64 detection_confidence
+bool grasp_movel_executed
+bool lift_executed
+
+---
+# State-machine progress.
+string stage
+float32 progress
+string detail

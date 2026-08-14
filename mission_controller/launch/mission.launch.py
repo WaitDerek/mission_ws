@@ -13,6 +13,7 @@ def generate_launch_description() -> LaunchDescription:
     require_command_subscribers = LaunchConfiguration(
         "require_command_subscribers"
     )
+    direct_motion_backend = LaunchConfiguration("direct_motion_backend")
 
     controller = Node(
         package="mission_controller",
@@ -25,7 +26,8 @@ def generate_launch_description() -> LaunchDescription:
             {
                 "require_command_subscribers": ParameterValue(
                     require_command_subscribers, value_type=bool
-                )
+                ),
+                "direct_motion_backend": direct_motion_backend,
             },
         ],
     )
@@ -45,6 +47,10 @@ def generate_launch_description() -> LaunchDescription:
                     "Abort box mission commands when command topics have no "
                     "subscribers. Set true for hardware."
                 ),
+            ),
+            DeclareLaunchArgument(
+                "direct_motion_backend",
+                default_value="python_sdk",
             ),
             controller,
         ]

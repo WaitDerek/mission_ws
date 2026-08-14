@@ -2,7 +2,7 @@ import unittest
 
 from geometry_msgs.msg import PoseStamped
 
-from mission_controller.mission_controller import (
+from mission_runtime.mission_controller import (
     MissionController,
     MissionError,
     rotate_vector,
@@ -15,15 +15,10 @@ class _Logger:
 
 
 class _ConstraintHarness:
-    def __init__(self, enabled=True, min_dot=0.5, model_label="f320"):
-        self.enabled = enabled
+    def __init__(self, min_dot=0.5, model_label="f320"):
         self.min_dot = min_dot
         self.model_label = model_label
         self.logger = _Logger()
-
-    def _boolean(self, name):
-        assert name == "box_camera_pose_constraint_enabled"
-        return self.enabled
 
     def _float(self, name):
         assert name == "box_camera_pose_axis_min_dot"

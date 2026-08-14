@@ -3,12 +3,10 @@
 # Source this file so the environment changes remain in the current shell:
 #   source ./setup_all.zsh
 
-# Derive sibling workspaces from this file instead of hard-coding a machine
-# path.  ROS can be supplied with ROS_SETUP_FILE when it is not already in the
-# shell environment; otherwise the standard ROS installation is discovered.
+# The Git repository lives directly under the workspace's src directory.
 _mission_setup_script="${${(%):-%N}:A}"
-_mission_package_root="${_mission_setup_script:h}"
-_mission_ws_root="${_mission_package_root:h:h}"
+_mission_repo_root="${_mission_setup_script:h}"
+_mission_ws_root="${_mission_repo_root:h}"
 _code_root="${_mission_ws_root:h}"
 _home_root="${_code_root:h}"
 
@@ -45,11 +43,13 @@ _mission_source_setup "${_home_root}/workspace/rm_robot_ws/install/setup.zsh" \
   "rm_robot_ws" || return 1
 _mission_source_setup "${_code_root}/dual_arm_ws/install/setup.zsh" \
   "dual_arm_ws" || return 1
+_mission_source_setup "${_code_root}/vision_ws/install/setup.zsh" \
+  "vision_ws" || return 1
 _mission_source_setup "${_mission_ws_root}/install/setup.zsh" \
   "mission_ws" || return 1
 
-print -- "[mission setup] sourced ROS 2, rm_robot_ws, dual_arm_ws, mission_ws"
+print -- "[mission setup] sourced ROS 2, rm_robot_ws, dual_arm_ws, vision_ws, mission_ws"
 
-unset _mission_setup_script _mission_package_root _mission_ws_root _code_root \
-  _home_root _mission_ros_setup _mission_candidate
+unset _mission_setup_script _mission_repo_root _mission_ws_root _code_root _home_root \
+  _mission_ros_setup _mission_candidate
 unfunction _mission_source_setup

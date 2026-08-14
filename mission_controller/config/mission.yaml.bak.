@@ -76,7 +76,7 @@ mission_controller:
     box_joint5_name: joint5
     box_joint1_device: 2
     box_joint1_detection_angle_deg: 0.0
-    box_joint1_approach_angle_deg: 12.0
+    box_joint1_approach_angle_deg: 10.0
     box_joint2_detection_angle_deg: 0.0
     box_joint2_approach_angle_deg: 0.0
     box_joint3_detection_angle_deg: 0.0
@@ -115,32 +115,28 @@ mission_controller:
     direct_movel_box_relative_model_label: smallbox
     # Select rm_movel or rm_movej_p for direct Cartesian targets.
     direct_movel_motion_mode: movej_p
-    # Direct target velocity used by the current hardware profile.
     direct_movel_velocity_percent: 5.0
     direct_movel_blocking: true
     # Optional synchronized dual-arm MoveL sequence after the initial direct
     # target succeeds. XYZ deltas are expressed in the FoundationPose box
     # frame; each delta is rotated into the current arm-base frame. Each step
     # is cumulative from the previous step and Link8 orientations stay fixed.
-    # Disable post-grasp translations until the corrected orientation is
-    # verified against the box; re-enable after the orientation check passes.
-    box_post_movel_enabled: false
+    box_post_movel_enabled: true
     box_post_movel_velocity_percent: 5.0
-    # Current hardware profile uses four configured post-target steps; the
-    # sequence remains disabled by default until explicitly enabled.
+    # Keep at 2 until steps 3-5 are calibrated and verified with dry-run.
     box_post_movel_step_count: 4
-    box_post_movel_left_step1_xyz: [0.0, 0.0, 0.08]
-    box_post_movel_right_step1_xyz: [0.0, 0.0, -0.03]
+    box_post_movel_left_step1_xyz: [0.0, 0.0, 0.055]
+    box_post_movel_right_step1_xyz: [0.0, 0.0, -0.025]
     box_post_movel_left_step2_xyz: [0.12, 0.0, 0.0]
     box_post_movel_right_step2_xyz: [0.12, 0.0, 0.0]
     box_post_movel_left_step3_xyz: [-0.12, 0.0, 0.0]
     box_post_movel_right_step3_xyz: [-0.12, 0.0, 0.0]
     box_post_movel_left_step4_xyz: [0.0, 0.0, -0.1]
-    box_post_movel_right_step4_xyz: [0.0, 0.0, 0.15]
+    box_post_movel_right_step4_xyz: [0.0, 0.0, 0.1]
     box_post_movel_left_step5_xyz: [0.0, 0.0, 0.0]
     box_post_movel_right_step5_xyz: [0.0, 0.0, 0.0]
     # Optional post-grasp arm withdrawal MoveJ; disabled until verified.
-    box_post_arm_movej_enabled: false
+    box_post_arm_movej_enabled: true
     box_post_arm_movej_left_device: 0
     box_post_arm_movej_right_device: 1
     box_post_arm_movej_left_joint_units: [0, 40000, 0, 0, 0, 0, 0]
@@ -157,7 +153,7 @@ mission_controller:
     box_post_arm_feedback_max_age_sec: 1.0
     box_post_arm_stable_samples: 3
     # Optional body-home command after arm withdrawal; disabled by default.
-    box_body_return_home_enabled: false
+    box_body_return_home_enabled: true
     box_body_home_joint_units: [0, 0, 0, 0, 0]
     box_body_home_velocity: 10
     box_body_home_blend_radius: 0
@@ -170,12 +166,9 @@ mission_controller:
     direct_movel_fixture_compensation_enabled: true
     # Grasp-center offsets in the FoundationPose box frame, in meters.
     direct_movel_left_offset_xyz: [0.0, 0.05, -0.46]
-    direct_movel_right_offset_xyz: [0.0, 0.0, 0.35]
+    direct_movel_right_offset_xyz: [0.0, 0.0, 0.31]
     # Calibrated Link8 orientations relative to the smallbox frame.
-    # Calibrated from the box pose in the camera frame, the fixed camera-to-
-    # left-base extrinsic, the measured Joint1/2/3 motion, and the manually
-    # corrected left Link8 pose on 2026-08-14. Quaternion order is x,y,z,w.
-    direct_movel_left_box_to_link8_orientation: [0.529174705702, 0.468855850183, -0.519042875374, 0.480356967388]
+    direct_movel_left_box_to_link8_orientation: [0.559715925759, 0.501217990744, -0.485326226240, 0.447165587148]
     direct_movel_right_box_to_link8_orientation: [0.495125041989, -0.526225123507, 0.461789015629, 0.514479559584]
     # Fixture center relative to each Link8 frame. The fixture orientation is
     # intentionally unchanged, so only this local translation is compensated.

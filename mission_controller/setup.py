@@ -15,6 +15,7 @@ setup(
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
     install_requires=["setuptools"],
+    tests_require=["pytest"],
     zip_safe=True,
     maintainer="dekc",
     maintainer_email="dekc@example.com",
@@ -22,7 +23,7 @@ setup(
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
-            "mission_controller = mission_controller.mission_controller:main",
+            "mission_controller = mission_runtime.mission_controller:main",
         ],
     },
 )

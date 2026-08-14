@@ -47,6 +47,13 @@ class BoxActionsMixin:
                     "DRY_RUN_INITIALIZATION",
                     "skipping direct box preparation commands",
                 )
+            elif self._boolean("box_direct_movel_enabled"):
+                self._publish_box_grasp_feedback(
+                    goal_handle,
+                    "DIRECT_MOVEL_INITIALIZATION",
+                    "direct rm_movel mode: using the current camera view; "
+                    "skipping grippers, torso, and observation posture",
+                )
             else:
                 self._publish_box_grasp_feedback(
                     goal_handle,
@@ -95,7 +102,7 @@ class BoxActionsMixin:
                     "DRY_RUN_COMPLETE",
                     "box pickup planning succeeded; direct execution was skipped",
                 )
-            else:
+            elif not self._boolean("box_direct_movel_enabled"):
                 torso_lift_target = self._float_array(
                     "box_grasp_torso_lift_positions"
                 )

@@ -13,6 +13,7 @@
   <depend>action_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
+  <depend>rm_robot_interfaces</depend>
   <depend>mission_interfaces</depend>
   <depend>object_pose_interfaces</depend>
   <depend>task_interfaces</depend>
@@ -23,6 +24,8 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>object_pose_ros</exec_depend>
   <exec_depend>robot_bringup</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
 
   <export>
     <build_type>ament_python</build_type>

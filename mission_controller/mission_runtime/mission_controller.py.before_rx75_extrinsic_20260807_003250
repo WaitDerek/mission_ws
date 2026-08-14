@@ -1,0 +1,796 @@
+import math
+import threading
+from typing import Optional
+
+import rclpy
+from geometry_msgs.msg import Pose, PoseStamped
+from mission_interfaces.action import (
+    ExecuteBoxGrasp,
+    ExecuteBoxPlace,
+)
+try:
+    from object_pose_interfaces.action import EstimateObjectPose
+except ModuleNotFoundError as exc:
+    EstimateObjectPose = None
+    OBJECT_POSE_IMPORT_ERROR: Optional[ModuleNotFoundError] = exc
+else:
+    OBJECT_POSE_IMPORT_ERROR = None
+from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+)
+from sensor_msgs.msg import JointState
+from task_interfaces.action import (
+    GoReady,
+    MoveArmJoints,
+    PickupTask,
+)
+from task_interfaces.srv import MoveCartesian
+from tf2_ros import (
+    Buffer,
+    StaticTransformBroadcaster,
+    TransformListener,
+)
+from .common import (
+    MissionCanceled,
+    MissionError,
+    PickupAttemptError,
+    TaskActionError,
+    pose_to_array,
+    quaternion_multiply,
+    rotate_vector,
+)
+from .box_actions import BoxActionsMixin
+from .box_support import BoxSupportMixin
+from .action_runtime import ActionRuntimeMixin
+
+__all__ = [
+    "MissionController",
+    "MissionCanceled",
+    "MissionError",
+    "PickupAttemptError",
+    "TaskActionError",
+    "pose_to_array",
+    "quaternion_multiply",
+    "rotate_vector",
+    "main",
+]
+
+
+class MissionController(
+    ActionRuntimeMixin,
+    BoxSupportMixin,
+    BoxActionsMixin,
+    Node,
+):
+    def __init__(self) -> None:
+        super().__init__("mission_controller")
+        self._declare_parameters()
+        self._validate_parameters()
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+        self.camera_static_broadcaster = StaticTransformBroadcaster(self)
+        self._publish_camera_mount_tf()
+
+        # Match the command transport used by dual_arm_manipulation.
+        command_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        visualization_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        feedback_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        self.torso_publisher = self.create_publisher(
+            JointState, self._string("torso_topic"), command_qos
+        )
+        self.left_gripper_publisher = self.create_publisher(
+            JointState, self._string("left_gripper_topic"), command_qos
+        )
+        self.right_gripper_publisher = self.create_publisher(
+            JointState, self._string("right_gripper_topic"), command_qos
+        )
+        self.joint_state_lock = threading.Lock()
+        self.latest_joint_positions: dict[str, float] = {}
+        self.latest_joint_state_time = 0.0
+        self.latest_joint_state_sequence = 0
+        self.latest_torso_positions: list[float] = []
+        self.latest_torso_state_time = 0.0
+        self.latest_torso_state_sequence = 0
+        self.latest_gripper_positions: dict[str, float] = {}
+        self.latest_gripper_state_times = {"left": 0.0, "right": 0.0}
+        self.latest_gripper_state_sequences = {"left": 0, "right": 0}
+        self.joint_state_subscription = self.create_subscription(
+            JointState,
+            self._string("joint_state_topic"),
+            self._joint_state_callback,
+            20,
+        )
+        self.torso_feedback_subscription = self.create_subscription(
+            JointState,
+            self._string("torso_feedback_topic"),
+            self._torso_feedback_callback,
+            20,
+        )
+        self.left_gripper_feedback_subscription = self.create_subscription(
+            JointState,
+            self._string("left_gripper_feedback_topic"),
+            lambda message: self._gripper_feedback_callback("left", message),
+            feedback_qos,
+        )
+        self.right_gripper_feedback_subscription = self.create_subscription(
+            JointState,
+            self._string("right_gripper_feedback_topic"),
+            lambda message: self._gripper_feedback_callback("right", message),
+            feedback_qos,
+        )
+        self.box_object_pose_publisher = self.create_publisher(
+            PoseStamped, self._string("box_object_pose_topic"), 10
+        )
+        self.box_object_pose_raw_publisher = self.create_publisher(
+            PoseStamped,
+            self._string("box_object_pose_raw_topic"),
+            visualization_qos,
+        )
+        self.box_object_pose_camera_subscription = self.create_subscription(
+            PoseStamped,
+            self._string("box_object_pose_camera_topic"),
+            self._box_object_pose_camera_callback,
+            10,
+        )
+
+        self.client_group = ReentrantCallbackGroup()
+        self.server_group = ReentrantCallbackGroup()
+        self.arm_joints_client = ActionClient(
+            self,
+            MoveArmJoints,
+            self._string("arm_joints_service_name"),
+            callback_group=self.client_group,
+        )
+        self.go_ready_client = ActionClient(
+            self,
+            GoReady,
+            self._string("go_ready_action_name"),
+            callback_group=self.client_group,
+        )
+        self.box_object_pose_client = None
+        if EstimateObjectPose is not None:
+            self.box_object_pose_client = ActionClient(
+                self,
+                EstimateObjectPose,
+                self._string("box_object_pose_action_name"),
+                callback_group=self.client_group,
+            )
+        else:
+            self.get_logger().warning(
+                "object_pose_interfaces is unavailable; box grasp goals will "
+                f"be rejected: "
+                f"{OBJECT_POSE_IMPORT_ERROR}"
+            )
+        self.pickup_task_client = ActionClient(
+            self,
+            PickupTask,
+            self._string("pickup_task_action_name"),
+            callback_group=self.client_group,
+        )
+        self.direct_movel_client = self.create_client(
+            MoveCartesian,
+            self._string("direct_movel_service_name"),
+            callback_group=self.client_group,
+        )
+        self.state_lock = threading.Lock()
+        self.mission_reserved = False
+        self.active_mission = ""
+        self.active_arm_joints_goal_handle = None
+        self.active_go_ready_goal_handle = None
+        self.active_box_object_pose_goal_handle = None
+        self.active_pickup_task_goal_handle = None
+
+        self.box_grasp_action_server = ActionServer(
+            self,
+            ExecuteBoxGrasp,
+            self._string("execute_box_grasp_action_name"),
+            execute_callback=self._execute_box_grasp,
+            goal_callback=self._box_grasp_goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=self.server_group,
+        )
+        self.box_place_action_server = ActionServer(
+            self,
+            ExecuteBoxPlace,
+            self._string("execute_box_place_action_name"),
+            execute_callback=self._execute_box_place,
+            goal_callback=self._box_place_goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=self.server_group,
+        )
+        self.get_logger().info(
+            "mission controller ready: "
+            f"box_grasp={self._string('execute_box_grasp_action_name')} "
+            f"box_place={self._string('execute_box_place_action_name')}"
+        )
+
+    def _declare_parameters(self) -> None:
+        self.declare_parameters(
+            namespace="",
+            parameters=[
+                ("execute_box_grasp_action_name", "/execute_box_grasp"),
+                ("execute_box_place_action_name", "/execute_box_place"),
+                ("box_mission_enabled", False),
+                ("box_object_pose_action_name", "/object_pose/estimate"),
+                ("box_object_pose_topic", "/mission/box_object_pose"),
+                ("box_object_pose_camera_topic", "/object_pose/pose"),
+                ("box_object_pose_raw_topic", "/mission/box_object_pose_raw"),
+                ("box_object_pose_model_label", "f320"),
+                ("box_object_pose_instance_index", 0),
+                ("box_object_pose_confidence_threshold", 0.0),
+                ("box_object_pose_result_timeout_sec", 60.0),
+                ("box_camera_pose_constraint_enabled", True),
+                ("box_camera_pose_axis_min_dot", 0.5),
+                ("pickup_task_action_name", "/pickup_task"),
+                ("pickup_task_result_timeout_sec", 120.0),
+                ("box_direct_movel_enabled", True),
+                ("direct_movel_service_name", "/realbot/movel"),
+                ("direct_movel_velocity_percent", 5.0),
+                ("direct_movel_blocking", True),
+                ("direct_movel_use_current_fixture_orientation", False),
+                ("direct_movel_left_offset_xyz", [0.0, -0.30, -0.20]),
+                ("direct_movel_right_offset_xyz", [0.0, 0.30, -0.20]),
+                ("box_detection_attempts", 2),
+                ("box_width", 0.357),
+                ("box_height", 0.127),
+                ("box_type", "f320"),
+                # FoundationPose publishes the oriented-bounding-box centre
+                # with F320 axes X=down, Y=depth, Z=width. Keep those axes by
+                # default; each robot pickup profile owns the fixed transform
+                # from model axes to its operation/end-effector convention.
+                (
+                    "box_foundation_to_pickup_rpy",
+                    [0.0, 0.0, 0.0],
+                ),
+                ("arm_joints_service_name", "/move_arm_j"),
+                ("go_ready_action_name", "/go_ready"),
+                ("torso_topic", "/realbot/motion_target/torso"),
+                (
+                    "left_gripper_topic",
+                    "/realbot/motion_target/gripper_left",
+                ),
+                (
+                    "right_gripper_topic",
+                    "/realbot/motion_target/gripper_right",
+                ),
+                ("joint_state_topic", "/joint_states"),
+                ("torso_feedback_topic", "/realbot/feedback/torso"),
+                (
+                    "left_gripper_feedback_topic",
+                    "/realbot/feedback/gripper_left",
+                ),
+                (
+                    "right_gripper_feedback_topic",
+                    "/realbot/feedback/gripper_right",
+                ),
+                (
+                    "left_arm_joint_names",
+                    [f"L_JOINT_{index}" for index in range(1, 8)],
+                ),
+                (
+                    "right_arm_joint_names",
+                    [f"R_JOINT_{index}" for index in range(1, 8)],
+                ),
+                ("verify_arm_joint_targets", True),
+                ("arm_joint_target_tolerance", 0.10),
+                ("arm_joint_target_wait_timeout_sec", 20.0),
+                ("arm_joint_target_stable_samples", 3),
+                ("box_observation_ready_check_enabled", True),
+                ("box_observation_feedback_max_age_sec", 2.0),
+                ("box_observation_torso_tolerance", 0.10),
+                ("torso_target_tolerance", 0.03),
+                ("torso_target_wait_timeout_sec", 40.0),
+                ("torso_target_stable_samples", 3),
+                ("arm_execution_frame", "base_link"),
+                ("left_ee_frame", "L_Link_7"),
+                ("right_ee_frame", "R_Link_7"),
+                ("left_gripper_frame", "L_Link_8"),
+                ("right_gripper_frame", "R_Link_8"),
+                ("camera_mount_tf_enabled", False),
+                ("camera_mount_parent_frame", "R_Link_8"),
+                (
+                    "camera_mount_child_frame",
+                    "realbot_camera_link",
+                ),
+                # The mechanical flange-to-camera transform comes from URDF.
+                # This zero-translation rotation only maps the CAD D405 axes
+                # to the ROS camera_link convention: camera +X = D405 +Z.
+                ("camera_mount_xyz", [0.0, 0.0, 0.0]),
+                (
+                    "camera_mount_rpy",
+                    [-1.5707963267948966, -1.5707963267948966, 0.0],
+                ),
+                ("camera_mount_correction_rpy", [0.0, 0.0, 0.0]),
+                ("camera_measured_extrinsics_enabled", True),
+                ("left_arm_base_frame", "L_base_Link"),
+                ("right_arm_base_frame", "R_base_Link"),
+                ("camera_left_base_xyz", [0.05, 0.08, -0.20]),
+                ("camera_right_base_xyz", [-0.05, 0.08, -0.20]),
+                ("camera_left_base_rpy", [-1.5707963267948966, 0.0, 0.0]),
+                ("camera_right_base_rpy", [1.5707963267948966, 0.0, 3.141592653589793]),
+                ("camera_tf_timeout_sec", 2.0),
+                ("dependency_wait_timeout_sec", 10.0),
+                ("arm_joints_result_timeout_sec", 60.0),
+                ("go_ready_result_timeout_sec", 60.0),
+                ("wait_for_command_subscribers", True),
+                ("require_command_subscribers", False),
+                ("command_subscriber_wait_timeout_sec", 3.0),
+                ("command_repeat_count", 10),
+                ("command_repeat_interval_sec", 0.005),
+                ("torso_settle_sec", 1.0),
+                ("arm_settle_sec", 1.0),
+                ("gripper_settle_sec", 1.0),
+                ("box_detection_posture_settle_sec", 2.0),
+                ("box_place_release_delay_sec", 2.0),
+                ("torso_reset_positions", [0.0, 0.0, 0.0, 0.0]),
+                ("torso_velocities", [0.1, 0.1, 0.1, 0.1]),
+                # RealBot dual-arm preparation and clearance postures.
+                (
+                    "box_grasp_intermediate_left_joint_positions",
+                    [1.30, 0.6, 0.0, -1.5, 0.0, 0.0, 0.0],
+                ),
+                (
+                    "box_grasp_intermediate_right_joint_positions",
+                    [1.30, -0.6, 0.0, -1.5, 0.0, 0.0, 0.0],
+                ),
+                (
+                    "box_grasp_left_observation_joint_positions",
+                    [-0.88, 1.24, -0.70, -2.0, 1.25, 0.1, 0.0],
+                ),
+                (
+                    "box_grasp_right_observation_joint_positions",
+                    [
+                        0.86,
+                        -0.24,
+                        0.20,
+                        -2.0944,
+                        0.174647,
+                        -0.618606,
+                        0.104098,
+                    ],
+                ),
+                (
+                    "box_pickup_clearance_left_joint_positions",
+                    [
+                        -1.413830,
+                        0.687872,
+                        -1.236596,
+                        -1.839149,
+                        1.905532,
+                        0.525745,
+                        1.146383,
+                    ],
+                ),
+                (
+                    "box_pickup_clearance_right_joint_positions",
+                    [
+                        -1.403617,
+                        -0.668723,
+                        1.238298,
+                        -1.802128,
+                        -1.944043,
+                        0.435319,
+                        -1.307021,
+                    ],
+                ),
+                ("box_grasp_torso_prepare_positions", [0.61, -0.81, -0.6, 0.0]),
+                (
+                    "box_grasp_torso_lift_positions",
+                    [0.41, -0.81, -0.6, 0.0],
+                ),
+                ("box_place_torso_positions", [0.61, -0.81, -0.6, 0.0]),
+                (
+                    "box_place_torso_straighten_intermediate_positions",
+                    [0.61, -1.2, -0.6, 0.0],
+                ),
+                ("gripper_open_position", 100.0),
+                ("gripper_closed_position", 0.0),
+                ("box_empty_close_ratio_threshold", 0.95),
+                ("box_gripper_feedback_timeout_sec", 2.0),
+                ("box_gripper_feedback_max_age_sec", 0.5),
+            ],
+        )
+
+    def _validate_parameters(self) -> None:
+        for name in (
+            "execute_box_grasp_action_name",
+            "execute_box_place_action_name",
+            "box_object_pose_action_name",
+            "box_object_pose_topic",
+            "box_object_pose_camera_topic",
+            "box_object_pose_raw_topic",
+            "box_object_pose_model_label",
+            "pickup_task_action_name",
+            "direct_movel_service_name",
+            "box_type",
+            "arm_joints_service_name",
+            "go_ready_action_name",
+            "torso_topic",
+            "left_gripper_topic",
+            "right_gripper_topic",
+            "joint_state_topic",
+            "torso_feedback_topic",
+            "left_gripper_feedback_topic",
+            "right_gripper_feedback_topic",
+            "arm_execution_frame",
+            "left_ee_frame",
+            "right_ee_frame",
+            "left_gripper_frame",
+            "right_gripper_frame",
+        ):
+            if not self._string(name):
+                raise ValueError(f"parameter '{name}' must not be empty")
+
+        for name in ("left_arm_joint_names", "right_arm_joint_names"):
+            joint_names = self._string_array(name)
+            if len(joint_names) != 7 or len(set(joint_names)) != 7:
+                raise ValueError(
+                    f"parameter '{name}' must contain 7 unique joint names"
+                )
+
+        if self._boolean("camera_mount_tf_enabled"):
+            for name in ("camera_mount_parent_frame", "camera_mount_child_frame"):
+                if not self._string(name):
+                    raise ValueError(f"parameter '{name}' must not be empty")
+
+        for name, expected_length in (
+            ("torso_reset_positions", 4),
+            ("torso_velocities", 4),
+            ("box_grasp_intermediate_left_joint_positions", 7),
+            ("box_grasp_intermediate_right_joint_positions", 7),
+            ("box_grasp_left_observation_joint_positions", 7),
+            ("box_grasp_right_observation_joint_positions", 7),
+            ("box_pickup_clearance_left_joint_positions", 7),
+            ("box_pickup_clearance_right_joint_positions", 7),
+            ("box_grasp_torso_prepare_positions", 4),
+            ("box_grasp_torso_lift_positions", 4),
+            ("box_place_torso_positions", 4),
+            ("box_place_torso_straighten_intermediate_positions", 4),
+            ("camera_mount_xyz", 3),
+            ("camera_mount_rpy", 3),
+            ("camera_mount_correction_rpy", 3),
+            ("camera_left_base_xyz", 3),
+            ("camera_right_base_xyz", 3),
+            ("camera_left_base_rpy", 3),
+            ("camera_right_base_rpy", 3),
+            ("box_foundation_to_pickup_rpy", 3),
+            ("direct_movel_left_offset_xyz", 3),
+            ("direct_movel_right_offset_xyz", 3),
+        ):
+            values = self._float_array(name)
+            if len(values) != expected_length:
+                raise ValueError(
+                    f"parameter '{name}' must contain {expected_length} values"
+                )
+            if not all(math.isfinite(value) for value in values):
+                raise ValueError(f"parameter '{name}' contains NaN or Inf")
+
+        for name in (
+            "gripper_open_position",
+            "gripper_closed_position",
+        ):
+            value = self._float(name)
+            if not 0.0 <= value <= 100.0:
+                raise ValueError(f"parameter '{name}' must be in [0, 100]")
+
+        if math.isclose(
+            self._float("gripper_open_position"),
+            self._float("gripper_closed_position"),
+        ):
+            raise ValueError(
+                "gripper_open_position and gripper_closed_position must differ"
+            )
+        close_ratio = self._float("box_empty_close_ratio_threshold")
+        if not 0.0 <= close_ratio <= 1.0:
+            raise ValueError(
+                "box_empty_close_ratio_threshold must be in [0, 1]"
+            )
+
+        positive_parameters = (
+            "dependency_wait_timeout_sec",
+            "arm_joints_result_timeout_sec",
+            "go_ready_result_timeout_sec",
+            "command_subscriber_wait_timeout_sec",
+            "camera_tf_timeout_sec",
+            "pickup_task_result_timeout_sec",
+            "direct_movel_velocity_percent",
+            "box_width",
+            "box_height",
+            "arm_joint_target_tolerance",
+            "arm_joint_target_wait_timeout_sec",
+            "box_observation_feedback_max_age_sec",
+            "box_observation_torso_tolerance",
+            "torso_target_tolerance",
+            "torso_target_wait_timeout_sec",
+            "box_gripper_feedback_timeout_sec",
+            "box_gripper_feedback_max_age_sec",
+        )
+        for name in positive_parameters:
+            if not math.isfinite(self._float(name)) or self._float(name) <= 0.0:
+                raise ValueError(f"parameter '{name}' must be finite and positive")
+
+        nonnegative_parameters = (
+            "command_repeat_interval_sec",
+            "torso_settle_sec",
+            "arm_settle_sec",
+            "gripper_settle_sec",
+            "box_object_pose_result_timeout_sec",
+            "box_detection_posture_settle_sec",
+            "box_place_release_delay_sec",
+        )
+        for name in nonnegative_parameters:
+            if not math.isfinite(self._float(name)) or self._float(name) < 0.0:
+                raise ValueError(f"parameter '{name}' must be finite and nonnegative")
+
+        if self._integer("command_repeat_count") <= 0:
+            raise ValueError("command_repeat_count must be positive")
+        if self._integer("arm_joint_target_stable_samples") <= 0:
+            raise ValueError("arm_joint_target_stable_samples must be positive")
+        if self._integer("torso_target_stable_samples") <= 0:
+            raise ValueError("torso_target_stable_samples must be positive")
+        if self._integer("box_detection_attempts") <= 0:
+            raise ValueError("box_detection_attempts must be positive")
+        if self._integer("box_object_pose_instance_index") < 0:
+            raise ValueError("box_object_pose_instance_index must be nonnegative")
+
+        box_confidence = self._float("box_object_pose_confidence_threshold")
+        if not 0.0 <= box_confidence <= 1.0:
+            raise ValueError(
+                "box_object_pose_confidence_threshold must be in [0, 1]"
+            )
+        box_axis_min_dot = self._float("box_camera_pose_axis_min_dot")
+        if not 0.0 <= box_axis_min_dot <= 1.0:
+            raise ValueError("box_camera_pose_axis_min_dot must be in [0, 1]")
+
+        if self._boolean("box_mission_enabled"):
+            for name in (
+                "box_grasp_left_observation_joint_positions",
+                "box_grasp_right_observation_joint_positions",
+                "box_grasp_torso_prepare_positions",
+            ):
+                if all(abs(value) < 1e-9 for value in self._float_array(name)):
+                    raise ValueError(
+                        f"box_mission_enabled requires configured '{name}'"
+                    )
+
+    def _string(self, name: str) -> str:
+        return str(self.get_parameter(name).value).strip()
+
+    def _float(self, name: str) -> float:
+        return float(self.get_parameter(name).value)
+
+    def _integer(self, name: str) -> int:
+        return int(self.get_parameter(name).value)
+
+    def _boolean(self, name: str) -> bool:
+        return bool(self.get_parameter(name).value)
+
+    def _float_array(self, name: str) -> list[float]:
+        return [float(value) for value in self.get_parameter(name).value]
+
+    def _string_array(self, name: str) -> list[str]:
+        return [str(value).strip() for value in self.get_parameter(name).value]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    def _reserve_goal(
+        self,
+        mission: str,
+        request_id: str,
+    ) -> GoalResponse:
+        with self.state_lock:
+            if self.mission_reserved:
+                self.get_logger().warning(
+                    f"rejecting {mission} goal: {self.active_mission} mission is active"
+                )
+                return GoalResponse.REJECT
+            self.mission_reserved = True
+            self.active_mission = mission
+        self.get_logger().info(
+            f"accepted {mission} goal request_id={request_id or '<empty>'}"
+        )
+        return GoalResponse.ACCEPT
+
+    def _box_grasp_goal_callback(
+        self, request: ExecuteBoxGrasp.Goal
+    ) -> GoalResponse:
+        if self.box_object_pose_client is None:
+            self.get_logger().warning(
+                "rejecting box grasp goal: object_pose_interfaces is unavailable"
+            )
+            return GoalResponse.REJECT
+        if not self._boolean("box_mission_enabled") and not request.dry_run:
+            self.get_logger().warning(
+                "rejecting box grasp goal: box_mission_enabled is false; "
+                "configure box preparation targets and perception first"
+            )
+            return GoalResponse.REJECT
+        if not self._boolean("box_mission_enabled"):
+            self.get_logger().info(
+                "accepting perception-only box grasp dry run while "
+                "box_mission_enabled is false"
+            )
+        return self._reserve_goal("box_grasp", request.request_id)
+
+    def _box_place_goal_callback(
+        self, request: ExecuteBoxPlace.Goal
+    ) -> GoalResponse:
+        if not self._boolean("box_mission_enabled"):
+            self.get_logger().warning(
+                "rejecting box place goal: box_mission_enabled is false; "
+                "configure box preparation targets first"
+            )
+            return GoalResponse.REJECT
+        if not request.dry_run and all(
+            abs(value) < 1e-9
+            for value in self._float_array("box_place_torso_positions")
+        ):
+            self.get_logger().warning(
+                "rejecting box place goal: box_place_torso_positions is not "
+                "configured"
+            )
+            return GoalResponse.REJECT
+        return self._reserve_goal("box_place", request.request_id)
+
+
+    def _cancel_callback(self, _goal_handle) -> CancelResponse:
+        with self.state_lock:
+            arm_joints_goal_handle = self.active_arm_joints_goal_handle
+            go_ready_goal_handle = self.active_go_ready_goal_handle
+            box_object_pose_goal_handle = self.active_box_object_pose_goal_handle
+            pickup_task_goal_handle = self.active_pickup_task_goal_handle
+        if arm_joints_goal_handle is not None:
+            arm_joints_goal_handle.cancel_goal_async()
+        if go_ready_goal_handle is not None:
+            go_ready_goal_handle.cancel_goal_async()
+        if box_object_pose_goal_handle is not None:
+            box_object_pose_goal_handle.cancel_goal_async()
+        if pickup_task_goal_handle is not None:
+            pickup_task_goal_handle.cancel_goal_async()
+        return CancelResponse.ACCEPT
+
+    def _release_goal(self) -> None:
+        with self.state_lock:
+            self.mission_reserved = False
+            self.active_mission = ""
+            self.active_arm_joints_goal_handle = None
+            self.active_go_ready_goal_handle = None
+            self.active_box_object_pose_goal_handle = None
+            self.active_pickup_task_goal_handle = None
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def main(args: Optional[list[str]] = None) -> None:
+    rclpy.init(args=args)
+    node = MissionController()
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        try:
+            if rclpy.ok():
+                executor.shutdown()
+            node.destroy_node()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            if rclpy.ok():
+                rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

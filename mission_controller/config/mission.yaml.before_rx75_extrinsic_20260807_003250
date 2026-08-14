@@ -1,0 +1,125 @@
+mission_controller:
+  ros__parameters:
+    # Only the box-grasp and box-place mission actions are exposed.
+    execute_box_grasp_action_name: /execute_box_grasp
+    execute_box_place_action_name: /execute_box_place
+    box_mission_enabled: true
+
+    # FoundationPose -> RealBot box pickup pipeline.
+    box_object_pose_action_name: /object_pose/estimate
+    box_object_pose_topic: /mission/box_object_pose
+    box_object_pose_camera_topic: /object_pose/pose
+    box_object_pose_raw_topic: /mission/box_object_pose_raw
+    box_object_pose_model_label: bigbox
+    box_object_pose_instance_index: 0
+    box_object_pose_confidence_threshold: 0.25
+    box_object_pose_result_timeout_sec: 60.0
+    box_camera_pose_constraint_enabled: true
+    box_camera_pose_axis_min_dot: 0.5
+    pickup_task_action_name: /pickup_task
+    pickup_task_result_timeout_sec: 120.0
+    # Direct RealBot path: FoundationPose -> fixture TCP targets -> Link7 targets -> rm_movel.
+    # Offsets are applied in the camera frame before camera->arm-base conversion.
+    # The resulting poses are sent directly as Link7 targets.
+    # Keep disabled until the D435I extrinsic TF has been measured and checked.
+    box_direct_movel_enabled: true
+    direct_movel_service_name: /realbot/movel
+    direct_movel_velocity_percent: 5.0
+    direct_movel_blocking: true
+    direct_movel_use_current_fixture_orientation: false
+    direct_movel_left_offset_xyz: [0.0, -0.30, -0.20]
+    direct_movel_right_offset_xyz: [0.0, 0.30, -0.20]
+    box_detection_attempts: 2
+    box_width: 0.350
+    box_height: 0.1703
+    box_type: f455
+    box_foundation_to_pickup_rpy: [0.0, 0.0, 0.0]
+
+    # RealBot task interfaces and command/feedback topics.
+    arm_joints_service_name: /move_arm_j
+    go_ready_action_name: /go_ready
+    torso_topic: /realbot/motion_target/torso
+    left_gripper_topic: /realbot/motion_target/gripper_left
+    right_gripper_topic: /realbot/motion_target/gripper_right
+    joint_state_topic: /joint_states
+    torso_feedback_topic: /realbot/feedback/torso
+    left_gripper_feedback_topic: /realbot/feedback/gripper_left
+    right_gripper_feedback_topic: /realbot/feedback/gripper_right
+
+    # RealBot arm joint names. These match robot_bringup/config/profiles/realbot.yaml.
+    left_arm_joint_names: [L_JOINT_1, L_JOINT_2, L_JOINT_3, L_JOINT_4, L_JOINT_5, L_JOINT_6, L_JOINT_7]
+    right_arm_joint_names: [R_JOINT_1, R_JOINT_2, R_JOINT_3, R_JOINT_4, R_JOINT_5, R_JOINT_6, R_JOINT_7]
+    verify_arm_joint_targets: true
+    arm_joint_target_tolerance: 0.10
+    arm_joint_target_wait_timeout_sec: 20.0
+    arm_joint_target_stable_samples: 3
+
+    box_observation_ready_check_enabled: true
+    box_observation_feedback_max_age_sec: 2.0
+    box_observation_torso_tolerance: 0.10
+    torso_target_tolerance: 0.03
+    torso_target_wait_timeout_sec: 40.0
+    torso_target_stable_samples: 3
+
+    arm_execution_frame: base_link
+    left_ee_frame: L_Link_7
+    right_ee_frame: R_Link_7
+    left_gripper_frame: left_fixture_tcp
+    right_gripper_frame: right_fixture_tcp
+
+    # The head-mounted camera is converted with the measured extrinsics below.
+    # It is not the camera represented by L_Link_8/R_Link_8.
+    camera_measured_extrinsics_enabled: true
+    left_arm_base_frame: L_base_Link
+    right_arm_base_frame: R_base_Link
+    camera_left_base_xyz: [0.05, 0.08, -0.20]
+    camera_right_base_xyz: [-0.05, 0.08, -0.20]
+    camera_left_base_rpy: [-1.5707963267948966, 0.0, 0.0]
+    # Intrinsic camera-axis rotations: camera X clockwise 90 deg, then
+    # camera-local Z clockwise 180 deg. Equivalent fixed-axis ROS RPY.
+    camera_right_base_rpy: [1.5707963267948966, 0.0, 3.141592653589793]
+
+    # Kept disabled: no synthetic TF is published for the unrelated wrist cameras.
+    camera_mount_tf_enabled: false
+    camera_mount_parent_frame: Link_5
+    camera_mount_child_frame: d405_color_optical_frame
+    camera_mount_xyz: [0.0, 0.0, 0.0]
+    camera_mount_rpy: [-1.5707963267948966, -1.5707963267948966, 0.0]
+    camera_mount_correction_rpy: [0.0, 0.0, 3.141592653589793]
+    camera_tf_timeout_sec: 2.0
+
+    dependency_wait_timeout_sec: 10.0
+    arm_joints_result_timeout_sec: 60.0
+    go_ready_result_timeout_sec: 60.0
+    wait_for_command_subscribers: true
+    require_command_subscribers: false
+    command_subscriber_wait_timeout_sec: 3.0
+    command_repeat_count: 10
+    command_repeat_interval_sec: 0.005
+    torso_settle_sec: 1.0
+    arm_settle_sec: 1.0
+    gripper_settle_sec: 1.0
+    box_detection_posture_settle_sec: 2.0
+    box_place_release_delay_sec: 2.0
+
+    torso_reset_positions: [0.0, 0.0, 0.0, 0.0]
+    torso_velocities: [0.1, 0.1, 0.1, 0.1]
+
+    # RealBot box-grasp preparation and pickup-clearance postures.
+    box_grasp_intermediate_left_joint_positions: [1.30, 0.6, 0.0, -1.5, 0.0, 0.0, 0.0]
+    box_grasp_intermediate_right_joint_positions: [1.30, -0.6, 0.0, -1.5, 0.0, 0.0, 0.0]
+    box_grasp_left_observation_joint_positions: [-0.88, 1.24, -0.70, -2.0, 1.25, 0.1, 0.0]
+    box_grasp_right_observation_joint_positions: [0.86, -0.24, 0.20, -2.0944, 0.174647, -0.618606, 0.104098]
+    box_pickup_clearance_left_joint_positions: [-1.413830, 0.687872, -1.236596, -1.839149, 1.905532, 0.525745, 1.146383]
+    box_pickup_clearance_right_joint_positions: [-1.403617, -0.668723, 1.238298, -1.802128, -1.944043, 0.435319, -1.307021]
+
+    box_grasp_torso_prepare_positions: [0.61, -0.81, -0.6, 0.0]
+    box_grasp_torso_lift_positions: [0.41, -0.81, -0.6, 0.0]
+    box_place_torso_positions: [0.61, -0.81, -0.6, 0.0]
+    box_place_torso_straighten_intermediate_positions: [0.61, -1.2, -0.6, 0.0]
+
+    gripper_open_position: 100.0
+    gripper_closed_position: 0.0
+    box_empty_close_ratio_threshold: 0.95
+    box_gripper_feedback_timeout_sec: 2.0
+    box_gripper_feedback_max_age_sec: 0.5

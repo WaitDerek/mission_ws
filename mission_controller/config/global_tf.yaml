@@ -11,14 +11,22 @@ realbots_global_tf:
     output_frame: base_footprint
     camera_optical_frame: left_arm_depth_cam_color_optical_frame
 
-    # The missing link is the mount from URDF Link8 to the camera driver's
-    # root frame. The driver then publishes camera_link -> color/depth optical
-    # frames. This quaternion is the calibrated Link8 -> RGB optical
-    # quaternion converted through the driver's standard camera_link frame.
-    camera_mount_parent_link: left_arm_8_Link
+    # Gemini 305's optical origin is the left RGB module. In the URDF the
+    # physical chain is Link8 -> left_camera_Link (the 90-degree connector /
+    # camera assembly) -> left_binocular_left_camera_Link (left RGB origin).
+    # Attach the Orbbec driver's root at that assembly and use the CAD offset
+    # to put its color optical frame on the URDF left-eye origin.
+    camera_mount_parent_link: left_camera_Link
     camera_mount_child_frame: left_arm_depth_cam_link
-    camera_mount_xyz: [0.097294396234, 0.000243365421, 0.053076686984]
-    camera_mount_quaternion_xyzw: [0.0, -0.843391456287, 0.0, 0.537299591907]
+    camera_mount_xyz: [0.049094570020, 0.0, -0.000100000000]
+    # Inverse of the live driver's root -> color_optical rotation.
+    camera_mount_quaternion_xyzw: [0.499457366068, -0.500617254542, 0.500395372843, 0.499528933664]
+
+    # The right camera uses the same URDF assembly chain and left-RGB origin.
+    right_camera_mount_parent_link: right_camera_Link
+    right_camera_mount_child_frame: right_arm_depth_cam_link
+    right_camera_mount_xyz: [0.049094570020, 0.0, -0.000100000000]
+    right_camera_mount_quaternion_xyzw: [0.500246402298, -0.500061909392, 0.501359641712, 0.498327278226]
 
     body_input_joint_names: [joint1, joint2, joint3, joint4]
     body_urdf_joint_names: [

@@ -3,14 +3,15 @@
 The hardware publishes torso and arm feedback on the rm_robot_interfaces
 topics rather than on one complete joint-state stream. This node normalizes
 those streams and publishes a complete ``JointState`` stream for
-``robot_state_publisher``. The camera itself is attached with one fixed
-extrinsic:
+``robot_state_publisher``. The cameras are attached with fixed extrinsics:
 
     base_footprint -> ... -> left_arm_8_Link
                     -> left_arm_depth_cam_link -> ... -> optical frame
+                  and right_arm_8_Link
+                    -> right_arm_depth_cam_link -> ... -> optical frame
 
-The camera driver owns the links below ``left_arm_depth_cam_link``. Keeping
-the mount at the camera-link root avoids creating a second parent for the
+The camera drivers own the links below each ``*_depth_cam_link``. Keeping the
+mounts at the camera-link roots avoids creating a second parent for either
 optical frame.
 """
 
@@ -298,16 +299,28 @@ class RealbotsGlobalTf(Node):
         self.declare_parameter(
             "camera_optical_frame", "left_arm_depth_cam_color_optical_frame"
         )
-        self.declare_parameter("camera_mount_parent_link", "left_arm_8_Link")
+        self.declare_parameter("camera_mount_parent_link", "left_camera_Link")
         self.declare_parameter(
             "camera_mount_child_frame", "left_arm_depth_cam_link"
         )
         self.declare_parameter(
-            "camera_mount_xyz", [0.097294396234, 0.000243365421, 0.053076686984]
+            "camera_mount_xyz", [0.049094570020, 0.0, -0.000100000000]
         )
         self.declare_parameter(
             "camera_mount_quaternion_xyzw",
-            [0.0, -0.8433914562865, 0.0, 0.5372995919065],
+            [0.499457366068, -0.500617254542, 0.500395372843, 0.499528933664],
+        )
+        self.declare_parameter("right_camera_mount_parent_link", "right_camera_Link")
+        self.declare_parameter(
+            "right_camera_mount_child_frame", "right_arm_depth_cam_link"
+        )
+        self.declare_parameter(
+            "right_camera_mount_xyz",
+            [0.049094570020, 0.0, -0.000100000000],
+        )
+        self.declare_parameter(
+            "right_camera_mount_quaternion_xyzw",
+            [0.500246402298, -0.500061909392, 0.501359641712, 0.498327278226],
         )
         self.declare_parameter("body_feedback_topic", "/mcap/body")
         self.declare_parameter("left_arm_feedback_topic", "/mcap/slave_arm_left")
@@ -372,6 +385,12 @@ class RealbotsGlobalTf(Node):
         )
         self.camera_mount_child = _clean_frame(
             self.get_parameter("camera_mount_child_frame").value
+        )
+        self.right_camera_mount_parent = _clean_frame(
+            self.get_parameter("right_camera_mount_parent_link").value
+        )
+        self.right_camera_mount_child = _clean_frame(
+            self.get_parameter("right_camera_mount_child_frame").value
         )
         self.body_input_names = _as_string_list(
             self.get_parameter("body_input_joint_names").value,
@@ -448,6 +467,18 @@ class RealbotsGlobalTf(Node):
             "camera_mount_quaternion_xyzw",
         )
         self.camera_mount = RigidTransform(mount_xyz, mount_quaternion)
+        right_mount_xyz = _finite_vector(
+            self.get_parameter("right_camera_mount_xyz").value,
+            3,
+            "right_camera_mount_xyz",
+        )
+        right_mount_quaternion = _normalize_quaternion(
+            self.get_parameter("right_camera_mount_quaternion_xyzw").value,
+            "right_camera_mount_quaternion_xyzw",
+        )
+        self.right_camera_mount = RigidTransform(
+            right_mount_xyz, right_mount_quaternion
+        )
 
         self._lock = threading.Lock()
         self._joint_positions: dict[str, float] = {}
@@ -504,8 +535,10 @@ class RealbotsGlobalTf(Node):
         self._publish_camera_mount_tf()
         self.timer = self.create_timer(1.0 / self.publish_rate_hz, self._publish_timer)
         self.get_logger().info(
-            f"Publishing static camera mount {self.camera_mount_parent} -> "
-            f"{self.camera_mount_child}; using {urdf_file}"
+            f"Publishing static camera mounts "
+            f"{self.camera_mount_parent} -> {self.camera_mount_child} and "
+            f"{self.right_camera_mount_parent} -> {self.right_camera_mount_child}; "
+            f"using {urdf_file}"
         )
         if self.joint_state_publisher is not None:
             self.get_logger().info(
@@ -519,20 +552,35 @@ class RealbotsGlobalTf(Node):
                 )
 
     def _publish_camera_mount_tf(self) -> None:
-        """Attach the camera-driver frame to the URDF Link8 frame."""
+        """Attach both camera-driver roots to their URDF Link8 frames."""
 
-        message = TransformStamped()
-        message.header.stamp = self.get_clock().now().to_msg()
-        message.header.frame_id = self.camera_mount_parent
-        message.child_frame_id = self.camera_mount_child
-        message.transform.translation.x = self.camera_mount.translation[0]
-        message.transform.translation.y = self.camera_mount.translation[1]
-        message.transform.translation.z = self.camera_mount.translation[2]
-        message.transform.rotation.x = self.camera_mount.rotation[0]
-        message.transform.rotation.y = self.camera_mount.rotation[1]
-        message.transform.rotation.z = self.camera_mount.rotation[2]
-        message.transform.rotation.w = self.camera_mount.rotation[3]
-        self.static_transform_broadcaster.sendTransform(message)
+        transforms = (
+            (
+                self.camera_mount_parent,
+                self.camera_mount_child,
+                self.camera_mount,
+            ),
+            (
+                self.right_camera_mount_parent,
+                self.right_camera_mount_child,
+                self.right_camera_mount,
+            ),
+        )
+        messages = []
+        for parent, child, transform in transforms:
+            message = TransformStamped()
+            message.header.stamp = self.get_clock().now().to_msg()
+            message.header.frame_id = parent
+            message.child_frame_id = child
+            message.transform.translation.x = transform.translation[0]
+            message.transform.translation.y = transform.translation[1]
+            message.transform.translation.z = transform.translation[2]
+            message.transform.rotation.x = transform.rotation[0]
+            message.transform.rotation.y = transform.rotation[1]
+            message.transform.rotation.z = transform.rotation[2]
+            message.transform.rotation.w = transform.rotation[3]
+            messages.append(message)
+        self.static_transform_broadcaster.sendTransform(messages)
 
     @staticmethod
     def _position_map(message: JointState) -> Optional[dict[str, float]]:

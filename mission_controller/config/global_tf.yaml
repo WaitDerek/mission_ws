@@ -1,0 +1,63 @@
+realbots_global_tf:
+  ros__parameters:
+    # The hardware feedback streams use Best Effort QoS.
+    body_feedback_topic: /mcap/body
+    left_arm_feedback_topic: /mcap/slave_arm_left
+    right_arm_feedback_topic: /mcap/slave_arm_right
+    # The node also accepts a complete JointState stream when one is present.
+    joint_state_topic: /joint_states
+
+    base_frame: base_footprint
+    output_frame: base_footprint
+    camera_optical_frame: left_arm_depth_cam_color_optical_frame
+
+    # The missing link is the mount from URDF Link8 to the camera driver's
+    # root frame. The driver then publishes camera_link -> color/depth optical
+    # frames. This quaternion is the calibrated Link8 -> RGB optical
+    # quaternion converted through the driver's standard camera_link frame.
+    camera_mount_parent_link: left_arm_8_Link
+    camera_mount_child_frame: left_arm_depth_cam_link
+    camera_mount_xyz: [0.097294396234, 0.000243365421, 0.053076686984]
+    camera_mount_quaternion_xyzw: [0.0, -0.843391456287, 0.0, 0.537299591907]
+
+    body_input_joint_names: [joint1, joint2, joint3, joint4]
+    body_urdf_joint_names: [
+      waist_1_joint,
+      waist_2_joint,
+      waist_3_joint,
+      chest_joint
+    ]
+    neck_input_joint_names: [joint1, joint2]
+    neck_urdf_joint_names: [neck_Link, head_joint]
+    left_arm_input_joint_names: [
+      joint1, joint2, joint3, joint4, joint5, joint6, joint7
+    ]
+    right_arm_input_joint_names: [
+      joint1, joint2, joint3, joint4, joint5, joint6, joint7
+    ]
+    left_arm_urdf_joint_names: [
+      left_arm_1_joint,
+      left_arm_2_joint,
+      left_arm_3_joint,
+      left_arm_4_joint,
+      left_arm_5_joint,
+      left_arm_6_joint,
+      left_arm_7_joint
+    ]
+    right_arm_urdf_joint_names: [
+      right_arm_1_joint,
+      right_arm_2_joint,
+      right_arm_3_joint,
+      right_arm_4_joint,
+      right_arm_5_joint,
+      right_arm_6_joint,
+      right_arm_7_joint
+    ]
+
+    publish_rate_hz: 30.0
+    max_feedback_age_sec: 0.5
+    # robot_state_publisher needs a value for every movable URDF joint before
+    # it publishes that branch. Measured waist/arm values override this zero;
+    # unavailable steering/head groups remain visible at their neutral pose.
+    publish_complete_joint_states: true
+    default_joint_position: 0.0

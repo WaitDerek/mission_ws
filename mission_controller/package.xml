@@ -10,6 +10,7 @@
   <buildtool_depend>ament_python</buildtool_depend>
 
   <depend>rclpy</depend>
+  <depend>ament_index_python</depend>
   <depend>action_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>sensor_msgs</depend>
@@ -24,6 +25,7 @@
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>object_pose_ros</exec_depend>
   <exec_depend>robot_bringup</exec_depend>
+  <exec_depend>realbots29</exec_depend>
 
   <test_depend>python3-pytest</test_depend>
 

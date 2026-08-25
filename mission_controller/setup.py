@@ -24,6 +24,7 @@ setup(
     entry_points={
         "console_scripts": [
             "mission_controller = mission_runtime.mission_controller:main",
+            "realbots_global_tf = mission_runtime.global_tf_publisher:main",
         ],
     },
 )

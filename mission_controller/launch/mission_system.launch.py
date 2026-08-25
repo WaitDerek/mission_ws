@@ -17,12 +17,15 @@ from launch.actions import (
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import (
+    Command,
     FindExecutable,
     LaunchConfiguration,
     PathJoinSubstitution,
     PythonExpression,
 )
 from launch_ros.substitutions import FindPackageShare
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def _default_box_perception_root() -> str:
@@ -148,6 +151,17 @@ def generate_launch_description() -> LaunchDescription:
             ]
         )
     )
+    robot_state_publisher_condition = IfCondition(
+        PythonExpression(
+            [
+                "'",
+                mode,
+                "'.lower() == 'hardware' and '",
+                LaunchConfiguration("enable_robot_state_publisher"),
+                "'.lower() in ['true', '1', 'yes', 'on']",
+            ]
+        )
+    )
 
     simulation_dual_arm = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -184,7 +198,9 @@ def generate_launch_description() -> LaunchDescription:
             "dry_run": LaunchConfiguration("dry_run"),
             "prefer_hardware": "true",
             "allow_mock_fallback": "false",
-            "enable_robot_state_publisher": LaunchConfiguration("enable_robot_state_publisher"),
+            # mission_system owns the single RSP instance below. Do not let
+            # the MoveIt bringup launch a second robot_state_publisher.
+            "enable_robot_state_publisher": "false",
             "enable_move_group": "true",
             "enable_rviz": LaunchConfiguration("enable_rviz"),
             "enable_fake_ros2_control": "false",
@@ -228,14 +244,77 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments={
             "config_file": LaunchConfiguration("mission_config_file"),
             "require_command_subscribers": PythonExpression(
-                ["'", mode, "'.lower() == 'hardware'"]
+                [
+                    "'",
+                    mode,
+                    "'.lower() == 'hardware' and '",
+                    direct_motion_backend,
+                    "'.lower() == 'ros_service'",
+                ]
             ),
             "direct_motion_backend": direct_motion_backend,
+            # mission_system owns the single TF bridge and RSP instances
+            # below. The standalone mission.launch entrypoint enables them
+            # for users who start only the controller launch.
+            "enable_global_tf": "false",
+            "enable_robot_state_publisher": "false",
         }.items(),
+    )
+
+    global_tf = Node(
+        package="mission_controller",
+        executable="realbots_global_tf",
+        name="realbots_global_tf",
+        output="screen",
+        # The environment script activates mamba's april environment before
+        # this unified launch is started, so this keeps the node on that
+        # interpreter while still using the installed ROS console entrypoint.
+        prefix=[FindExecutable(name="python3")],
+        additional_env={
+            "ROS_LOCALHOST_ONLY": "0",
+            "RMW_IMPLEMENTATION": LaunchConfiguration(
+                "global_tf_rmw_implementation"
+            ),
+            "CYCLONEDDS_URI": LaunchConfiguration("global_tf_cyclonedds_uri"),
+        },
+        parameters=[
+            LaunchConfiguration("global_tf_config_file"),
+            {
+                "urdf_file": ParameterValue(
+                    LaunchConfiguration("global_tf_urdf_file"),
+                    value_type=str,
+                )
+            },
+        ],
+    )
+
+    robot_state_publisher = Node(
+        package="robot_state_publisher",
+        executable="robot_state_publisher",
+        name="robot_state_publisher",
+        output="screen",
+        condition=robot_state_publisher_condition,
+        parameters=[
+            {
+                "robot_description": ParameterValue(
+                    Command(
+                        [
+                            FindExecutable(name="cat"),
+                            " ",
+                            LaunchConfiguration("global_tf_urdf_file"),
+                        ]
+                    ),
+                    value_type=str,
+                ),
+                "use_sim_time": LaunchConfiguration("use_sim_time"),
+            }
+        ],
     )
 
     runtime = GroupAction(
         actions=[
+            robot_state_publisher,
+            global_tf,
             simulation_dual_arm,
             hardware_dual_arm,
             TimerAction(
@@ -277,6 +356,34 @@ def generate_launch_description() -> LaunchDescription:
                 default_value=PathJoinSubstitution(
                     [FindPackageShare("mission_controller"), "config", "mission.yaml"]
                 ),
+            ),
+            DeclareLaunchArgument(
+                "global_tf_config_file",
+                default_value=PathJoinSubstitution(
+                    [
+                        FindPackageShare("mission_controller"),
+                        "config",
+                        "global_tf.yaml",
+                    ]
+                ),
+                description="Camera-to-base global TF publisher configuration",
+            ),
+            DeclareLaunchArgument(
+                "global_tf_urdf_file",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("realbots29"), "urdf", "realbots29.urdf"]
+                ),
+                description="realbots29 URDF used by the global TF publisher",
+            ),
+            DeclareLaunchArgument(
+                "global_tf_rmw_implementation",
+                default_value="rmw_cyclonedds_cpp",
+                description="RMW implementation used by the running RealBot system",
+            ),
+            DeclareLaunchArgument(
+                "global_tf_cyclonedds_uri",
+                default_value="file:///rm_app/rm_robot_ws/script/cyclonedds.xml",
+                description="CycloneDDS configuration used by the running RealBot system",
             ),
             DeclareLaunchArgument(
                 "box_perception_root",

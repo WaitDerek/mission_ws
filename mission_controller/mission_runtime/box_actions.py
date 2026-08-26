@@ -1,6 +1,10 @@
 import time
 
-from mission_interfaces.action import ExecuteBoxGrasp, ExecuteBoxPlace
+from mission_interfaces.action import (
+    ExecuteBoxGrasp,
+    ExecuteBoxPlace,
+    ExecuteDragBoxGrasp,
+)
 
 from .common import MissionCanceled, MissionError
 
@@ -12,7 +16,13 @@ class BoxActionsMixin:
     def _publish_box_grasp_feedback(
         goal_handle, stage: str, detail: str
     ) -> None:
-        feedback = ExecuteBoxGrasp.Feedback()
+        request = getattr(goal_handle, "request", None)
+        feedback_type = (
+            ExecuteDragBoxGrasp.Feedback
+            if isinstance(request, ExecuteDragBoxGrasp.Goal)
+            else ExecuteBoxGrasp.Feedback
+        )
+        feedback = feedback_type()
         feedback.stage = stage
         feedback.detail = detail
         goal_handle.publish_feedback(feedback)
@@ -27,9 +37,55 @@ class BoxActionsMixin:
         goal_handle.publish_feedback(feedback)
 
     def _execute_box_grasp(self, goal_handle) -> ExecuteBoxGrasp.Result:
+        return self._execute_box_grasp_with_action_type(
+            goal_handle, ExecuteBoxGrasp, "execute_box_grasp", tf_mode=False
+        )
+
+    def _execute_grasp_box_tf(self, goal_handle) -> ExecuteBoxGrasp.Result:
+        """Execute GraspBox with the TF-based frozen-world target path."""
+        return self._execute_box_grasp_with_action_type(
+            goal_handle, ExecuteBoxGrasp, "grasp_box_tf", tf_mode=True
+        )
+
+    def _execute_drag_box_grasp(
+        self, goal_handle
+    ) -> ExecuteDragBoxGrasp.Result:
+        return self._execute_box_grasp_with_action_type(
+            goal_handle, ExecuteDragBoxGrasp, "execute_drag_box_grasp", tf_mode=False
+        )
+
+    def _execute_box_grasp_with_action_type(
+        self, goal_handle, action_type, action_name: str, *, tf_mode: bool = False
+    ):
         started_at = time.monotonic()
         request = goal_handle.request
-        result = ExecuteBoxGrasp.Result()
+        result = action_type.Result()
+        drag_mode = action_type is ExecuteDragBoxGrasp
+        left_arm_enabled = drag_mode and self._boolean(
+            "drag_box_left_arm_enabled"
+        )
+        left_join_mode = (
+            self._string("drag_box_left_join_mode").strip().lower()
+            if drag_mode
+            else "immediate"
+        )
+        if drag_mode and left_join_mode not in ("immediate", "after_drag3"):
+            raise MissionError(
+                "drag_box_left_join_mode must be 'immediate' or 'after_drag3'"
+            )
+        delayed_left_join = left_arm_enabled and left_join_mode == "after_drag3"
+        right_arm_only = drag_mode and (
+            not left_arm_enabled or delayed_left_join
+        )
+        if (
+            right_arm_only
+            and not request.dry_run
+            and not self._boolean("box_direct_movel_enabled")
+        ):
+            raise MissionError(
+                "right-only or delayed-left DragBox execution requires "
+                "box_direct_movel_enabled=true"
+            )
         motion_state = {
             "started": False,
             "gripper_command_published": False,
@@ -84,7 +140,13 @@ class BoxActionsMixin:
 
             detection, box_pose, result.pickup_message = (
                 self._detect_and_execute_box_pickup(
-                    goal_handle, request, motion_state
+                    goal_handle,
+                    request,
+                    motion_state,
+                    drag_mode=drag_mode,
+                    right_arm_only=right_arm_only,
+                    delayed_left_join=delayed_left_join,
+                    tf_mode=tf_mode,
                 )
             )
             result.box_pose = box_pose
@@ -127,7 +189,7 @@ class BoxActionsMixin:
                 else "box grasp mission completed"
             )
             self._finalize_action_result(
-                result, started_at, "execute_box_grasp"
+                result, started_at, action_name
             )
             self._publish_box_grasp_feedback(goal_handle, "DONE", result.message)
             goal_handle.succeed()
@@ -159,7 +221,7 @@ class BoxActionsMixin:
             # action can detect the retained posture and skip initialization.
             self._release_goal()
             self._finalize_action_result(
-                result, started_at, "execute_box_grasp"
+                result, started_at, action_name
             )
 
     def _execute_box_place(self, goal_handle) -> ExecuteBoxPlace.Result:

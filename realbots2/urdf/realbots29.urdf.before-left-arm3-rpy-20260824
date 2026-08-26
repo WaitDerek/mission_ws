@@ -1,0 +1,2878 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="realbots29">
+  <link
+    name="base_footprint">
+    <inertial>
+      <origin
+        xyz="-1.48646497049023E-05 -0.0699504697089703 0.0336398375939533"
+        rpy="0 0 0" />
+      <mass
+        value="0.663888543779534" />
+      <inertia
+        ixx="0.0147565243588015"
+        ixy="-2.23931009486062E-08"
+        ixz="2.30754751654723E-10"
+        iyy="0.00953829359596686"
+        iyz="4.22087841491067E-10"
+        izz="0.0242929962596585" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/base_footprint.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/base_footprint.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="base_Link">
+    <inertial>
+      <origin
+        xyz="-0.000556246756379108 -0.0420143028118891 0.103092216993187"
+        rpy="0 0 0" />
+      <mass
+        value="30.8414587537086" />
+      <inertia
+        ixx="0.289553810145328"
+        ixy="-0.000423512179498631"
+        ixz="-0.00105718893390604"
+        iyy="0.434645083407322"
+        iyz="-0.000816400342984657"
+        izz="0.607575916470218" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/base_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/base_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="base_joint"
+    type="fixed">
+    <origin
+      xyz="0 0 0.0349999999999999"
+      rpy="0 0 0" />
+    <parent
+      link="base_footprint" />
+    <child
+      link="base_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="front_right_steer_link">
+    <inertial>
+      <origin
+        xyz="0.0213387795579084 2.96962090215458E-05 0.024393959555002"
+        rpy="0 0 0" />
+      <mass
+        value="1.73185064776854" />
+      <inertia
+        ixx="0.00152914856037648"
+        ixy="-6.86619853033334E-07"
+        ixz="0.000360871182392569"
+        iyy="0.00163947747960438"
+        iyz="-2.07151735831446E-06"
+        izz="0.00101174562004097" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/front_right_steer_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.650980392156863 0.619607843137255 0.588235294117647 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/front_right_steer_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="front_right_steer_joint"
+    type="continuous">
+    <origin
+      xyz="-0.189748626504666 -0.279950691997449 0.118000000000001"
+      rpy="-3.14159265358979 0 0" />
+    <parent
+      link="base_Link" />
+    <child
+      link="front_right_steer_link" />
+    <axis
+      xyz="0 0 -1" />
+  </joint>
+  <link
+    name="front_right_wheel_link">
+    <inertial>
+      <origin
+        xyz="-1.34065810741824E-06 0 -0.0652137173264332"
+        rpy="0 0 0" />
+      <mass
+        value="0.80746295324025" />
+      <inertia
+        ixx="0.00106310840544939"
+        ixy="1.04596652144724E-19"
+        ixz="-5.65230070384631E-08"
+        iyy="0.00106310245007344"
+        iyz="-7.54851920687274E-20"
+        izz="0.00149275426647363" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/front_right_wheel_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/front_right_wheel_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="front_right_wheel_joint"
+    type="continuous">
+    <origin
+      xyz="0.0582336403301727 0 0.0880000000000001"
+      rpy="0 -1.5707963267949 3.14" />
+    <parent
+      link="front_right_steer_link" />
+    <child
+      link="front_right_wheel_link" />
+    <axis
+      xyz="0 0 -1" />
+  </joint>
+  <link
+    name="front_left_steer_link">
+    <inertial>
+      <origin
+        xyz="-0.0213387795579084 -2.96962090215458E-05 0.0243939595550022"
+        rpy="0 0 0" />
+      <mass
+        value="1.73185064776854" />
+      <inertia
+        ixx="0.00152914856037648"
+        ixy="-6.86619853033876E-07"
+        ixz="-0.00036087118239257"
+        iyy="0.00163947747960439"
+        iyz="2.07151735831473E-06"
+        izz="0.00101174562004097" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/front_left_steer_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.650980392156863 0.619607843137255 0.588235294117647 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/front_left_steer_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="front_left_steer_joint"
+    type="continuous">
+    <origin
+      xyz="0.189718654155679 -0.279950691997467 0.118"
+      rpy="3.14 0 0" />
+    <parent
+      link="base_Link" />
+    <child
+      link="front_left_steer_link" />
+    <axis
+      xyz="0 0 -1" />
+  </joint>
+  <link
+    name="front_left_wheel_link">
+    <inertial>
+      <origin
+        xyz="-1.34065810741824E-06 -5.55111512312578E-17 -0.0652137173264332"
+        rpy="0 0 0" />
+      <mass
+        value="0.80746295324025" />
+      <inertia
+        ixx="0.00106310840544939"
+        ixy="2.78177109696134E-20"
+        ixz="-5.65230070385464E-08"
+        iyy="0.00106310245007344"
+        iyz="-6.70004822212957E-20"
+        izz="0.00149275426647363" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/front_left_wheel_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/front_left_wheel_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="front_left_wheel_joint"
+    type="continuous">
+    <origin
+      xyz="-0.0582336403301727 0 0.088"
+      rpy="3.14159265358979 -1.5707963267949 3.14" />
+    <parent
+      link="front_left_steer_link" />
+    <child
+      link="front_left_wheel_link" />
+    <axis
+      xyz="0 0 -1" />
+  </joint>
+  <link
+    name="rear_right_steer_link">
+    <inertial>
+      <origin
+        xyz="0.0213387795579085 2.96962090216438E-05 0.0243939595550018"
+        rpy="0 0 0" />
+      <mass
+        value="1.73185064776854" />
+      <inertia
+        ixx="0.00152914856037648"
+        ixy="-6.86619853033507E-07"
+        ixz="0.00036087118239257"
+        iyy="0.00163947747960439"
+        iyz="-2.07151735831395E-06"
+        izz="0.00101174562004097" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/rear_right_steer_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.650980392156863 0.619607843137255 0.588235294117647 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/rear_right_steer_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="rear_right_steer_joint"
+    type="continuous">
+    <origin
+      xyz="-0.189748626504646 0.140049308002551 0.118000000000001"
+      rpy="-3.14159265358979 0 0" />
+    <parent
+      link="base_Link" />
+    <child
+      link="rear_right_steer_link" />
+    <axis
+      xyz="0 0 -1" />
+  </joint>
+  <link
+    name="rear_right_wheel_link">
+    <inertial>
+      <origin
+        xyz="-1.34065810719619E-06 -3.46944695195361E-18 -0.0652137173264332"
+        rpy="0 0 0" />
+      <mass
+        value="0.80746295324025" />
+      <inertia
+        ixx="0.00106310840544939"
+        ixy="1.26731333016474E-19"
+        ixz="-5.65230070389091E-08"
+        iyy="0.00106310245007343"
+        iyz="-1.04873789770497E-20"
+        izz="0.00149275426647363" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/rear_right_wheel_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/rear_right_wheel_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="rear_right_wheel_joint"
+    type="continuous">
+    <origin
+      xyz="0.0582336403301727 0 0.0879999999999997"
+      rpy="0 -1.5707963267949 3.14" />
+    <parent
+      link="rear_right_steer_link" />
+    <child
+      link="rear_right_wheel_link" />
+    <axis
+      xyz="0 0 -1" />
+  </joint>
+  <link
+    name="rear_left_steer_link">
+    <inertial>
+      <origin
+        xyz="-0.0213387795579085 -2.96962090216377E-05 0.0243939595550022"
+        rpy="0 0 0" />
+      <mass
+        value="1.73185064776854" />
+      <inertia
+        ixx="0.00152914856037648"
+        ixy="-6.86619853033274E-07"
+        ixz="-0.00036087118239257"
+        iyy="0.00163947747960438"
+        iyz="2.07151735831415E-06"
+        izz="0.00101174562004097" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/rear_left_steer_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.650980392156863 0.619607843137255 0.588235294117647 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/rear_left_steer_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="rear_left_steer_joint"
+    type="continuous">
+    <origin
+      xyz="0.189718654155699 0.140049308002533 0.118000000000001"
+      rpy="3.14159265358979 0 0" />
+    <parent
+      link="base_Link" />
+    <child
+      link="rear_left_steer_link" />
+    <axis
+      xyz="0 0 -1" />
+  </joint>
+  <link
+    name="rear_left_wheel_link">
+    <inertial>
+      <origin
+        xyz="-1.34065810719619E-06 -8.67361737988404E-19 -0.0652137173264332"
+        rpy="0 0 0" />
+      <mass
+        value="0.80746295324025" />
+      <inertia
+        ixx="0.00106310840544939"
+        ixy="1.25676849150886E-19"
+        ixz="-5.65230070383568E-08"
+        iyy="0.00106310245007344"
+        iyz="-5.88398256597532E-20"
+        izz="0.00149275426647363" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/rear_left_wheel_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/rear_left_wheel_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="rear_left_wheel_joint"
+    type="continuous">
+    <origin
+      xyz="-0.0582336403301727 0 0.088"
+      rpy="3.14159265358979 -1.5707963267949 3.14" />
+    <parent
+      link="rear_left_steer_link" />
+    <child
+      link="rear_left_wheel_link" />
+    <axis
+      xyz="0 0 -1" />
+  </joint>
+  <link
+    name="front_rader_Link">
+    <inertial>
+      <origin
+        xyz="8.51849305465169E-05 -2.17500256693981E-09 -0.00473354847517127"
+        rpy="0 0 0" />
+      <mass
+        value="0.0557931576891544" />
+      <inertia
+        ixx="2.19348177996402E-05"
+        ixy="-2.43788719440577E-12"
+        ixz="-2.85589783732701E-08"
+        iyy="2.20784838201467E-05"
+        iyz="3.98038595042492E-13"
+        izz="2.48219840387974E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/front_rader_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/front_rader_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="front_rader_joint"
+    type="fixed">
+    <origin
+      xyz="-0.190014943145759 -0.199950688906726 0.236500000000002"
+      rpy="0 0 0" />
+    <parent
+      link="base_Link" />
+    <child
+      link="front_rader_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="rear_rader_Link">
+    <inertial>
+      <origin
+        xyz="-8.51849438527064E-05 -0.0699999978318113 -0.00473354847613061"
+        rpy="0 0 0" />
+      <mass
+        value="0.0557931576787275" />
+      <inertia
+        ixx="2.19348177897481E-05"
+        ixy="-2.44858522608721E-12"
+        ixz="2.85589749916991E-08"
+        iyy="2.207848382587E-05"
+        iyz="-3.99845660943108E-13"
+        izz="2.48219840352764E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/rear_rader_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/rear_rader_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="rear_rader_joint"
+    type="fixed">
+    <origin
+      xyz="0.18993498572234 0.13004930491182 0.236499999999965"
+      rpy="0 0 0" />
+    <parent
+      link="base_Link" />
+    <child
+      link="rear_rader_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="chassis_camera_Link">
+    <inertial>
+      <origin
+        xyz="0.000219564895553872 -0.000157755319080355 -0.0168833853204454"
+        rpy="0 0 0" />
+      <mass
+        value="0.0400621684449446" />
+      <inertia
+        ixx="4.45816703026398E-06"
+        ixy="-1.07407717397129E-07"
+        ixz="6.291147358359E-07"
+        iyy="4.68910331800886E-05"
+        iyz="1.61398181525946E-08"
+        izz="4.88171749405537E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/chassis_camera_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/chassis_camera_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="chassis_camera_joint"
+    type="fixed">
+    <origin
+      xyz="-0.00161134683533547 -0.366950691997458 0.0997528279637739"
+      rpy="1.57079632679493 0 0" />
+    <parent
+      link="base_Link" />
+    <child
+      link="chassis_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="chassis_right_camera_Link">
+    <inertial>
+      <origin
+        xyz="0.0461232042347157 -0.000154927355291989 -0.0167833853204455"
+        rpy="0 0 0" />
+      <mass
+        value="0.0400621684449446" />
+      <inertia
+        ixx="4.45816703026398E-06"
+        ixy="-1.07407717397129E-07"
+        ixz="6.291147358359E-07"
+        iyy="4.68910331800886E-05"
+        iyz="1.61398181525984E-08"
+        izz="4.88171749405536E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/chassis_right_camera_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/chassis_right_camera_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="chassis_right_camera_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0459036393391619 0 -9.9999999999878E-05"
+      rpy="0 0 0" />
+    <parent
+      link="chassis_camera_Link" />
+    <child
+      link="chassis_right_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="chassis_speckle_camera_Link">
+    <inertial>
+      <origin
+        xyz="-0.00137679576528426 -0.0001549273552921 -0.0167833853204453"
+        rpy="0 0 0" />
+      <mass
+        value="0.0400621684449446" />
+      <inertia
+        ixx="4.45816703026398E-06"
+        ixy="-1.07407717397129E-07"
+        ixz="6.29114735835901E-07"
+        iyy="4.68910331800886E-05"
+        iyz="1.61398181525984E-08"
+        izz="4.88171749405536E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/chassis_speckle_camera_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/chassis_speckle_camera_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="chassis_speckle_camera_joint"
+    type="fixed">
+    <origin
+      xyz="0.00159636066083813 0 -9.9999999999989E-05"
+      rpy="0 0 0" />
+    <parent
+      link="chassis_camera_Link" />
+    <child
+      link="chassis_speckle_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="chassis_rgb_camera_Link">
+    <inertial>
+      <origin
+        xyz="-0.0251267957652843 -0.000154927355292211 -0.0167833853204453"
+        rpy="0 0 0" />
+      <mass
+        value="0.0400621684449446" />
+      <inertia
+        ixx="4.45816703026398E-06"
+        ixy="-1.07407717397129E-07"
+        ixz="6.291147358359E-07"
+        iyy="4.68910331800886E-05"
+        iyz="1.61398181525983E-08"
+        izz="4.88171749405536E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/chassis_rgb_camera_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/chassis_rgb_camera_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="chassis_rgb_camera_joint"
+    type="fixed">
+    <origin
+      xyz="0.0253463606608381 0 -9.9999999999989E-05"
+      rpy="0 0 0" />
+    <parent
+      link="chassis_camera_Link" />
+    <child
+      link="chassis_rgb_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="chassis_left_camera_Link">
+    <inertial>
+      <origin
+        xyz="-0.0488767957652843 -0.000154927355291989 -0.0167833853204453"
+        rpy="0 0 0" />
+      <mass
+        value="0.0400621684449446" />
+      <inertia
+        ixx="4.45816703026398E-06"
+        ixy="-1.07407717397129E-07"
+        ixz="6.291147358359E-07"
+        iyy="4.68910331800886E-05"
+        iyz="1.61398181525983E-08"
+        izz="4.88171749405536E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/chassis_left_camera_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/chassis_left_camera_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="chassis_left_camera_joint"
+    type="fixed">
+    <origin
+      xyz="0.0490963606608381 0 -9.9999999999989E-05"
+      rpy="0 0 0" />
+    <parent
+      link="chassis_camera_Link" />
+    <child
+      link="chassis_left_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="waist_1_Link">
+    <inertial>
+      <origin
+        xyz="-0.112163998761623 3.09516920415419E-05 -0.0748947337204669"
+        rpy="0 0 0" />
+      <mass
+        value="6.62950528009186" />
+      <inertia
+        ixx="0.0110586700447959"
+        ixy="-1.24422437562022E-05"
+        ixz="8.2367763375825E-06"
+        iyy="0.123841721693749"
+        iyz="2.27872200401603E-07"
+        izz="0.132036306940827" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/waist_1_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.529411764705882 0.549019607843137 0.549019607843137 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/waist_1_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="waist_1_joint"
+    type="revolute">
+    <origin
+      xyz="-0.0808149861744692 0.135049308002545 0.265999999999999"
+      rpy="3.14159265358979 1.5707963267949 0" />
+    <parent
+      link="base_Link" />
+    <child
+      link="waist_1_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.57"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="waist_2_Link">
+    <inertial>
+      <origin
+        xyz="-0.0894586937766009 -5.2562325697836E-05 -0.0638244292795544"
+        rpy="0 0 0" />
+      <mass
+        value="6.10974477500097" />
+      <inertia
+        ixx="0.0111195949603478"
+        ixy="-1.16309676438018E-05"
+        ixz="9.34466423340549E-05"
+        iyy="0.0450481104251166"
+        iyz="8.19502245150861E-07"
+        izz="0.055293258424245" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/waist_2_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/waist_2_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="waist_2_joint"
+    type="revolute">
+    <origin
+      xyz="-0.383999999999746 0 -0.00739999999945049"
+      rpy="0 0 0" />
+    <parent
+      link="waist_1_Link" />
+    <child
+      link="waist_2_Link" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.14"
+      upper="2.62"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="waist_3_Link">
+    <inertial>
+      <origin
+        xyz="-0.00463251136546727 -0.000351530597140188 -0.0619354461739658"
+        rpy="0 0 0" />
+      <mass
+        value="4.29040379636651" />
+      <inertia
+        ixx="0.00961707167989926"
+        ixy="3.47872421101607E-05"
+        ixz="-0.000102763959005179"
+        iyy="0.0105697401233272"
+        iyz="-2.17418125721781E-06"
+        izz="0.0153381961684819" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/waist_3_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/waist_3_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="waist_3_joint"
+    type="revolute">
+    <origin
+      xyz="-0.277703994726074 0 0.00239999999944815"
+      rpy="0 0 0" />
+    <parent
+      link="waist_2_Link" />
+    <child
+      link="waist_3_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.57"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="chest_Link">
+    <inertial>
+      <origin
+        xyz="-6.67508820693221E-05 -0.000888835501962333 -0.133498445246459"
+        rpy="0 0 0" />
+      <mass
+        value="7.3823724852051" />
+      <inertia
+        ixx="0.0565072132871974"
+        ixy="-3.26636632573768E-07"
+        ixz="3.72917257332565E-05"
+        iyy="0.071131988475979"
+        iyz="6.54795760209526E-05"
+        izz="0.0268727810154434" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/chest_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/chest_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="chest_joint"
+    type="revolute">
+    <origin
+      xyz="-0.12379600527418 0 -0.0754999999999934"
+      rpy="0 1.5707963267949 0" />
+    <parent
+      link="waist_3_Link" />
+    <child
+      link="chest_Link" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-1.57"
+      upper="1.57"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="neck_Link">
+    <inertial>
+      <origin
+        xyz="-0.00198358981138413 -3.53506444638937E-05 0.0865413064451164"
+        rpy="0 0 0" />
+      <mass
+        value="0.315384731610569" />
+      <inertia
+        ixx="0.000337261728045741"
+        ixy="1.05035306257005E-09"
+        ixz="9.63062163273368E-06"
+        iyy="0.000295513588339264"
+        iyz="3.47427158479506E-09"
+        izz="0.000122616338286135" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/neck_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/neck_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="neck_Link"
+    type="revolute">
+    <origin
+      xyz="1.48688247841477E-05 -0.0100358965184496 -0.364"
+      rpy="3.14159265358979 0 0" />
+    <parent
+      link="chest_Link" />
+    <child
+      link="neck_Link" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-1.57"
+      upper="1.57"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="head_Link">
+    <inertial>
+      <origin
+        xyz="-0.0316308800745438 -0.0201163910709366 -0.0262089109234053"
+        rpy="0 0 0" />
+      <mass
+        value="6.25801420197803" />
+      <inertia
+        ixx="0.0145027216672559"
+        ixy="-0.00318939729565846"
+        ixz="1.17015951276295E-08"
+        iyy="0.0183783760377612"
+        iyz="1.59186112010851E-05"
+        izz="0.0175391291385689" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/head_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.647058823529412 0.619607843137255 0.588235294117647 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/head_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="head_joint"
+    type="revolute">
+    <origin
+      xyz="0.0264851311752161 -2.10276936655589E-05 0.13153589651845"
+      rpy="0 1.5707963267949 0" />
+    <parent
+      link="neck_Link" />
+    <child
+      link="head_Link" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-0.17"
+      upper="0.17"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="head_camera_Link">
+    <inertial>
+      <origin
+        xyz="0.000365253452993288 1.32341121378277E-05 -0.00839179295464204"
+        rpy="0 0 0" />
+      <mass
+        value="0.0230825049326663" />
+      <inertia
+        ixx="2.79434592963155E-06"
+        ixy="-2.5026206054929E-09"
+        ixz="1.22971692394737E-09"
+        iyy="1.45623711338683E-05"
+        iyz="-1.1202145422448E-10"
+        izz="1.59686974459062E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/head_camera_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/head_camera_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="head_camera_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0170073681953132 -0.0654102927525515 -0.0265092183336943"
+      rpy="0 -1.57079545154985 2.30288372341022" />
+    <parent
+      link="head_Link" />
+    <child
+      link="head_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="head_camera_Link1">
+    <inertial>
+      <origin
+        xyz="-0.0296356279267107 3.85038040603969E-05 -0.0175849458605222"
+        rpy="0 0 0" />
+      <mass
+        value="0.0230825049326663" />
+      <inertia
+        ixx="2.79434592963155E-06"
+        ixy="-2.50262060549281E-09"
+        ixz="1.22971692394744E-09"
+        iyy="1.45623711338683E-05"
+        iyz="-1.1202145422448E-10"
+        izz="1.59686974459062E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/head_camera_Link1.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/head_camera_Link1.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="head_camera_joint1"
+    type="fixed">
+    <origin
+      xyz="0.030000881379704 -2.52696919224027E-05 0.00919315290587996"
+      rpy="0 0 0" />
+    <parent
+      link="head_camera_Link" />
+    <child
+      link="head_camera_Link1" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="head_camera_Link2">
+    <inertial>
+      <origin
+        xyz="0.0303609925956365 1.7813231273367E-06 -0.0175809458605222"
+        rpy="0 0 0" />
+      <mass
+        value="0.0230825049326663" />
+      <inertia
+        ixx="2.79434592963155E-06"
+        ixy="-2.50262060549303E-09"
+        ixz="1.22971692394752E-09"
+        iyy="1.45623711338683E-05"
+        iyz="-1.12021454224903E-10"
+        izz="1.59686974459062E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/head_camera_Link2.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/head_camera_Link2.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="head_camera_joint2"
+    type="fixed">
+    <origin
+      xyz="-0.0299957391426432 1.14527890106575E-05 0.00918915290588002"
+      rpy="0 0 0" />
+    <parent
+      link="head_camera_Link" />
+    <child
+      link="head_camera_Link2" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="right_head_camera_Link">
+    <inertial>
+      <origin
+        xyz="-0.000144444361884266 -5.91014569918391E-05 -0.0189121827897489"
+        rpy="0 0 0" />
+      <mass
+        value="0.107684776542734" />
+      <inertia
+        ixx="1.04741775306772E-05"
+        ixy="3.88485213042487E-08"
+        ixz="2.18475773411992E-07"
+        iyy="1.0482074389585E-05"
+        iyz="8.75998188986727E-08"
+        izz="9.75396871158967E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_head_camera_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_head_camera_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_head_camera_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0330520314158379 0.00750085082489535 -0.0855401331383327"
+      rpy="-3.14159265358979 -0.818916654945453 0.287216237345023" />
+    <parent
+      link="head_Link" />
+    <child
+      link="right_head_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_head_camera_Link">
+    <inertial>
+      <origin
+        xyz="0.000147122186897053 -5.14444401253922E-05 -0.018912090727024"
+        rpy="0 0 0" />
+      <mass
+        value="0.10768589591519" />
+      <inertia
+        ixx="1.04386890045708E-05"
+        ixy="7.83474356803563E-10"
+        ixz="-2.21891383109498E-07"
+        iyy="1.0517302297787E-05"
+        iyz="7.92099978542184E-08"
+        izz="9.75350758767799E-06" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_head_camera_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_head_camera_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_head_camera_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0330520606878958 0.00750162709080108 0.0325213583636825"
+      rpy="0 -0.818917169802546 -2.85437437267398" />
+    <parent
+      link="head_Link" />
+    <child
+      link="left_head_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="right_arm_1_Link">
+    <inertial>
+      <origin
+        xyz="0.000120591394055902 0.00377888321553915 -0.0389593852119257"
+        rpy="0 0 0" />
+      <mass
+        value="0.573647924649606" />
+      <inertia
+        ixx="0.00121158572175109"
+        ixy="2.70621316464498E-06"
+        ixz="3.66291593440465E-06"
+        iyy="0.00132340312319395"
+        iyz="9.39525165200714E-05"
+        izz="0.000666738222015525" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_1_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_1_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_1_joint"
+    type="revolute">
+    <origin
+      xyz="-0.1975 0 -0.2975"
+      rpy="3.14159265358979 1.5707963267949 0" />
+    <parent
+      link="chest_Link" />
+    <child
+      link="right_arm_1_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.05"
+      upper="3.05"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="right_arm_2_Link">
+    <inertial>
+      <origin
+        xyz="0.000624248231195168 -0.0737709969220331 0.00429674013665208"
+        rpy="0 0 0" />
+      <mass
+        value="2.37251274205793" />
+      <inertia
+        ixx="0.00938446423414956"
+        ixy="-1.20652635143033E-05"
+        ixz="-1.07083590741597E-05"
+        iyy="0.00271070738099595"
+        iyz="0.00116386861210701"
+        izz="0.00863027986448708" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_2_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_2_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_2_joint"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5707963267949 -1.5707963267949 3.14" />
+    <parent
+      link="right_arm_1_Link" />
+    <child
+      link="right_arm_2_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-0.26"
+      upper="3.05"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="right_arm_3_Link">
+    <inertial>
+      <origin
+        xyz="-1.05141928871383E-06 -0.00172038684373854 -0.0407020267636179"
+        rpy="0 0 0" />
+      <mass
+        value="1.63593073969523" />
+      <inertia
+        ixx="0.00384603673544223"
+        ixy="3.78819759732484E-09"
+        ixz="-1.41391321145374E-09"
+        iyy="0.0038711467096466"
+        iyz="-0.000144918327683814"
+        izz="0.00104684673798558" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_3_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_3_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_3_joint"
+    type="revolute">
+    <origin
+      xyz="0 -0.291999999999941 0"
+      rpy="1.57079632679523 1.5707963267949 0" />
+    <parent
+      link="right_arm_2_Link" />
+    <child
+      link="right_arm_3_Link" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.05"
+      upper="3.05"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="right_arm_4_Link">
+    <inertial>
+      <origin
+        xyz="-4.59844261067226E-07 0.0670956859646233 0.00366950588609358"
+        rpy="0 0 0" />
+      <mass
+        value="1.42339486419965" />
+      <inertia
+        ixx="0.00317639823084213"
+        ixy="-1.29504647414444E-08"
+        ixz="-3.92264879364251E-09"
+        iyy="0.00118528782225181"
+        iyz="-0.000301601189119656"
+        izz="0.00282282054482124" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_4_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_4_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_4_joint"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5707963267949 0 0" />
+    <parent
+      link="right_arm_3_Link" />
+    <child
+      link="right_arm_4_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.83"
+      upper="1.83"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="right_arm_5_Link">
+    <inertial>
+      <origin
+        xyz="0.000533332369147488 -0.00216768444988033 -0.0927721598894081"
+        rpy="0 0 0" />
+      <mass
+        value="1.0052385609769" />
+      <inertia
+        ixx="0.000918506638192363"
+        ixy="-1.25586907565884E-07"
+        ixz="-8.38758355649187E-06"
+        iyy="0.00104063777639191"
+        iyz="-1.74437017523334E-07"
+        izz="0.000575324473886643" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_5_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_5_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_5_joint"
+    type="revolute">
+    <origin
+      xyz="0 0.294000000000003 0"
+      rpy="1.5707963267949 1.5707963267949 3.14" />
+    <parent
+      link="right_arm_4_Link" />
+    <child
+      link="right_arm_5_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-2.97"
+      upper="2.97"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="right_arm_6_Link">
+    <inertial>
+      <origin
+        xyz="-4.92594504075683E-09 -0.00822915494516471 0.000292621672292689"
+        rpy="0 0 0" />
+      <mass
+        value="0.518052610280782" />
+      <inertia
+        ixx="0.00024987093380414"
+        ixy="5.17021078492024E-11"
+        ixz="-3.97954871105914E-10"
+        iyy="0.000232724690484706"
+        iyz="1.28149834244162E-06"
+        izz="0.000240854839219164" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_6_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_6_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_6_joint"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5707963267949 1.5707963267949 0" />
+    <parent
+      link="right_arm_5_Link" />
+    <child
+      link="right_arm_6_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-0.35"
+      upper="1.13"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="right_arm_7_Link">
+    <inertial>
+      <origin
+        xyz="1.65877348693728E-06 0.0221180979824439 -0.0253131810931894"
+        rpy="0 0 0" />
+      <mass
+        value="0.267138179410359" />
+      <inertia
+        ixx="0.000308081592225492"
+        ixy="1.86263947731764E-09"
+        ixz="6.96383092185923E-09"
+        iyy="0.000143441115527371"
+        iyz="8.7913801063463E-05"
+        izz="0.000282304102982473" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_7_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_7_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_7_joint"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5707963267949 -1.5707963267949 0" />
+    <parent
+      link="right_arm_6_Link" />
+    <child
+      link="right_arm_7_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.57"
+      upper="1.75"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="right_arm_8_Link">
+    <inertial>
+      <origin
+        xyz="0.000101622458643269 1.05648236394806E-05 -0.0165709372102082"
+        rpy="0 0 0" />
+      <mass
+        value="0.161471175200819" />
+      <inertia
+        ixx="6.6750202760247E-05"
+        ixy="3.79551257942697E-08"
+        ixz="-2.7382925284439E-07"
+        iyy="6.73077820334544E-05"
+        iyz="2.72531853433698E-08"
+        izz="8.46077818711249E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_8_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_8_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_8_joint"
+    type="fixed">
+    <origin
+      xyz="0 0.104999999999995 0"
+      rpy="-1.5707963267949 0 0" />
+    <parent
+      link="right_arm_7_Link" />
+    <child
+      link="right_arm_8_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="right_camera_Link">
+    <inertial>
+      <origin
+        xyz="0.00693713950950658 -0.0166657824807137 -0.0274764649332448"
+        rpy="0 0 0" />
+      <mass
+        value="0.865177866847211" />
+      <inertia
+        ixx="0.000309713588374178"
+        ixy="-3.12556253734763E-05"
+        ixz="1.85964635556567E-05"
+        iyy="0.000903890731617739"
+        iyz="-4.03618928035104E-05"
+        izz="0.00111642525138159" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/305G_90D_camera_bracket_assembly.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/305G_90D_camera_bracket_assembly.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_camera_joint"
+    type="fixed">
+    <origin
+      xyz="0.0972513214465659 0.0255889680232187 0.0531673177613775"
+      rpy="0.436332351985314 0 -1.57079632679478" />
+    <parent
+      link="right_arm_8_Link" />
+    <child
+      link="right_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="right_binocular_right_camera_Link">
+    <inertial>
+      <origin
+        xyz="0.0461301225248096 -0.000141811915392254 -0.0167877191124006"
+        rpy="0 0 0" />
+      <mass
+        value="0.312696166466156" />
+      <inertia
+        ixx="3.47675586612373E-05"
+        ixy="-8.44091553449692E-07"
+        ixz="4.91420513154962E-06"
+        iyy="0.000365688434072974"
+        iyz="1.27022912648579E-07"
+        izz="0.000380710546432609" />
+    </inertial>
+  </link>
+  <joint
+    name="right_binocular_right_camera_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0459054299802165 0 -0.0001000000000001"
+      rpy="0 0 0" />
+    <parent
+      link="right_camera_Link" />
+    <child
+      link="right_binocular_right_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="right_speckle_camera_Link">
+    <inertial>
+      <origin
+        xyz="0.00210791459595969 -0.00885352491360558 -0.0361202007962085"
+        rpy="0 0 0" />
+      <mass
+        value="0.309285796654322" />
+      <inertia
+        ixx="0.000106753296025718"
+        ixy="-2.93863538824019E-05"
+        ixz="1.38300688634003E-05"
+        iyy="0.000383722176513323"
+        iyz="7.35585367110273E-06"
+        izz="0.000449717568591458" />
+    </inertial>
+  </link>
+  <joint
+    name="right_speckle_camera_joint"
+    type="fixed">
+    <origin
+      xyz="0.00159547181944711 0 -0.0001000000000001"
+      rpy="0 0 0" />
+    <parent
+      link="right_camera_Link" />
+    <child
+      link="right_speckle_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="right_rgb_camera_Link">
+    <inertial>
+      <origin
+        xyz="-0.0251208160089096 -0.000141746268469523 -0.0167877191124006"
+        rpy="0 0 0" />
+      <mass
+        value="0.312696166466156" />
+      <inertia
+        ixx="3.47675586612373E-05"
+        ixy="-8.44091553449693E-07"
+        ixz="4.91420513154962E-06"
+        iyy="0.000365688434072974"
+        iyz="1.27022912648565E-07"
+        izz="0.000380710546432609" />
+    </inertial>
+  </link>
+  <joint
+    name="right_rgb_camera_joint"
+    type="fixed">
+    <origin
+      xyz="0.0253455085535028 0 -0.0001000000000001"
+      rpy="0 0 0" />
+    <parent
+      link="right_camera_Link" />
+    <child
+      link="right_rgb_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="right_binocular_left_camera_Link">
+    <inertial>
+      <origin
+        xyz="-0.0488698774751904 -0.000141811915372825 -0.0167877191124006"
+        rpy="0 0 0" />
+      <mass
+        value="0.312696166466156" />
+      <inertia
+        ixx="3.47675586612373E-05"
+        ixy="-8.44091553449697E-07"
+        ixz="4.91420513154962E-06"
+        iyy="0.000365688434072975"
+        iyz="1.27022912648593E-07"
+        izz="0.000380710546432609" />
+    </inertial>
+  </link>
+  <joint
+    name="right_binocular_left_camera_joint"
+    type="fixed">
+    <origin
+      xyz="0.0490945700197835 0 -0.000100000000000044"
+      rpy="0 0 0" />
+    <parent
+      link="right_camera_Link" />
+    <child
+      link="right_binocular_left_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="right_arm_9_Link">
+    <inertial>
+      <origin
+        xyz="1.66255897937617E-14 0.0469999999999999 0.00337666716277456"
+        rpy="0 0 0" />
+      <mass
+        value="0.0449574285074774" />
+      <inertia
+        ixx="3.5492179920174E-05"
+        ixy="1.20228991107839E-17"
+        ixz="-4.10735054450039E-22"
+        iyy="6.93374582577452E-07"
+        iyz="-6.25121716317044E-23"
+        izz="3.58990433682915E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_9_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.776470588235294 0.756862745098039 0.737254901960784 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/right_arm_9_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="right_arm_9_joint"
+    type="fixed">
+    <origin
+      xyz="0 -0.0219999999999792 -0.0379999999998961"
+      rpy="0 0 -1.57079632679488" />
+    <parent
+      link="right_arm_6_Link" />
+    <child
+      link="right_arm_9_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_arm_1_Link">
+    <inertial>
+      <origin
+        xyz="-0.000120591394052849 -0.00377888321544329 -0.0389593852119294"
+        rpy="0 0 0" />
+      <mass
+        value="0.573647924649606" />
+      <inertia
+        ixx="0.00121158572175109"
+        ixy="2.70621316464503E-06"
+        ixz="-3.66291593440747E-06"
+        iyy="0.00132340312319395"
+        iyz="-9.39525165200706E-05"
+        izz="0.000666738222015523" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_1_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_1_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_1_joint"
+    type="revolute">
+    <origin
+      xyz="0.197500000000004 0 -0.297499999999997"
+      rpy="0 1.5707963267949 0" />
+    <parent
+      link="chest_Link" />
+    <child
+      link="left_arm_1_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.05"
+      upper="3.05"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="left_arm_2_Link">
+    <inertial>
+      <origin
+        xyz="0.000656795401766247 -0.0777031881489421 -0.0027010030410651"
+        rpy="0 0 0" />
+      <mass
+        value="2.25251578557808" />
+      <inertia
+        ixx="0.0084801078330559"
+        ixy="-5.7091238087089E-06"
+        ixz="8.3894824768304E-06"
+        iyy="0.0025686922098062"
+        iyz="-0.000897375665389726"
+        izz="0.00777168160638063" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_2_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_2_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_2_joint"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5707963267949 -1.5707963267949 3.14" />
+    <parent
+      link="left_arm_1_Link" />
+    <child
+      link="left_arm_2_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-3.1"
+      upper="3.05"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="left_arm_3_Link">
+    <inertial>
+      <origin
+        xyz="-9.65793286084698E-07 0.00172024570404675 -0.0407018613036851"
+        rpy="0 0 0" />
+      <mass
+        value="1.63593944344322" />
+      <inertia
+        ixx="0.00384603298880421"
+        ixy="-1.3543735542689E-08"
+        ixz="4.4392814825309E-10"
+        iyy="0.00387114812749876"
+        iyz="0.000144920818609886"
+        izz="0.00104684053020319" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_3_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_3_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_3_joint"
+    type="revolute">
+    <origin
+      xyz="0 -0.291999999999997 0"
+      rpy="1.57079632679489 -1.5707963267949 0" />
+    <parent
+      link="left_arm_2_Link" />
+    <child
+      link="left_arm_3_Link" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-3.05"
+      upper="3.05"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="left_arm_4_Link">
+    <inertial>
+      <origin
+        xyz="-2.91278225710771E-05 0.0671129214971078 0.391330156720013"
+        rpy="0 0 0" />
+      <mass
+        value="1.42340455671477" />
+      <inertia
+        ixx="0.00317638465626326"
+        ixy="-7.659139561365E-09"
+        ixz="1.23971685668714E-08"
+        iyy="0.00118527621668335"
+        iyz="0.000301620239723041"
+        izz="0.00282281492886125" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_4_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_4_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_4_joint"
+    type="revolute">
+    <origin
+      xyz="0 0.394999999999901 0"
+      rpy="1.57079632679522 0 0" />
+    <parent
+      link="left_arm_3_Link" />
+    <child
+      link="left_arm_4_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.83"
+      upper="1.83"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="left_arm_5_Link">
+    <inertial>
+      <origin
+        xyz="-0.000539726741199453 -0.00216679280332976 -0.0927556222832525"
+        rpy="0 0 0" />
+      <mass
+        value="1.00526053236923" />
+      <inertia
+        ixx="0.000918480636482949"
+        ixy="1.25482263214387E-07"
+        ixz="8.43994861669987E-06"
+        iyy="0.00104063704876548"
+        iyz="-1.74809687970476E-07"
+        izz="0.000575350407545745" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_5_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_5_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_5_joint"
+    type="revolute">
+    <origin
+      xyz="0 0.294000000000192 0.394999999999842"
+      rpy="1.5707963267949 1.5707963267949 3.14" />
+    <parent
+      link="left_arm_4_Link" />
+    <child
+      link="left_arm_5_Link" />
+    <axis
+      xyz="0 0 -1" />
+    <limit
+      lower="-2.97"
+      upper="2.97"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="left_arm_6_Link">
+    <inertial>
+      <origin
+        xyz="-4.92599955270734E-09 -0.00822915494521825 0.000292621669112796"
+        rpy="0 0 0" />
+      <mass
+        value="0.518052610280783" />
+      <inertia
+        ixx="0.00024987093380414"
+        ixy="5.17021078673625E-11"
+        ixz="-3.9795487117466E-10"
+        iyy="0.000232724690484707"
+        iyz="1.28149834244168E-06"
+        izz="0.000240854839219164" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_6_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_6_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_6_joint"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.57079632679489 -1.5707963267949 0" />
+    <parent
+      link="left_arm_5_Link" />
+    <child
+      link="left_arm_6_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.13"
+      upper="0.35"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="left_arm_7_Link">
+    <inertial>
+      <origin
+        xyz="1.54853114237266E-06 -0.0221182090276751 -0.0253132172680144"
+        rpy="0 0 0" />
+      <mass
+        value="0.267139356508501" />
+      <inertia
+        ixx="0.000308082193673499"
+        ixy="-2.38186805674065E-09"
+        ixz="7.1988287422392E-09"
+        iyy="0.000143441325780203"
+        iyz="-8.7913405734686E-05"
+        izz="0.000282304664813725" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_7_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_7_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_7_joint"
+    type="revolute">
+    <origin
+      xyz="0 0 0"
+      rpy="1.5707963267949 -1.5707963267949 0" />
+    <parent
+      link="left_arm_6_Link" />
+    <child
+      link="left_arm_7_Link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-1.75"
+      upper="1.57"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="left_arm_8_Link">
+    <inertial>
+      <origin
+        xyz="0.000102435416426691 1.04707753728339E-05 -0.0165709372102079"
+        rpy="0 0 0" />
+      <mass
+        value="0.161471175200816" />
+      <inertia
+        ixx="6.67502027602462E-05"
+        ixy="3.79551257942726E-08"
+        ixz="-2.73829252844926E-07"
+        iyy="6.73077820334536E-05"
+        iyz="2.72531853367148E-08"
+        izz="8.46077818711242E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_8_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.898039215686275 0.917647058823529 0.929411764705882 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_8_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_8_joint"
+    type="fixed">
+    <origin
+      xyz="0 -0.105000000000012 1.08968104269302E-05"
+      rpy="1.57079632679524 0 0" />
+    <parent
+      link="left_arm_7_Link" />
+    <child
+      link="left_arm_8_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_camera_Link">
+    <inertial>
+      <origin
+        xyz="0.00693712868080162 -0.016665779355227 -0.0274764648026932"
+        rpy="0 0 0" />
+      <mass
+        value="0.865178114821345" />
+      <inertia
+        ixx="0.000309713601224447"
+        ixy="-3.12555761266151E-05"
+        ixz="1.85964874990945E-05"
+        iyy="0.000903890980628004"
+        iyz="-4.03618875930851E-05"
+        izz="0.0011164255077049" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/305G_90D_camera_bracket_assembly.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/305G_90D_camera_bracket_assembly.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_camera_joint"
+    type="fixed">
+    <origin
+      xyz="0.0972521344043364 0.0255888739747984 0.0531673177613026"
+      rpy="0.436332351985299 0 -1.57079632679478" />
+    <parent
+      link="left_arm_8_Link" />
+    <child
+      link="left_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_binocular_right_camera_Link">
+    <inertial>
+      <origin
+        xyz="0.0461300978867104 -0.000141816369339465 -0.0167877271482602"
+        rpy="0 0 0" />
+      <mass
+        value="0.312696414440289" />
+      <inertia
+        ixx="3.47675715115058E-05"
+        ixy="-8.44042306588789E-07"
+        ixz="4.9142290749873E-06"
+        iyy="0.00036568868308324"
+        iyz="1.27028123073756E-07"
+        izz="0.00038071080275592" />
+    </inertial>
+  </link>
+  <joint
+    name="left_binocular_right_camera_joint"
+    type="fixed">
+    <origin
+      xyz="-0.0459054299802165 0 -0.000100000000000156"
+      rpy="0 0 0" />
+    <parent
+      link="left_camera_Link" />
+    <child
+      link="left_binocular_right_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_speckle_camera_Link">
+    <inertial>
+      <origin
+        xyz="-0.00137080391295319 -0.000141729529923695 -0.0167877271482601"
+        rpy="0 0 0" />
+      <mass
+        value="0.312696414440289" />
+      <inertia
+        ixx="3.47675715115058E-05"
+        ixy="-8.44042306588787E-07"
+        ixz="4.9142290749873E-06"
+        iyy="0.00036568868308324"
+        iyz="1.27028123073715E-07"
+        izz="0.00038071080275592" />
+    </inertial>
+  </link>
+  <joint
+    name="left_speckle_camera_joint"
+    type="fixed">
+    <origin
+      xyz="0.00159547181944711 0 -0.000100000000000156"
+      rpy="0 0 0" />
+    <parent
+      link="left_camera_Link" />
+    <child
+      link="left_speckle_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_rgb_camera_Link">
+    <inertial>
+      <origin
+        xyz="-0.0251208406470089 -0.000141750722416789 -0.0167877271482602"
+        rpy="0 0 0" />
+      <mass
+        value="0.312696414440289" />
+      <inertia
+        ixx="3.47675715115058E-05"
+        ixy="-8.44042306588796E-07"
+        ixz="4.9142290749873E-06"
+        iyy="0.00036568868308324"
+        iyz="1.27028123073742E-07"
+        izz="0.00038071080275592" />
+    </inertial>
+  </link>
+  <joint
+    name="left_rgb_camera_Link"
+    type="fixed">
+    <origin
+      xyz="0.0253455085535028 0 -0.000100000000000211"
+      rpy="0 0 0" />
+    <parent
+      link="left_camera_Link" />
+    <child
+      link="left_rgb_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_binocular_left_camera_Link">
+    <inertial>
+      <origin
+        xyz="-0.0488699021132895 -0.000141816369320036 -0.0167877271482603"
+        rpy="0 0 0" />
+      <mass
+        value="0.312696414440289" />
+      <inertia
+        ixx="3.47675715115058E-05"
+        ixy="-8.44042306588785E-07"
+        ixz="4.9142290749873E-06"
+        iyy="0.00036568868308324"
+        iyz="1.27028123073742E-07"
+        izz="0.00038071080275592" />
+    </inertial>
+  </link>
+  <joint
+    name="left_binocular_left_camera_joint"
+    type="fixed">
+    <origin
+      xyz="0.0490945700197835 0 -0.000100000000000211"
+      rpy="0 0 0" />
+    <parent
+      link="left_camera_Link" />
+    <child
+      link="left_binocular_left_camera_Link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="left_arm_9_Link">
+    <inertial>
+      <origin
+        xyz="1.52655665885959E-15 0.0518548740509712 -0.00334326843508802"
+        rpy="0 0 0" />
+      <mass
+        value="0.0407483226701978" />
+      <inertia
+        ixx="3.54266364014032E-05"
+        ixy="1.96196618677385E-21"
+        ixz="1.60615577982705E-19"
+        iyy="6.27831063806709E-07"
+        iyz="-1.30026652120041E-19"
+        izz="3.57825672498633E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_9_Link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.776470588235294 0.756862745098039 0.737254901960784 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://realbots29/meshes/left_arm_9_Link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="left_arm_9_joint"
+    type="fixed">
+    <origin
+      xyz="0 -0.0220000000000003 -0.0381999999998773"
+      rpy="3.14159265358979 0 -1.5707963267949" />
+    <parent
+      link="left_arm_6_Link" />
+    <child
+      link="left_arm_9_Link" />
+    <axis
+      xyz="0 0 1" />
+  </joint>
+</robot>

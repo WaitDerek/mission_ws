@@ -36,7 +36,7 @@ from rclpy.qos import (
 )
 from rm_robot_interfaces.msg import ArmSlaveData, BodyData
 from sensor_msgs.msg import JointState
-from tf2_ros import StaticTransformBroadcaster
+from tf2_ros import StaticTransformBroadcaster, TransformBroadcaster
 
 
 Vector3 = tuple[float, float, float]
@@ -270,6 +270,33 @@ class UrdfKinematics:
         return result
 
 
+def compatibility_arm_base_transforms(
+    kinematics: UrdfKinematics,
+    root_frame: str,
+    chest_frame: str,
+    joint_positions: Mapping[str, float],
+    left_chest_to_arm_base: RigidTransform,
+    right_chest_to_arm_base: RigidTransform,
+) -> tuple[RigidTransform, RigidTransform]:
+    """Build live root-to-SDK-arm-base transforms.
+
+    The current ``realbots29`` URDF models the physical shoulder branches as
+    ``left_arm_*``/``right_arm_*`` links, while the mission SDK targets are
+    expressed in the legacy ``L_base_Link``/``R_base_Link`` frames.  Keep the
+    calibrated chest-to-SDK-base transforms explicit, but obtain the
+    root-to-chest part from the current joint state so waist motion is not
+    frozen at the URDF zero pose.
+    """
+
+    root_to_chest = kinematics.transform_from_root(
+        root_frame, chest_frame, joint_positions
+    )
+    return (
+        compose(root_to_chest, left_chest_to_arm_base),
+        compose(root_to_chest, right_chest_to_arm_base),
+    )
+
+
 def _clean_frame(value: str) -> str:
     return str(value).strip().lstrip("/")
 
@@ -308,7 +335,7 @@ class RealbotsGlobalTf(Node):
         )
         self.declare_parameter(
             "camera_mount_quaternion_xyzw",
-            [0.499457366068, -0.500617254542, 0.500395372843, 0.499528933664],
+            [0.500617260, 0.499457371, 0.499528938, -0.500395377],
         )
         self.declare_parameter("right_camera_mount_parent_link", "right_camera_Link")
         self.declare_parameter(
@@ -320,7 +347,7 @@ class RealbotsGlobalTf(Node):
         )
         self.declare_parameter(
             "right_camera_mount_quaternion_xyzw",
-            [0.500246402298, -0.500061909392, 0.501359641712, 0.498327278226],
+            [-0.497028867, -0.503278286, -0.498134947, 0.501532498],
         )
         self.declare_parameter("body_feedback_topic", "/mcap/body")
         self.declare_parameter("left_arm_feedback_topic", "/mcap/slave_arm_left")
@@ -357,6 +384,30 @@ class RealbotsGlobalTf(Node):
         self.declare_parameter("max_feedback_age_sec", 0.5)
         self.declare_parameter("publish_complete_joint_states", True)
         self.declare_parameter("default_joint_position", 0.0)
+        self.declare_parameter("compatibility_frames_enabled", True)
+        self.declare_parameter("compatibility_urdf_root_frame", "base_Link")
+        self.declare_parameter("compatibility_base_frame", "base_link")
+        self.declare_parameter("compatibility_chest_frame", "chest_Link")
+        self.declare_parameter(
+            "compatibility_left_arm_base_frame", "L_base_Link"
+        )
+        self.declare_parameter(
+            "compatibility_right_arm_base_frame", "R_base_Link"
+        )
+        self.declare_parameter(
+            "compatibility_left_chest_to_arm_base_xyz", [0.012, 0.0, -0.2975]
+        )
+        self.declare_parameter(
+            "compatibility_left_chest_to_arm_base_rpy",
+            [0.0, math.pi, 0.0],
+        )
+        self.declare_parameter(
+            "compatibility_right_chest_to_arm_base_xyz", [-0.012, 0.0, -0.2975]
+        )
+        self.declare_parameter(
+            "compatibility_right_chest_to_arm_base_rpy",
+            [math.pi, 0.0, 0.0],
+        )
 
         urdf_file = str(self.get_parameter("urdf_file").value).strip()
         if not urdf_file:
@@ -434,6 +485,24 @@ class RealbotsGlobalTf(Node):
         self.default_joint_position = float(
             self.get_parameter("default_joint_position").value
         )
+        self.compatibility_frames_enabled = bool(
+            self.get_parameter("compatibility_frames_enabled").value
+        )
+        self.compatibility_urdf_root_frame = _clean_frame(
+            self.get_parameter("compatibility_urdf_root_frame").value
+        )
+        self.compatibility_base_frame = _clean_frame(
+            self.get_parameter("compatibility_base_frame").value
+        )
+        self.compatibility_chest_frame = _clean_frame(
+            self.get_parameter("compatibility_chest_frame").value
+        )
+        self.compatibility_left_arm_base_frame = _clean_frame(
+            self.get_parameter("compatibility_left_arm_base_frame").value
+        )
+        self.compatibility_right_arm_base_frame = _clean_frame(
+            self.get_parameter("compatibility_right_arm_base_frame").value
+        )
         if self.publish_rate_hz <= 0.0 or self.max_feedback_age_sec <= 0.0:
             raise ValueError("publish_rate_hz and max_feedback_age_sec must be positive")
         if not math.isfinite(self.default_joint_position):
@@ -452,6 +521,46 @@ class RealbotsGlobalTf(Node):
             )
 
         self.kinematics = UrdfKinematics(urdf_file)
+        if self.compatibility_frames_enabled:
+            for frame in (
+                self.compatibility_urdf_root_frame,
+                self.compatibility_chest_frame,
+            ):
+                if frame not in self.kinematics.links:
+                    raise ValueError(
+                        "compatibility frame must be present in the URDF: "
+                        f"{frame}"
+                    )
+            left_xyz = _finite_vector(
+                self.get_parameter("compatibility_left_chest_to_arm_base_xyz").value,
+                3,
+                "compatibility_left_chest_to_arm_base_xyz",
+            )
+            left_rpy = _finite_vector(
+                self.get_parameter("compatibility_left_chest_to_arm_base_rpy").value,
+                3,
+                "compatibility_left_chest_to_arm_base_rpy",
+            )
+            right_xyz = _finite_vector(
+                self.get_parameter(
+                    "compatibility_right_chest_to_arm_base_xyz"
+                ).value,
+                3,
+                "compatibility_right_chest_to_arm_base_xyz",
+            )
+            right_rpy = _finite_vector(
+                self.get_parameter(
+                    "compatibility_right_chest_to_arm_base_rpy"
+                ).value,
+                3,
+                "compatibility_right_chest_to_arm_base_rpy",
+            )
+            self.compatibility_left_chest_to_arm_base = RigidTransform(
+                left_xyz, _rpy_to_quaternion(*left_rpy)
+            )
+            self.compatibility_right_chest_to_arm_base = RigidTransform(
+                right_xyz, _rpy_to_quaternion(*right_rpy)
+            )
         self.movable_joint_names = tuple(
             joint.name
             for joint in self.kinematics.joints.values()
@@ -532,6 +641,7 @@ class RealbotsGlobalTf(Node):
             )
 
         self.static_transform_broadcaster = StaticTransformBroadcaster(self)
+        self.transform_broadcaster = TransformBroadcaster(self)
         self._publish_camera_mount_tf()
         self.timer = self.create_timer(1.0 / self.publish_rate_hz, self._publish_timer)
         self.get_logger().info(
@@ -540,6 +650,15 @@ class RealbotsGlobalTf(Node):
             f"{self.right_camera_mount_parent} -> {self.right_camera_mount_child}; "
             f"using {urdf_file}"
         )
+        if self.compatibility_frames_enabled:
+            self.get_logger().info(
+                "Publishing compatibility TF: "
+                f"{self.compatibility_urdf_root_frame} -> "
+                f"{self.compatibility_base_frame} (identity), and live "
+                f"{self.compatibility_base_frame} -> "
+                f"{self.compatibility_left_arm_base_frame}/"
+                f"{self.compatibility_right_arm_base_frame}"
+            )
         if self.joint_state_publisher is not None:
             self.get_logger().info(
                 f"Republishing normalized body/arm feedback on {joint_state_topic}"
@@ -580,7 +699,53 @@ class RealbotsGlobalTf(Node):
             message.transform.rotation.z = transform.rotation[2]
             message.transform.rotation.w = transform.rotation[3]
             messages.append(message)
+        if (
+            self.compatibility_frames_enabled
+            and self.compatibility_urdf_root_frame
+            != self.compatibility_base_frame
+        ):
+            message = TransformStamped()
+            message.header.stamp = self.get_clock().now().to_msg()
+            message.header.frame_id = self.compatibility_urdf_root_frame
+            message.child_frame_id = self.compatibility_base_frame
+            message.transform.rotation.w = 1.0
+            messages.append(message)
         self.static_transform_broadcaster.sendTransform(messages)
+
+    def _publish_compatibility_arm_base_tf(
+        self, joint_positions: Mapping[str, float]
+    ) -> None:
+        """Publish live aliases for the two SDK arm-base coordinate frames."""
+
+        if not self.compatibility_frames_enabled:
+            return
+        left_transform, right_transform = compatibility_arm_base_transforms(
+            self.kinematics,
+            self.compatibility_urdf_root_frame,
+            self.compatibility_chest_frame,
+            joint_positions,
+            self.compatibility_left_chest_to_arm_base,
+            self.compatibility_right_chest_to_arm_base,
+        )
+        stamp = self.get_clock().now().to_msg()
+        messages = []
+        for child, transform in (
+            (self.compatibility_left_arm_base_frame, left_transform),
+            (self.compatibility_right_arm_base_frame, right_transform),
+        ):
+            message = TransformStamped()
+            message.header.stamp = stamp
+            message.header.frame_id = self.compatibility_base_frame
+            message.child_frame_id = child
+            message.transform.translation.x = transform.translation[0]
+            message.transform.translation.y = transform.translation[1]
+            message.transform.translation.z = transform.translation[2]
+            message.transform.rotation.x = transform.rotation[0]
+            message.transform.rotation.y = transform.rotation[1]
+            message.transform.rotation.z = transform.rotation[2]
+            message.transform.rotation.w = transform.rotation[3]
+            messages.append(message)
+        self.transform_broadcaster.sendTransform(messages)
 
     @staticmethod
     def _position_map(message: JointState) -> Optional[dict[str, float]]:
@@ -819,6 +984,7 @@ class RealbotsGlobalTf(Node):
             neck_is_fresh = ages["neck"] <= self.max_feedback_age_sec
 
         self._publish_joint_states(joint_positions, right_is_fresh, neck_is_fresh)
+        self._publish_compatibility_arm_base_tf(joint_positions)
 
 
 def main(args: Optional[Sequence[str]] = None) -> None:
@@ -849,6 +1015,7 @@ __all__ = [
     "RigidTransform",
     "UrdfKinematics",
     "compose",
+    "compatibility_arm_base_transforms",
     "inverse",
     "main",
 ]

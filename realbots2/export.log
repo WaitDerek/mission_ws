@@ -1,0 +1,513 @@
+2026-06-09 17:37:07,185 INFO  AssemblyExportForm.cs: 309 - Saving URDF package to E:\î£¶ûÂü\realbot  s2  URDF\realbots29
+2026-06-09 17:37:07,185 INFO  ExportHelper.cs: 147 - Beginning the export process
+2026-06-09 17:37:07,185 INFO  ExportHelper.cs: 153 - Creating package directories with name realbots29 and save path E:\î£¶ûÂü\realbot  s2  URDF
+2026-06-09 17:37:08,874 INFO  ExportHelper.cs: 162 - Creating CMakeLists.txt at E:\î£¶ûÂü\realbot  s2  URDF\realbots29\CMakeLists.txt
+2026-06-09 17:37:08,889 INFO  ExportHelper.cs: 166 - Creating joint names config at E:\î£¶ûÂü\realbot  s2  URDF\realbots29\config\joint_names_realbots29.yaml
+2026-06-09 17:37:08,905 INFO  ExportHelper.cs: 170 - Creating package.xml at E:\î£¶ûÂü\realbot  s2  URDF\realbots29\package.xml
+2026-06-09 17:37:08,905 INFO  PackageXMLWriter.cs: 21 - Creating package.xml at E:\î£¶ûÂü\realbot  s2  URDF\realbots29\package.xml
+2026-06-09 17:37:08,936 INFO  ExportHelper.cs: 177 - Creating RVIZ launch file in E:\î£¶ûÂü\realbot  s2  URDF\realbots29\launch\
+2026-06-09 17:37:08,952 INFO  ExportHelper.cs: 182 - Creating Gazebo launch file in E:\î£¶ûÂü\realbot  s2  URDF\realbots29\launch\
+2026-06-09 17:37:08,967 INFO  ExportHelper.cs: 187 - Saving existing STL preferences
+2026-06-09 17:37:08,967 INFO  ExportHelper.cs: 450 - Saving users preferences
+2026-06-09 17:37:08,967 INFO  ExportHelper.cs: 190 - Modifying STL preferences
+2026-06-09 17:37:08,967 INFO  ExportHelper.cs: 464 - Setting STL preferences
+2026-06-09 17:37:08,983 INFO  ExportHelper.cs: 196 - Found 11 hidden components ÎÞÐü¹ÒËÄÂÖËÄ×ªµ×ÅÌ520x580-1/×°ÅäÌå1-1/6´ç150mm»¬¹ì-1, ÎÞÐü¹ÒËÄÂÖËÄ×ªµ×ÅÌ520x580-1/×°ÅäÌå1-1/mid-360-fov-asm3D¼¤¹âÀ×´ï-1, ÎÞÐü¹ÒËÄÂÖËÄ×ªµ×ÅÌ520x580-1/×°ÅäÌå1-1/wq-2200349-1, ÎÞÐü¹ÒËÄÂÖËÄ×ªµ×ÅÌ520x580-1/×°ÅäÌå1-1/µ×ÅÌµ×°å²ã¼þ-1, ÎÞÐü¹ÒËÄÂÖËÄ×ªµ×ÅÌ520x580-1/×°ÅäÌå1-1/3D_PCB1_2026-03-30-1, ÎÞÐü¹ÒËÄÂÖËÄ×ªµ×ÅÌ520x580-1/×°ÅäÌå1-1/½Ó¿Ú¹Ì¶¨°å-1, ÎÞÐü¹ÒËÄÂÖËÄ×ªµ×ÅÌ520x580-1/×°ÅäÌå1-1/µçÆø¼þ¸Ç°å-1, ÎÞÐü¹ÒËÄÂÖËÄ×ªµ×ÅÌ520x580-1/×°ÅäÌå1-1/DF63-4EP-3.96C-1, ÎÞÐü¹ÒËÄÂÖËÄ×ªµ×ÅÌ520x580-1/×°ÅäÌå1-1/LJV-fakra-1, ÎÞÐü¹ÒËÄÂÖËÄ×ªµ×ÅÌ520x580-1/×°ÅäÌå1-1/df60-4ep-10.16c-1, ÎÞÐü¹ÒËÄÂÖËÄ×ªµ×ÅÌ520x580-1/×°ÅäÌå1-1/µç³Ø×é¼þ-º½ÓÑ-1/0320rem¶¨ÖÆµç³Ø½Ó¿Ú°å-2
+2026-06-09 17:37:08,983 INFO  ExportHelper.cs: 197 - Hiding all components
+2026-06-09 17:37:09,667 INFO  ExportHelper.cs: 204 - Beginning individual files export
+2026-06-09 17:37:09,667 INFO  ExportHelper.cs: 270 - Exporting link: base_footprint
+2026-06-09 17:37:09,667 INFO  ExportHelper.cs: 272 - Link base_footprint has 1 children
+2026-06-09 17:37:09,667 INFO  ExportHelper.cs: 270 - Exporting link: base_Link
+2026-06-09 17:37:09,667 INFO  ExportHelper.cs: 272 - Link base_Link has 8 children
+2026-06-09 17:37:09,667 INFO  ExportHelper.cs: 270 - Exporting link: front_right_steer_link
+2026-06-09 17:37:09,667 INFO  ExportHelper.cs: 272 - Link front_right_steer_link has 1 children
+2026-06-09 17:37:09,667 INFO  ExportHelper.cs: 270 - Exporting link: front_right_wheel_link
+2026-06-09 17:37:09,667 INFO  ExportHelper.cs: 272 - Link front_right_wheel_link has 0 children
+2026-06-09 17:37:09,667 INFO  ExportHelper.cs: 317 - front_right_wheel_link: Exporting STL with coordinate frame front_right_wheel_link
+2026-06-09 17:37:09,667 INFO  ExportHelper.cs: 322 - front_right_wheel_link: Reference geometry name 
+2026-06-09 17:37:09,823 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\front_right_wheel_link.STL
+2026-06-09 17:37:12,628 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:12,644 INFO  ExportHelper.cs: 317 - front_right_steer_link: Exporting STL with coordinate frame front_right_steer_link
+2026-06-09 17:37:12,644 INFO  ExportHelper.cs: 322 - front_right_steer_link: Reference geometry name 
+2026-06-09 17:37:12,691 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\front_right_steer_link.STL
+2026-06-09 17:37:13,034 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:13,034 INFO  ExportHelper.cs: 270 - Exporting link: front_left_steer_link
+2026-06-09 17:37:13,034 INFO  ExportHelper.cs: 272 - Link front_left_steer_link has 1 children
+2026-06-09 17:37:13,034 INFO  ExportHelper.cs: 270 - Exporting link: front_left_wheel_link
+2026-06-09 17:37:13,034 INFO  ExportHelper.cs: 272 - Link front_left_wheel_link has 0 children
+2026-06-09 17:37:13,034 INFO  ExportHelper.cs: 317 - front_left_wheel_link: Exporting STL with coordinate frame front_left_wheel_link
+2026-06-09 17:37:13,050 INFO  ExportHelper.cs: 322 - front_left_wheel_link: Reference geometry name 
+2026-06-09 17:37:13,097 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\front_left_wheel_link.STL
+2026-06-09 17:37:13,285 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:13,300 INFO  ExportHelper.cs: 317 - front_left_steer_link: Exporting STL with coordinate frame front_left_steer_link
+2026-06-09 17:37:13,300 INFO  ExportHelper.cs: 322 - front_left_steer_link: Reference geometry name 
+2026-06-09 17:37:13,347 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\front_left_steer_link.STL
+2026-06-09 17:37:13,691 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:13,707 INFO  ExportHelper.cs: 270 - Exporting link: rear_right_steer_link
+2026-06-09 17:37:13,707 INFO  ExportHelper.cs: 272 - Link rear_right_steer_link has 1 children
+2026-06-09 17:37:13,707 INFO  ExportHelper.cs: 270 - Exporting link: rear_right_wheel_link
+2026-06-09 17:37:13,707 INFO  ExportHelper.cs: 272 - Link rear_right_wheel_link has 0 children
+2026-06-09 17:37:13,707 INFO  ExportHelper.cs: 317 - rear_right_wheel_link: Exporting STL with coordinate frame rear_right_wheel_link
+2026-06-09 17:37:13,707 INFO  ExportHelper.cs: 322 - rear_right_wheel_link: Reference geometry name 
+2026-06-09 17:37:13,754 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\rear_right_wheel_link.STL
+2026-06-09 17:37:13,957 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:13,972 INFO  ExportHelper.cs: 317 - rear_right_steer_link: Exporting STL with coordinate frame rear_right_steer_link
+2026-06-09 17:37:13,972 INFO  ExportHelper.cs: 322 - rear_right_steer_link: Reference geometry name 
+2026-06-09 17:37:14,019 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\rear_right_steer_link.STL
+2026-06-09 17:37:14,349 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:14,349 INFO  ExportHelper.cs: 270 - Exporting link: rear_left_steer_link
+2026-06-09 17:37:14,349 INFO  ExportHelper.cs: 272 - Link rear_left_steer_link has 1 children
+2026-06-09 17:37:14,349 INFO  ExportHelper.cs: 270 - Exporting link: rear_left_wheel_link
+2026-06-09 17:37:14,349 INFO  ExportHelper.cs: 272 - Link rear_left_wheel_link has 0 children
+2026-06-09 17:37:14,349 INFO  ExportHelper.cs: 317 - rear_left_wheel_link: Exporting STL with coordinate frame rear_left_wheel_link
+2026-06-09 17:37:14,349 INFO  ExportHelper.cs: 322 - rear_left_wheel_link: Reference geometry name 
+2026-06-09 17:37:14,396 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\rear_left_wheel_link.STL
+2026-06-09 17:37:14,613 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:14,621 INFO  ExportHelper.cs: 317 - rear_left_steer_link: Exporting STL with coordinate frame rear_left_steer_link
+2026-06-09 17:37:14,622 INFO  ExportHelper.cs: 322 - rear_left_steer_link: Reference geometry name 
+2026-06-09 17:37:14,662 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\rear_left_steer_link.STL
+2026-06-09 17:37:14,990 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:15,006 INFO  ExportHelper.cs: 270 - Exporting link: front_rader_Link
+2026-06-09 17:37:15,006 INFO  ExportHelper.cs: 272 - Link front_rader_Link has 0 children
+2026-06-09 17:37:15,006 INFO  ExportHelper.cs: 317 - front_rader_Link: Exporting STL with coordinate frame front_radar_link
+2026-06-09 17:37:15,006 INFO  ExportHelper.cs: 322 - front_rader_Link: Reference geometry name 
+2026-06-09 17:37:15,052 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\front_rader_Link.STL
+2026-06-09 17:37:15,507 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:15,523 INFO  ExportHelper.cs: 270 - Exporting link: rear_rader_Link
+2026-06-09 17:37:15,523 INFO  ExportHelper.cs: 272 - Link rear_rader_Link has 0 children
+2026-06-09 17:37:15,523 INFO  ExportHelper.cs: 317 - rear_rader_Link: Exporting STL with coordinate frame rear_radar_link
+2026-06-09 17:37:15,523 INFO  ExportHelper.cs: 322 - rear_rader_Link: Reference geometry name 
+2026-06-09 17:37:15,570 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\rear_rader_Link.STL
+2026-06-09 17:37:16,023 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:16,038 INFO  ExportHelper.cs: 270 - Exporting link: chassis_camera_Link
+2026-06-09 17:37:16,038 INFO  ExportHelper.cs: 272 - Link chassis_camera_Link has 4 children
+2026-06-09 17:37:16,038 INFO  ExportHelper.cs: 270 - Exporting link: chassis_right_camera_Link
+2026-06-09 17:37:16,038 INFO  ExportHelper.cs: 272 - Link chassis_right_camera_Link has 0 children
+2026-06-09 17:37:16,038 INFO  ExportHelper.cs: 317 - chassis_right_camera_Link: Exporting STL with coordinate frame chassis_right_camera_link
+2026-06-09 17:37:16,038 INFO  ExportHelper.cs: 322 - chassis_right_camera_Link: Reference geometry name 
+2026-06-09 17:37:16,101 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\chassis_right_camera_Link.STL
+2026-06-09 17:37:20,278 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:20,294 INFO  ExportHelper.cs: 270 - Exporting link: chassis_speckle_camera_Link
+2026-06-09 17:37:20,294 INFO  ExportHelper.cs: 272 - Link chassis_speckle_camera_Link has 0 children
+2026-06-09 17:37:20,294 INFO  ExportHelper.cs: 317 - chassis_speckle_camera_Link: Exporting STL with coordinate frame chassis_speckle_camera_link
+2026-06-09 17:37:20,294 INFO  ExportHelper.cs: 322 - chassis_speckle_camera_Link: Reference geometry name 
+2026-06-09 17:37:20,356 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\chassis_speckle_camera_Link.STL
+2026-06-09 17:37:24,549 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:24,565 INFO  ExportHelper.cs: 270 - Exporting link: chassis_rgb_camera_Link
+2026-06-09 17:37:24,565 INFO  ExportHelper.cs: 272 - Link chassis_rgb_camera_Link has 0 children
+2026-06-09 17:37:24,565 INFO  ExportHelper.cs: 317 - chassis_rgb_camera_Link: Exporting STL with coordinate frame chassis_rgb_camera_link
+2026-06-09 17:37:24,565 INFO  ExportHelper.cs: 322 - chassis_rgb_camera_Link: Reference geometry name 
+2026-06-09 17:37:24,627 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\chassis_rgb_camera_Link.STL
+2026-06-09 17:37:28,803 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:28,818 INFO  ExportHelper.cs: 270 - Exporting link: chassis_left_camera_Link
+2026-06-09 17:37:28,818 INFO  ExportHelper.cs: 272 - Link chassis_left_camera_Link has 0 children
+2026-06-09 17:37:28,818 INFO  ExportHelper.cs: 317 - chassis_left_camera_Link: Exporting STL with coordinate frame chassis_left_camera_link
+2026-06-09 17:37:28,818 INFO  ExportHelper.cs: 322 - chassis_left_camera_Link: Reference geometry name 
+2026-06-09 17:37:28,881 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\chassis_left_camera_Link.STL
+2026-06-09 17:37:33,011 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:33,026 INFO  ExportHelper.cs: 317 - chassis_camera_Link: Exporting STL with coordinate frame chassis_camera_link
+2026-06-09 17:37:33,026 INFO  ExportHelper.cs: 322 - chassis_camera_Link: Reference geometry name 
+2026-06-09 17:37:33,089 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\chassis_camera_Link.STL
+2026-06-09 17:37:37,075 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:37,075 INFO  ExportHelper.cs: 270 - Exporting link: waist_1_Link
+2026-06-09 17:37:37,075 INFO  ExportHelper.cs: 272 - Link waist_1_Link has 1 children
+2026-06-09 17:37:37,075 INFO  ExportHelper.cs: 270 - Exporting link: waist_2_Link
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 272 - Link waist_2_Link has 1 children
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 270 - Exporting link: waist_3_Link
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 272 - Link waist_3_Link has 1 children
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 270 - Exporting link: chest_Link
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 272 - Link chest_Link has 3 children
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 270 - Exporting link: neck_Link
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 272 - Link neck_Link has 1 children
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 270 - Exporting link: head_Link
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 272 - Link head_Link has 3 children
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 270 - Exporting link: head_camera_Link
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 272 - Link head_camera_Link has 2 children
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 270 - Exporting link: head_camera_Link1
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 272 - Link head_camera_Link1 has 0 children
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 317 - head_camera_Link1: Exporting STL with coordinate frame head_camera_link1
+2026-06-09 17:37:37,091 INFO  ExportHelper.cs: 322 - head_camera_Link1: Reference geometry name 
+2026-06-09 17:37:37,169 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\head_camera_Link1.STL
+2026-06-09 17:37:38,830 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:38,846 INFO  ExportHelper.cs: 270 - Exporting link: head_camera_Link2
+2026-06-09 17:37:38,846 INFO  ExportHelper.cs: 272 - Link head_camera_Link2 has 0 children
+2026-06-09 17:37:38,846 INFO  ExportHelper.cs: 317 - head_camera_Link2: Exporting STL with coordinate frame head_camera_link2
+2026-06-09 17:37:38,846 INFO  ExportHelper.cs: 322 - head_camera_Link2: Reference geometry name 
+2026-06-09 17:37:38,955 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\head_camera_Link2.STL
+2026-06-09 17:37:40,648 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:40,659 INFO  ExportHelper.cs: 317 - head_camera_Link: Exporting STL with coordinate frame head_camera_link
+2026-06-09 17:37:40,659 INFO  ExportHelper.cs: 322 - head_camera_Link: Reference geometry name 
+2026-06-09 17:37:40,709 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\head_camera_Link.STL
+2026-06-09 17:37:42,399 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:42,399 INFO  ExportHelper.cs: 270 - Exporting link: right_head_camera_Link
+2026-06-09 17:37:42,399 INFO  ExportHelper.cs: 272 - Link right_head_camera_Link has 0 children
+2026-06-09 17:37:42,399 INFO  ExportHelper.cs: 317 - right_head_camera_Link: Exporting STL with coordinate frame right_head_camera_link
+2026-06-09 17:37:42,399 INFO  ExportHelper.cs: 322 - right_head_camera_Link: Reference geometry name 
+2026-06-09 17:37:42,446 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_head_camera_Link.STL
+2026-06-09 17:37:43,149 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:43,170 INFO  ExportHelper.cs: 270 - Exporting link: left_head_camera_Link
+2026-06-09 17:37:43,171 INFO  ExportHelper.cs: 272 - Link left_head_camera_Link has 0 children
+2026-06-09 17:37:43,171 INFO  ExportHelper.cs: 317 - left_head_camera_Link: Exporting STL with coordinate frame left_head_camera_link
+2026-06-09 17:37:43,171 INFO  ExportHelper.cs: 322 - left_head_camera_Link: Reference geometry name 
+2026-06-09 17:37:43,212 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_head_camera_Link.STL
+2026-06-09 17:37:43,884 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:43,899 INFO  ExportHelper.cs: 317 - head_Link: Exporting STL with coordinate frame head_link
+2026-06-09 17:37:43,899 INFO  ExportHelper.cs: 322 - head_Link: Reference geometry name 
+2026-06-09 17:37:43,946 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\head_Link.STL
+2026-06-09 17:37:45,572 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:45,572 INFO  ExportHelper.cs: 317 - neck_Link: Exporting STL with coordinate frame neck_link
+2026-06-09 17:37:45,588 INFO  ExportHelper.cs: 322 - neck_Link: Reference geometry name 
+2026-06-09 17:37:45,635 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\neck_Link.STL
+2026-06-09 17:37:45,932 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 270 - Exporting link: right_arm_1_Link
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 272 - Link right_arm_1_Link has 1 children
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 270 - Exporting link: right_arm_2_Link
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 272 - Link right_arm_2_Link has 1 children
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 270 - Exporting link: right_arm_3_Link
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 272 - Link right_arm_3_Link has 1 children
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 270 - Exporting link: right_arm_4_Link
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 272 - Link right_arm_4_Link has 1 children
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 270 - Exporting link: right_arm_5_Link
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 272 - Link right_arm_5_Link has 1 children
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 270 - Exporting link: right_arm_6_Link
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 272 - Link right_arm_6_Link has 2 children
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 270 - Exporting link: right_arm_7_Link
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 272 - Link right_arm_7_Link has 1 children
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 270 - Exporting link: right_arm_8_Link
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 272 - Link right_arm_8_Link has 2 children
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 270 - Exporting link: right_camera_Link
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 272 - Link right_camera_Link has 4 children
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 270 - Exporting link: right_binocular_right_camera_Link
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 272 - Link right_binocular_right_camera_Link has 0 children
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 317 - right_binocular_right_camera_Link: Exporting STL with coordinate frame right_binocular_right_camera_link
+2026-06-09 17:37:45,947 INFO  ExportHelper.cs: 322 - right_binocular_right_camera_Link: Reference geometry name 
+2026-06-09 17:37:46,041 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_binocular_right_camera_Link.STL
+2026-06-09 17:37:50,108 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:50,108 INFO  ExportHelper.cs: 270 - Exporting link: right_speckle_camera_Link
+2026-06-09 17:37:50,123 INFO  ExportHelper.cs: 272 - Link right_speckle_camera_Link has 0 children
+2026-06-09 17:37:50,123 INFO  ExportHelper.cs: 317 - right_speckle_camera_Link: Exporting STL with coordinate frame right_speckle_camera_link
+2026-06-09 17:37:50,123 INFO  ExportHelper.cs: 322 - right_speckle_camera_Link: Reference geometry name 
+2026-06-09 17:37:50,170 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_speckle_camera_Link.STL
+2026-06-09 17:37:50,394 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:50,394 INFO  ExportHelper.cs: 270 - Exporting link: right_rgb_camera_Link
+2026-06-09 17:37:50,394 INFO  ExportHelper.cs: 272 - Link right_rgb_camera_Link has 0 children
+2026-06-09 17:37:50,394 INFO  ExportHelper.cs: 317 - right_rgb_camera_Link: Exporting STL with coordinate frame right_rgb_camera_link
+2026-06-09 17:37:50,394 INFO  ExportHelper.cs: 322 - right_rgb_camera_Link: Reference geometry name 
+2026-06-09 17:37:50,472 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_rgb_camera_Link.STL
+2026-06-09 17:37:54,489 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:54,505 INFO  ExportHelper.cs: 270 - Exporting link: right_binocular_left_camera_Link
+2026-06-09 17:37:54,505 INFO  ExportHelper.cs: 272 - Link right_binocular_left_camera_Link has 0 children
+2026-06-09 17:37:54,505 INFO  ExportHelper.cs: 317 - right_binocular_left_camera_Link: Exporting STL with coordinate frame right_binocular_left_camera_link
+2026-06-09 17:37:54,505 INFO  ExportHelper.cs: 322 - right_binocular_left_camera_Link: Reference geometry name 
+2026-06-09 17:37:54,567 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_binocular_left_camera_Link.STL
+2026-06-09 17:37:58,685 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:37:58,701 INFO  ExportHelper.cs: 317 - right_camera_Link: Exporting STL with coordinate frame right_camera_link
+2026-06-09 17:37:58,701 INFO  ExportHelper.cs: 322 - right_camera_Link: Reference geometry name 
+2026-06-09 17:37:58,779 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_camera_Link.STL
+2026-06-09 17:38:02,908 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:02,924 INFO  ExportHelper.cs: 270 - Exporting link: right_gripper_base_Link
+2026-06-09 17:38:02,924 INFO  ExportHelper.cs: 272 - Link right_gripper_base_Link has 4 children
+2026-06-09 17:38:02,924 INFO  ExportHelper.cs: 270 - Exporting link: right_gripper_l_Link1
+2026-06-09 17:38:02,924 INFO  ExportHelper.cs: 272 - Link right_gripper_l_Link1 has 1 children
+2026-06-09 17:38:02,924 INFO  ExportHelper.cs: 270 - Exporting link: right_gripper_l_Link3
+2026-06-09 17:38:02,924 INFO  ExportHelper.cs: 272 - Link right_gripper_l_Link3 has 0 children
+2026-06-09 17:38:02,924 INFO  ExportHelper.cs: 317 - right_gripper_l_Link3: Exporting STL with coordinate frame right_gripper_l_link3
+2026-06-09 17:38:02,924 INFO  ExportHelper.cs: 322 - right_gripper_l_Link3: Reference geometry name 
+2026-06-09 17:38:03,189 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_gripper_l_Link3.STL
+2026-06-09 17:38:04,052 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:04,052 INFO  ExportHelper.cs: 317 - right_gripper_l_Link1: Exporting STL with coordinate frame right_gripper_l_link1
+2026-06-09 17:38:04,052 INFO  ExportHelper.cs: 322 - right_gripper_l_Link1: Reference geometry name 
+2026-06-09 17:38:04,159 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_gripper_l_Link1.STL
+2026-06-09 17:38:04,474 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:04,489 INFO  ExportHelper.cs: 270 - Exporting link: right_gripper_l_Link2
+2026-06-09 17:38:04,489 INFO  ExportHelper.cs: 272 - Link right_gripper_l_Link2 has 0 children
+2026-06-09 17:38:04,489 INFO  ExportHelper.cs: 317 - right_gripper_l_Link2: Exporting STL with coordinate frame right_gripper_l_link2
+2026-06-09 17:38:04,489 INFO  ExportHelper.cs: 322 - right_gripper_l_Link2: Reference geometry name 
+2026-06-09 17:38:04,568 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_gripper_l_Link2.STL
+2026-06-09 17:38:04,850 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:04,865 INFO  ExportHelper.cs: 270 - Exporting link: right_gripper_r_Link1
+2026-06-09 17:38:04,865 INFO  ExportHelper.cs: 272 - Link right_gripper_r_Link1 has 1 children
+2026-06-09 17:38:04,865 INFO  ExportHelper.cs: 270 - Exporting link: right_gripper_r_Link3
+2026-06-09 17:38:04,865 INFO  ExportHelper.cs: 272 - Link right_gripper_r_Link3 has 0 children
+2026-06-09 17:38:04,865 INFO  ExportHelper.cs: 317 - right_gripper_r_Link3: Exporting STL with coordinate frame right_gripper_r_link3
+2026-06-09 17:38:04,865 INFO  ExportHelper.cs: 322 - right_gripper_r_Link3: Reference geometry name 
+2026-06-09 17:38:05,006 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_gripper_r_Link3.STL
+2026-06-09 17:38:05,882 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:05,898 INFO  ExportHelper.cs: 317 - right_gripper_r_Link1: Exporting STL with coordinate frame right_gripper_r_link1
+2026-06-09 17:38:05,898 INFO  ExportHelper.cs: 322 - right_gripper_r_Link1: Reference geometry name 
+2026-06-09 17:38:05,991 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_gripper_r_Link1.STL
+2026-06-09 17:38:06,335 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:06,335 INFO  ExportHelper.cs: 270 - Exporting link: right_gripper_r_Link2
+2026-06-09 17:38:06,335 INFO  ExportHelper.cs: 272 - Link right_gripper_r_Link2 has 0 children
+2026-06-09 17:38:06,335 INFO  ExportHelper.cs: 317 - right_gripper_r_Link2: Exporting STL with coordinate frame right_gripper_r_link2
+2026-06-09 17:38:06,351 INFO  ExportHelper.cs: 322 - right_gripper_r_Link2: Reference geometry name 
+2026-06-09 17:38:06,429 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_gripper_r_Link2.STL
+2026-06-09 17:38:06,711 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:06,726 INFO  ExportHelper.cs: 317 - right_gripper_base_Link: Exporting STL with coordinate frame right_gripper_base_link
+2026-06-09 17:38:06,726 INFO  ExportHelper.cs: 322 - right_gripper_base_Link: Reference geometry name 
+2026-06-09 17:38:06,789 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_gripper_base_Link.STL
+2026-06-09 17:38:07,462 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:07,462 INFO  ExportHelper.cs: 317 - right_arm_8_Link: Exporting STL with coordinate frame right_arm_8_link
+2026-06-09 17:38:07,462 INFO  ExportHelper.cs: 322 - right_arm_8_Link: Reference geometry name 
+2026-06-09 17:38:07,602 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_arm_8_Link.STL
+2026-06-09 17:38:07,884 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:07,899 INFO  ExportHelper.cs: 317 - right_arm_7_Link: Exporting STL with coordinate frame right_arm_7_link
+2026-06-09 17:38:07,899 INFO  ExportHelper.cs: 322 - right_arm_7_Link: Reference geometry name 
+2026-06-09 17:38:07,962 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_arm_7_Link.STL
+2026-06-09 17:38:08,232 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:08,245 INFO  ExportHelper.cs: 270 - Exporting link: right_arm_9_Link
+2026-06-09 17:38:08,245 INFO  ExportHelper.cs: 272 - Link right_arm_9_Link has 0 children
+2026-06-09 17:38:08,245 INFO  ExportHelper.cs: 317 - right_arm_9_Link: Exporting STL with coordinate frame right_arm_9_link
+2026-06-09 17:38:08,245 INFO  ExportHelper.cs: 322 - right_arm_9_Link: Reference geometry name 
+2026-06-09 17:38:08,291 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_arm_9_Link.STL
+2026-06-09 17:38:08,541 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:08,541 INFO  ExportHelper.cs: 317 - right_arm_6_Link: Exporting STL with coordinate frame right_arm_6_link
+2026-06-09 17:38:08,541 INFO  ExportHelper.cs: 322 - right_arm_6_Link: Reference geometry name 
+2026-06-09 17:38:08,604 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_arm_6_Link.STL
+2026-06-09 17:38:08,853 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:08,853 INFO  ExportHelper.cs: 317 - right_arm_5_Link: Exporting STL with coordinate frame right_arm_5_link
+2026-06-09 17:38:08,853 INFO  ExportHelper.cs: 322 - right_arm_5_Link: Reference geometry name 
+2026-06-09 17:38:08,916 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_arm_5_Link.STL
+2026-06-09 17:38:09,292 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:09,323 INFO  ExportHelper.cs: 317 - right_arm_4_Link: Exporting STL with coordinate frame right_arm_4_link
+2026-06-09 17:38:09,323 INFO  ExportHelper.cs: 322 - right_arm_4_Link: Reference geometry name 
+2026-06-09 17:38:09,386 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_arm_4_Link.STL
+2026-06-09 17:38:09,761 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:09,777 INFO  ExportHelper.cs: 317 - right_arm_3_Link: Exporting STL with coordinate frame right_arm_3_link
+2026-06-09 17:38:09,777 INFO  ExportHelper.cs: 322 - right_arm_3_Link: Reference geometry name 
+2026-06-09 17:38:09,824 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_arm_3_Link.STL
+2026-06-09 17:38:10,120 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:10,136 INFO  ExportHelper.cs: 317 - right_arm_2_Link: Exporting STL with coordinate frame right_arm_2_link
+2026-06-09 17:38:10,136 INFO  ExportHelper.cs: 322 - right_arm_2_Link: Reference geometry name 
+2026-06-09 17:38:10,183 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_arm_2_Link.STL
+2026-06-09 17:38:10,543 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:10,559 INFO  ExportHelper.cs: 317 - right_arm_1_Link: Exporting STL with coordinate frame right_arm_1_link
+2026-06-09 17:38:10,559 INFO  ExportHelper.cs: 322 - right_arm_1_Link: Reference geometry name 
+2026-06-09 17:38:10,621 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\right_arm_1_Link.STL
+2026-06-09 17:38:10,918 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 270 - Exporting link: left_arm_1_Link
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 272 - Link left_arm_1_Link has 1 children
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 270 - Exporting link: left_arm_2_Link
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 272 - Link left_arm_2_Link has 1 children
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 270 - Exporting link: left_arm_3_Link
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 272 - Link left_arm_3_Link has 1 children
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 270 - Exporting link: left_arm_4_Link
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 272 - Link left_arm_4_Link has 1 children
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 270 - Exporting link: left_arm_5_Link
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 272 - Link left_arm_5_Link has 1 children
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 270 - Exporting link: left_arm_6_Link
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 272 - Link left_arm_6_Link has 2 children
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 270 - Exporting link: left_arm_7_Link
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 272 - Link left_arm_7_Link has 1 children
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 270 - Exporting link: left_arm_8_Link
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 272 - Link left_arm_8_Link has 2 children
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 270 - Exporting link: left_camera_Link
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 272 - Link left_camera_Link has 4 children
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 270 - Exporting link: left_binocular_right_camera_Link
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 272 - Link left_binocular_right_camera_Link has 0 children
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 317 - left_binocular_right_camera_Link: Exporting STL with coordinate frame left_binocular_right_camera_link
+2026-06-09 17:38:10,934 INFO  ExportHelper.cs: 322 - left_binocular_right_camera_Link: Reference geometry name 
+2026-06-09 17:38:11,028 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_binocular_right_camera_Link.STL
+2026-06-09 17:38:15,126 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:15,142 INFO  ExportHelper.cs: 270 - Exporting link: left_speckle_camera_Link
+2026-06-09 17:38:15,142 INFO  ExportHelper.cs: 272 - Link left_speckle_camera_Link has 0 children
+2026-06-09 17:38:15,142 INFO  ExportHelper.cs: 317 - left_speckle_camera_Link: Exporting STL with coordinate frame left_speckle_camera_link
+2026-06-09 17:38:15,142 INFO  ExportHelper.cs: 322 - left_speckle_camera_Link: Reference geometry name 
+2026-06-09 17:38:15,220 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_speckle_camera_Link.STL
+2026-06-09 17:38:19,304 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:19,320 INFO  ExportHelper.cs: 270 - Exporting link: left_rgb_camera_Link
+2026-06-09 17:38:19,320 INFO  ExportHelper.cs: 272 - Link left_rgb_camera_Link has 0 children
+2026-06-09 17:38:19,320 INFO  ExportHelper.cs: 317 - left_rgb_camera_Link: Exporting STL with coordinate frame left_rgb_camera_link
+2026-06-09 17:38:19,320 INFO  ExportHelper.cs: 322 - left_rgb_camera_Link: Reference geometry name 
+2026-06-09 17:38:19,398 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_rgb_camera_Link.STL
+2026-06-09 17:38:23,503 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:23,519 INFO  ExportHelper.cs: 270 - Exporting link: left_binocular_left_camera_Link
+2026-06-09 17:38:23,519 INFO  ExportHelper.cs: 272 - Link left_binocular_left_camera_Link has 0 children
+2026-06-09 17:38:23,519 INFO  ExportHelper.cs: 317 - left_binocular_left_camera_Link: Exporting STL with coordinate frame left_binocular_left_camera_link
+2026-06-09 17:38:23,519 INFO  ExportHelper.cs: 322 - left_binocular_left_camera_Link: Reference geometry name 
+2026-06-09 17:38:23,586 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_binocular_left_camera_Link.STL
+2026-06-09 17:38:27,644 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:27,659 INFO  ExportHelper.cs: 317 - left_camera_Link: Exporting STL with coordinate frame left_camera_link
+2026-06-09 17:38:27,659 INFO  ExportHelper.cs: 322 - left_camera_Link: Reference geometry name 
+2026-06-09 17:38:27,737 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_camera_Link.STL
+2026-06-09 17:38:31,866 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:31,881 INFO  ExportHelper.cs: 270 - Exporting link: left_gripper_base_Link
+2026-06-09 17:38:31,881 INFO  ExportHelper.cs: 272 - Link left_gripper_base_Link has 4 children
+2026-06-09 17:38:31,881 INFO  ExportHelper.cs: 270 - Exporting link: left_gripper_l_Link1
+2026-06-09 17:38:31,881 INFO  ExportHelper.cs: 272 - Link left_gripper_l_Link1 has 1 children
+2026-06-09 17:38:31,881 INFO  ExportHelper.cs: 270 - Exporting link: left_gripper_l_Link3
+2026-06-09 17:38:31,881 INFO  ExportHelper.cs: 272 - Link left_gripper_l_Link3 has 0 children
+2026-06-09 17:38:31,881 INFO  ExportHelper.cs: 317 - left_gripper_l_Link3: Exporting STL with coordinate frame left_gripper_l_link3
+2026-06-09 17:38:31,881 INFO  ExportHelper.cs: 322 - left_gripper_l_Link3: Reference geometry name 
+2026-06-09 17:38:32,336 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_gripper_l_Link3.STL
+2026-06-09 17:38:35,684 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:35,700 INFO  ExportHelper.cs: 317 - left_gripper_l_Link1: Exporting STL with coordinate frame left_gripper_l_link1
+2026-06-09 17:38:35,700 INFO  ExportHelper.cs: 322 - left_gripper_l_Link1: Reference geometry name 
+2026-06-09 17:38:35,856 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_gripper_l_Link1.STL
+2026-06-09 17:38:36,215 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:36,215 INFO  ExportHelper.cs: 270 - Exporting link: left_gripper_l_Link2
+2026-06-09 17:38:36,215 INFO  ExportHelper.cs: 272 - Link left_gripper_l_Link2 has 0 children
+2026-06-09 17:38:36,215 INFO  ExportHelper.cs: 317 - left_gripper_l_Link2: Exporting STL with coordinate frame left_gripper_l_link2
+2026-06-09 17:38:36,215 INFO  ExportHelper.cs: 322 - left_gripper_l_Link2: Reference geometry name 
+2026-06-09 17:38:36,358 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_gripper_l_Link2.STL
+2026-06-09 17:38:36,655 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:36,670 INFO  ExportHelper.cs: 270 - Exporting link: left_gripper_r_Link1
+2026-06-09 17:38:36,670 INFO  ExportHelper.cs: 272 - Link left_gripper_r_Link1 has 1 children
+2026-06-09 17:38:36,670 INFO  ExportHelper.cs: 270 - Exporting link: left_gripper_r_Link3
+2026-06-09 17:38:36,670 INFO  ExportHelper.cs: 272 - Link left_gripper_r_Link3 has 0 children
+2026-06-09 17:38:36,670 INFO  ExportHelper.cs: 317 - left_gripper_r_Link3: Exporting STL with coordinate frame left_gripper_r_link3
+2026-06-09 17:38:36,670 INFO  ExportHelper.cs: 322 - left_gripper_r_Link3: Reference geometry name 
+2026-06-09 17:38:36,802 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_gripper_r_Link3.STL
+2026-06-09 17:38:37,702 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:37,718 INFO  ExportHelper.cs: 317 - left_gripper_r_Link1: Exporting STL with coordinate frame left_gripper_r_link1
+2026-06-09 17:38:37,718 INFO  ExportHelper.cs: 322 - left_gripper_r_Link1: Reference geometry name 
+2026-06-09 17:38:37,859 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_gripper_r_Link1.STL
+2026-06-09 17:38:38,234 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:38,249 INFO  ExportHelper.cs: 270 - Exporting link: left_gripper_r_Link2
+2026-06-09 17:38:38,249 INFO  ExportHelper.cs: 272 - Link left_gripper_r_Link2 has 0 children
+2026-06-09 17:38:38,249 INFO  ExportHelper.cs: 317 - left_gripper_r_Link2: Exporting STL with coordinate frame left_gripper_r_link2
+2026-06-09 17:38:38,249 INFO  ExportHelper.cs: 322 - left_gripper_r_Link2: Reference geometry name 
+2026-06-09 17:38:38,376 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_gripper_r_Link2.STL
+2026-06-09 17:38:38,688 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:38,704 INFO  ExportHelper.cs: 317 - left_gripper_base_Link: Exporting STL with coordinate frame left_gripper_base_link
+2026-06-09 17:38:38,704 INFO  ExportHelper.cs: 322 - left_gripper_base_Link: Reference geometry name 
+2026-06-09 17:38:38,766 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_gripper_base_Link.STL
+2026-06-09 17:38:39,313 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:39,334 INFO  ExportHelper.cs: 317 - left_arm_8_Link: Exporting STL with coordinate frame left_arm_8_link
+2026-06-09 17:38:39,335 INFO  ExportHelper.cs: 322 - left_arm_8_Link: Reference geometry name 
+2026-06-09 17:38:39,455 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_arm_8_Link.STL
+2026-06-09 17:38:39,767 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:39,814 INFO  ExportHelper.cs: 317 - left_arm_7_Link: Exporting STL with coordinate frame left_arm_7_link
+2026-06-09 17:38:39,814 INFO  ExportHelper.cs: 322 - left_arm_7_Link: Reference geometry name 
+2026-06-09 17:38:39,877 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_arm_7_Link.STL
+2026-06-09 17:38:40,158 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:40,173 INFO  ExportHelper.cs: 270 - Exporting link: left_arm_9_Link
+2026-06-09 17:38:40,173 INFO  ExportHelper.cs: 272 - Link left_arm_9_Link has 0 children
+2026-06-09 17:38:40,173 INFO  ExportHelper.cs: 317 - left_arm_9_Link: Exporting STL with coordinate frame left_arm_9_link
+2026-06-09 17:38:40,173 INFO  ExportHelper.cs: 322 - left_arm_9_Link: Reference geometry name 
+2026-06-09 17:38:40,236 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_arm_9_Link.STL
+2026-06-09 17:38:40,487 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:40,487 INFO  ExportHelper.cs: 317 - left_arm_6_Link: Exporting STL with coordinate frame left_arm_6_link
+2026-06-09 17:38:40,487 INFO  ExportHelper.cs: 322 - left_arm_6_Link: Reference geometry name 
+2026-06-09 17:38:40,549 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_arm_6_Link.STL
+2026-06-09 17:38:40,815 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:40,815 INFO  ExportHelper.cs: 317 - left_arm_5_Link: Exporting STL with coordinate frame left_arm_5_link
+2026-06-09 17:38:40,815 INFO  ExportHelper.cs: 322 - left_arm_5_Link: Reference geometry name 
+2026-06-09 17:38:40,893 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_arm_5_Link.STL
+2026-06-09 17:38:41,268 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:41,268 INFO  ExportHelper.cs: 317 - left_arm_4_Link: Exporting STL with coordinate frame right_arm_4_link
+2026-06-09 17:38:41,268 INFO  ExportHelper.cs: 322 - left_arm_4_Link: Reference geometry name 
+2026-06-09 17:38:41,330 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_arm_4_Link.STL
+2026-06-09 17:38:41,737 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:41,753 INFO  ExportHelper.cs: 317 - left_arm_3_Link: Exporting STL with coordinate frame left_arm_3_link
+2026-06-09 17:38:41,753 INFO  ExportHelper.cs: 322 - left_arm_3_Link: Reference geometry name 
+2026-06-09 17:38:41,816 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_arm_3_Link.STL
+2026-06-09 17:38:42,112 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:42,128 INFO  ExportHelper.cs: 317 - left_arm_2_Link: Exporting STL with coordinate frame left_arm_2_link
+2026-06-09 17:38:42,128 INFO  ExportHelper.cs: 322 - left_arm_2_Link: Reference geometry name 
+2026-06-09 17:38:42,237 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_arm_2_Link.STL
+2026-06-09 17:38:42,629 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:42,645 INFO  ExportHelper.cs: 317 - left_arm_1_Link: Exporting STL with coordinate frame left_arm_1_link
+2026-06-09 17:38:42,645 INFO  ExportHelper.cs: 322 - left_arm_1_Link: Reference geometry name 
+2026-06-09 17:38:42,707 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\left_arm_1_Link.STL
+2026-06-09 17:38:43,020 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:38:43,035 INFO  ExportHelper.cs: 317 - chest_Link: Exporting STL with coordinate frame chest_link
+2026-06-09 17:38:43,035 INFO  ExportHelper.cs: 322 - chest_Link: Reference geometry name 
+2026-06-09 17:38:43,270 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\chest_Link.STL
+2026-06-09 17:39:03,967 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:39:03,983 INFO  ExportHelper.cs: 317 - waist_3_Link: Exporting STL with coordinate frame waist_3_link
+2026-06-09 17:39:03,983 INFO  ExportHelper.cs: 322 - waist_3_Link: Reference geometry name 
+2026-06-09 17:39:04,108 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\waist_3_Link.STL
+2026-06-09 17:39:05,406 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:39:05,422 INFO  ExportHelper.cs: 317 - waist_2_Link: Exporting STL with coordinate frame waist_2_link
+2026-06-09 17:39:05,422 INFO  ExportHelper.cs: 322 - waist_2_Link: Reference geometry name 
+2026-06-09 17:39:05,500 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\waist_2_Link.STL
+2026-06-09 17:39:07,424 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:39:07,440 INFO  ExportHelper.cs: 317 - waist_1_Link: Exporting STL with coordinate frame waist_1_link
+2026-06-09 17:39:07,440 INFO  ExportHelper.cs: 322 - waist_1_Link: Reference geometry name 
+2026-06-09 17:39:07,518 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\waist_1_Link.STL
+2026-06-09 17:39:09,300 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:39:09,316 INFO  ExportHelper.cs: 317 - base_Link: Exporting STL with coordinate frame base_link
+2026-06-09 17:39:09,316 INFO  ExportHelper.cs: 322 - base_Link: Reference geometry name 
+2026-06-09 17:39:09,425 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\base_Link.STL
+2026-06-09 17:39:11,490 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:39:11,506 INFO  ExportHelper.cs: 317 - base_footprint: Exporting STL with coordinate frame base_footprint
+2026-06-09 17:39:11,506 INFO  ExportHelper.cs: 322 - base_footprint: Reference geometry name 
+2026-06-09 17:39:11,569 INFO  ExportHelper.cs: 330 - Saving STL to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\meshes\base_footprint.STL
+2026-06-09 17:39:11,834 INFO  ExportHelper.cs: 405 - Removing SW header in STL file
+2026-06-09 17:39:11,834 INFO  ExportHelper.cs: 145 - Showing all components except previously hidden components
+2026-06-09 17:39:14,541 INFO  ExportHelper.cs: 145 - Resetting STL preferences
+2026-06-09 17:39:14,541 INFO  ExportHelper.cs: 478 - Returning STL preferences to user preferences
+2026-06-09 17:39:14,541 INFO  ExportHelper.cs: 228 - Writing URDF file to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\urdf\realbots29.urdf
+2026-06-09 17:39:17,920 INFO  CSVImportExport.cs: 32 - Writing CSV file E:\î£¶ûÂü\realbot  s2  URDF\realbots29\urdf\realbots29.csv
+2026-06-09 17:39:18,530 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:18,530 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:18,545 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:18,545 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:18,842 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:18,858 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:18,858 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:18,858 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,157 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,173 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,173 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,173 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,173 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,173 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,485 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,485 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,485 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,485 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,485 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,485 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,688 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,688 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,688 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,688 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,688 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:19,688 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,173 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,173 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,173 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,173 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,173 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,173 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,173 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,485 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,485 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,485 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,485 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,485 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,485 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,798 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,798 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,813 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,813 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:20,813 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,Link.Joint.Mimic.joint,Link.Joint.Mimic.multiplier,Link.Joint.Mimic.offset,
+2026-06-09 17:39:21,110 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,Link.Joint.Mimic.joint,Link.Joint.Mimic.multiplier,Link.Joint.Mimic.offset,
+2026-06-09 17:39:21,126 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,Link.Joint.Mimic.joint,Link.Joint.Mimic.multiplier,Link.Joint.Mimic.offset,
+2026-06-09 17:39:21,126 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,Link.Joint.Mimic.joint,Link.Joint.Mimic.multiplier,Link.Joint.Mimic.offset,
+2026-06-09 17:39:21,126 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,Link.Joint.Mimic.joint,Link.Joint.Mimic.multiplier,Link.Joint.Mimic.offset,
+2026-06-09 17:39:21,425 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:21,441 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:21,441 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:21,441 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:21,441 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:21,441 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:21,441 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:21,754 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:21,754 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:21,754 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:21,754 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:22,066 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:22,066 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:22,066 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:22,066 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:22,066 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:22,066 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,Link.Joint.Mimic.joint,Link.Joint.Mimic.multiplier,Link.Joint.Mimic.offset,
+2026-06-09 17:39:22,271 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,Link.Joint.Mimic.joint,Link.Joint.Mimic.multiplier,Link.Joint.Mimic.offset,
+2026-06-09 17:39:22,271 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,Link.Joint.Mimic.joint,Link.Joint.Mimic.multiplier,Link.Joint.Mimic.offset,
+2026-06-09 17:39:22,271 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,Link.Joint.Mimic.joint,Link.Joint.Mimic.multiplier,Link.Joint.Mimic.offset,
+2026-06-09 17:39:22,271 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,Link.Joint.Mimic.joint,Link.Joint.Mimic.multiplier,Link.Joint.Mimic.offset,
+2026-06-09 17:39:22,740 ERROR CSVImportExport.cs: 130 - The following columns were not written to the CSV: Link.Joint.ChildLink.link,
+2026-06-09 17:39:23,381 INFO  ExportHelper.cs: 234 - Copying log file
+2026-06-09 17:39:23,381 INFO  ExportHelper.cs: 439 - Copying C:\Users\Administrator\sw2urdf_logs\sw2urdf.log to E:\î£¶ûÂü\realbot  s2  URDF\realbots29\export.log

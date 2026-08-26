@@ -1,7 +1,12 @@
 import math
 from pathlib import Path
 
-from mission_runtime.global_tf_publisher import UrdfKinematics, inverse
+from mission_runtime.global_tf_publisher import (
+    RigidTransform,
+    UrdfKinematics,
+    compatibility_arm_base_transforms,
+    inverse,
+)
 
 
 def test_realbots_urdf_contains_the_requested_camera_chain():
@@ -50,3 +55,45 @@ def test_urdf_joint_names_match_hardware_feedback_mapping():
         "left_arm_7_joint",
     }
     assert expected.issubset(model.joints)
+
+
+def test_compatibility_arm_base_transforms_follow_live_waist_state():
+    source_root = Path(__file__).resolve().parents[2]
+    urdf = source_root / "realbots2" / "urdf" / "realbots29.urdf"
+    model = UrdfKinematics(str(urdf))
+    left_chest_to_base = RigidTransform(
+        (0.012, 0.0, -0.2975), (0.0, 1.0, 0.0, 0.0)
+    )
+    right_chest_to_base = RigidTransform(
+        (-0.012, 0.0, -0.2975), (1.0, 0.0, 0.0, 0.0)
+    )
+    zero = {
+        "waist_1_joint": 0.0,
+        "waist_2_joint": 0.0,
+        "waist_3_joint": 0.0,
+        "chest_joint": 0.0,
+    }
+    moved = dict(zero)
+    moved["waist_2_joint"] = 0.4
+    zero_left, zero_right = compatibility_arm_base_transforms(
+        model,
+        "base_Link",
+        "chest_Link",
+        zero,
+        left_chest_to_base,
+        right_chest_to_base,
+    )
+    moved_left, moved_right = compatibility_arm_base_transforms(
+        model,
+        "base_Link",
+        "chest_Link",
+        moved,
+        left_chest_to_base,
+        right_chest_to_base,
+    )
+    assert max(
+        abs(a - b) for a, b in zip(zero_left.translation, moved_left.translation)
+    ) > 1.0e-3
+    assert max(
+        abs(a - b) for a, b in zip(zero_right.translation, moved_right.translation)
+    ) > 1.0e-3

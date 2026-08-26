@@ -207,6 +207,11 @@ class TestBoxJoint1Targets(unittest.TestCase):
             def _float_array(self, name):
                 return self.VALUES[name]
 
+            @staticmethod
+            def _integer(name):
+                assert name == "box_post_movel_step_count"
+                return 2
+
             def _translate_pose_in_box_frame(self, target, delta_xyz, arm):
                 return MissionController._translate_pose_in_box_frame(
                     self, target, delta_xyz, arm

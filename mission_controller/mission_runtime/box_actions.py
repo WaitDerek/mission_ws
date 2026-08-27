@@ -54,44 +54,57 @@ class BoxActionsMixin:
             goal_handle, ExecuteDragBoxGrasp, "execute_drag_box_grasp", tf_mode=False
         )
 
+    def _execute_drag_box_grasp_tf(
+        self, goal_handle
+    ) -> ExecuteDragBoxGrasp.Result:
+        """Execute DragBox with a detector-timestamp-frozen TF target."""
+        return self._execute_box_grasp_with_action_type(
+            goal_handle,
+            ExecuteDragBoxGrasp,
+            "execute_drag_box_grasp_tf",
+            tf_mode=True,
+        )
+
     def _execute_box_grasp_with_action_type(
         self, goal_handle, action_type, action_name: str, *, tf_mode: bool = False
     ):
         started_at = time.monotonic()
         request = goal_handle.request
         result = action_type.Result()
-        drag_mode = action_type is ExecuteDragBoxGrasp
-        left_arm_enabled = drag_mode and self._boolean(
-            "drag_box_left_arm_enabled"
-        )
-        left_join_mode = (
-            self._string("drag_box_left_join_mode").strip().lower()
-            if drag_mode
-            else "immediate"
-        )
-        if drag_mode and left_join_mode not in ("immediate", "after_drag3"):
-            raise MissionError(
-                "drag_box_left_join_mode must be 'immediate' or 'after_drag3'"
-            )
-        delayed_left_join = left_arm_enabled and left_join_mode == "after_drag3"
-        right_arm_only = drag_mode and (
-            not left_arm_enabled or delayed_left_join
-        )
-        if (
-            right_arm_only
-            and not request.dry_run
-            and not self._boolean("box_direct_movel_enabled")
-        ):
-            raise MissionError(
-                "right-only or delayed-left DragBox execution requires "
-                "box_direct_movel_enabled=true"
-            )
         motion_state = {
             "started": False,
             "gripper_command_published": False,
         }
 
         try:
+            drag_mode = action_type is ExecuteDragBoxGrasp
+            left_arm_enabled = drag_mode and self._boolean(
+                "drag_box_left_arm_enabled"
+            )
+            left_join_mode = (
+                self._string("drag_box_left_join_mode").strip().lower()
+                if drag_mode
+                else "immediate"
+            )
+            if drag_mode and left_join_mode not in ("immediate", "after_drag3"):
+                raise MissionError(
+                    "drag_box_left_join_mode must be 'immediate' or 'after_drag3'"
+                )
+            delayed_left_join = (
+                left_arm_enabled and left_join_mode == "after_drag3"
+            )
+            right_arm_only = drag_mode and (
+                not left_arm_enabled or delayed_left_join
+            )
+            if (
+                right_arm_only
+                and not request.dry_run
+                and not self._boolean("box_direct_movel_enabled")
+            ):
+                raise MissionError(
+                    "right-only or delayed-left DragBox execution requires "
+                    "box_direct_movel_enabled=true"
+                )
             self._publish_box_grasp_feedback(
                 goal_handle,
                 "INITIALIZING",

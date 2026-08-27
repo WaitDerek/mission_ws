@@ -1,4 +1,5 @@
 import math
+import threading
 import unittest
 from copy import deepcopy
 
@@ -233,6 +234,49 @@ class TestBoxJoint1Targets(unittest.TestCase):
         self.assertAlmostEqual(left_step1.position.y, 1.0, places=9)
         self.assertAlmostEqual(right_step1.position.x, 0.0, places=9)
         self.assertAlmostEqual(right_step1.position.y, 1.0, places=9)
+
+    def test_drag_post_sequence_uses_drag_gate_when_standard_gate_is_off(self):
+        class DragGateHarness:
+            def __init__(self):
+                self.joint_state_lock = threading.Lock()
+                self.latest_slave_arm_pose_sequences = {"left": 0, "right": 0}
+                self.include_drag_steps = None
+
+            @staticmethod
+            def _boolean(name):
+                return {
+                    "box_post_movel_enabled": False,
+                    "drag_box_post_movel_enabled": True,
+                }[name]
+
+            def _post_movel_targets_with_labels(
+                self,
+                _left_target,
+                _right_target,
+                *,
+                include_drag_steps,
+                defer_left_step1,
+                model_label,
+            ):
+                self.include_drag_steps = include_drag_steps
+                self.asserted_arguments = (defer_left_step1, model_label)
+                return []
+
+        harness = DragGateHarness()
+        detail = MissionController._execute_post_movel_sequence(
+            harness,
+            None,
+            None,
+            Pose(),
+            Pose(),
+            True,
+            drag_mode=True,
+            model_label="bigbox",
+        )
+
+        self.assertEqual(detail, "post_movel=no_steps")
+        self.assertTrue(harness.include_drag_steps)
+        self.assertEqual(harness.asserted_arguments, (False, "bigbox"))
 
 
 if __name__ == "__main__":

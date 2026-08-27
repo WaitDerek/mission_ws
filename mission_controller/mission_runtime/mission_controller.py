@@ -320,6 +320,15 @@ class MissionController(
             cancel_callback=self._cancel_callback,
             callback_group=self.server_group,
         )
+        self.drag_box_grasp_tf_action_server = ActionServer(
+            self,
+            ExecuteDragBoxGrasp,
+            self._string("execute_drag_box_grasp_tf_action_name"),
+            execute_callback=self._execute_drag_box_grasp_tf,
+            goal_callback=self._drag_box_grasp_tf_goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=self.server_group,
+        )
         self.box_place_action_server = ActionServer(
             self,
             ExecuteBoxPlace,
@@ -336,6 +345,8 @@ class MissionController(
             f"box_grasp={self._string('execute_box_grasp_action_name')} "
             f"grasp_box_tf={self._string('grasp_box_tf_action_name')} "
             f"drag_box_grasp={self._string('execute_drag_box_grasp_action_name')} "
+            f"drag_box_grasp_tf="
+            f"{self._string('execute_drag_box_grasp_tf_action_name')} "
             f"box_place={self._string('execute_box_place_action_name')}"
         )
 
@@ -352,6 +363,10 @@ class MissionController(
                 (
                     "execute_drag_box_grasp_action_name",
                     "/execute_drag_box_grasp",
+                ),
+                (
+                    "execute_drag_box_grasp_tf_action_name",
+                    "/execute_drag_box_grasp_tf",
                 ),
                 ("execute_box_place_action_name", "/execute_box_place"),
                 ("adaptive_box_action_enabled", True),
@@ -1069,7 +1084,9 @@ class MissionController(
         for name in (
             "execute_adaptive_box_grasp_action_name",
             "execute_box_grasp_action_name",
+            "grasp_box_tf_action_name",
             "execute_drag_box_grasp_action_name",
+            "execute_drag_box_grasp_tf_action_name",
             "execute_box_place_action_name",
             "adaptive_freeze_frame",
             "box_object_pose_action_name",
@@ -1807,21 +1824,26 @@ class MissionController(
     ) -> GoalResponse:
         return self._box_grasp_goal_callback_for_mission(request, "box_grasp")
 
-    def _grasp_box_tf_goal_callback(
-        self, request: ExecuteBoxGrasp.Goal
-    ) -> GoalResponse:
+    def _tf_grasp_goal_prerequisites(self, label: str) -> bool:
         if not self._boolean("box_direct_movel_enabled"):
             self.get_logger().warning(
-                "rejecting TF GraspBox goal: box_direct_movel_enabled must be true"
+                f"rejecting {label} goal: box_direct_movel_enabled must be true"
             )
-            return GoalResponse.REJECT
+            return False
         if self._string("direct_movel_target_mode").strip().lower() != (
             "camera_offset_box_orientation"
         ):
             self.get_logger().warning(
-                "rejecting TF GraspBox goal: direct_movel_target_mode must be "
+                f"rejecting {label} goal: direct_movel_target_mode must be "
                 "camera_offset_box_orientation"
             )
+            return False
+        return True
+
+    def _grasp_box_tf_goal_callback(
+        self, request: ExecuteBoxGrasp.Goal
+    ) -> GoalResponse:
+        if not self._tf_grasp_goal_prerequisites("TF GraspBox"):
             return GoalResponse.REJECT
         return self._box_grasp_goal_callback_for_mission(
             request, "grasp_box_tf"
@@ -1830,8 +1852,50 @@ class MissionController(
     def _drag_box_grasp_goal_callback(
         self, request: ExecuteDragBoxGrasp.Goal
     ) -> GoalResponse:
+        return self._drag_box_grasp_goal_callback_for_mission(
+            request, "drag_box_grasp", require_tf=False
+        )
+
+    def _drag_box_grasp_tf_goal_callback(
+        self, request: ExecuteDragBoxGrasp.Goal
+    ) -> GoalResponse:
+        return self._drag_box_grasp_goal_callback_for_mission(
+            request, "drag_box_grasp_tf", require_tf=True
+        )
+
+    def _drag_box_grasp_goal_callback_for_mission(
+        self,
+        request: ExecuteDragBoxGrasp.Goal,
+        mission_name: str,
+        *,
+        require_tf: bool,
+    ) -> GoalResponse:
+        if require_tf and not self._tf_grasp_goal_prerequisites("TF DragBox"):
+            return GoalResponse.REJECT
+        if not self._boolean("box_direct_movel_enabled"):
+            self.get_logger().warning(
+                f"rejecting {mission_name} goal: "
+                "box_direct_movel_enabled must be true"
+            )
+            return GoalResponse.REJECT
+        if (
+            not request.dry_run
+            and self._string("direct_motion_backend").strip().lower()
+            != "python_sdk"
+        ):
+            self.get_logger().warning(
+                f"rejecting {mission_name} goal: physical DragBox execution "
+                "requires direct_motion_backend=python_sdk"
+            )
+            return GoalResponse.REJECT
+        if not self._boolean("drag_box_post_movel_enabled"):
+            self.get_logger().warning(
+                f"rejecting {mission_name} goal: "
+                "drag_box_post_movel_enabled must be true"
+            )
+            return GoalResponse.REJECT
         return self._box_grasp_goal_callback_for_mission(
-            request, "drag_box_grasp"
+            request, mission_name
         )
 
     def _box_grasp_goal_callback_for_mission(

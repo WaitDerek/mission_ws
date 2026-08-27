@@ -3443,16 +3443,19 @@ class BoxSupportMixin:
         model_label: str | None = None,
     ) -> str:
         self._last_step2_endpoint_sync_completed = False
-        if not self._boolean("box_post_movel_enabled"):
+        standard_post_movel_enabled = self._boolean("box_post_movel_enabled")
+        drag_post_movel_enabled = drag_mode and self._boolean(
+            "drag_box_post_movel_enabled"
+        )
+        if not standard_post_movel_enabled and not drag_post_movel_enabled:
             if delayed_left_join:
                 raise MissionError(
-                    "delayed left-arm join requires box_post_movel_enabled=true"
+                    "delayed left-arm join requires "
+                    "drag_box_post_movel_enabled=true"
                 )
             return "post_movel=disabled"
 
-        include_drag_steps = drag_mode and self._boolean(
-            "drag_box_post_movel_enabled"
-        )
+        include_drag_steps = drag_post_movel_enabled
         if delayed_left_join and not include_drag_steps:
             raise MissionError(
                 "delayed left-arm join requires drag_box_post_movel_enabled=true"
@@ -3803,6 +3806,7 @@ class BoxSupportMixin:
         backend = self._string("direct_motion_backend").strip().lower()
         if (
             self._boolean("box_post_movel_enabled")
+            or (drag_mode and self._boolean("drag_box_post_movel_enabled"))
             or self._boolean("box_post_arm_movej_enabled")
             or self._boolean("box_body_return_home_enabled")
         ) and backend != "python_sdk":

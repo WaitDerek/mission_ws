@@ -12,6 +12,17 @@ FoundationPose 检测料箱，再把检测结果冻结到机器人底盘固定�
 mission_interfaces/action/ExecuteBoxGrasp
 ```
 
+抽拉式 TF 版本使用同一套检测时间戳冻结和腰部后实时 TF 重表达逻辑，Action 为：
+
+```text
+/execute_drag_box_grasp_tf
+mission_interfaces/action/ExecuteDragBoxGrasp
+```
+
+它与 `/execute_drag_box_grasp` 共享 Drag1--Drag3 和延迟左臂加入阶段；区别仅在
+FoundationPose 结果被冻结到 `base_link`，腰部运动后再通过实时 TF 转换到左右臂
+基座。
+
 Goal 字段如下：
 
 ```yaml

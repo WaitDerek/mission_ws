@@ -805,6 +805,7 @@ mission_controller:
     execute_box_grasp_action_name: /execute_box_grasp
     execute_box_place_action_name: /execute_box_place
     execute_drag_box_grasp_action_name: /execute_drag_box_grasp
+    execute_drag_box_grasp_tf_action_name: /execute_drag_box_grasp_tf
     go_ready_action_name: /go_ready
     go_ready_result_timeout_sec: 60.0
     grasp_box_tf_action_name: /grasp_box_tf

@@ -1,9 +1,12 @@
 # Changan mission workspace
 
-这个工作区提供三个 RealBot 双臂 Mission Action：
+这个工作区提供六个 RealBot 双臂 Mission Action：
 
 - `/execute_adaptive_box_grasp` (`mission_interfaces/action/ExecuteAdaptiveBoxGrasp`)
 - `/execute_box_grasp` (`mission_interfaces/action/ExecuteBoxGrasp`)
+- `/grasp_box_tf` (`mission_interfaces/action/ExecuteBoxGrasp`)
+- `/execute_drag_box_grasp` (`mission_interfaces/action/ExecuteDragBoxGrasp`)
+- `/execute_drag_box_grasp_tf` (`mission_interfaces/action/ExecuteDragBoxGrasp`)
 - `/execute_box_place` (`mission_interfaces/action/ExecuteBoxPlace`)
 
 关节名称与 `dual_arm_ws` 的 `realbot` profile 保持一致：

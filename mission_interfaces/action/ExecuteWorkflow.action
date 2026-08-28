@@ -1,0 +1,18 @@
+# Start one complete depalletizing workflow. The workflow identity is generated
+# by Mission so the platform only needs to request a start.
+bool start
+---
+bool success
+string workflow_id
+string message
+uint32 completed_observation_count
+uint32 completed_box_count
+string final_stage
+---
+string workflow_id
+string stage
+string current_point_id
+string current_stack_id
+uint32 current_order_index
+uint32 total_order_items
+string detail

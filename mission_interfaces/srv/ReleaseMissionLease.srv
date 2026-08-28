@@ -1,0 +1,6 @@
+# Release a workflow lease. Both identity fields must match the active lease.
+string workflow_id
+string lease_token
+---
+bool success
+string message

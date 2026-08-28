@@ -14,8 +14,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ExecuteBoxGrasp.action"
   "action/ExecuteBoxPlace.action"
   "action/ExecuteDragBoxGrasp.action"
+  "action/ExecuteWorkflow.action"
   "action/MoveBaseDistance.action"
   "action/PlaceBoxTest.action"
+  "srv/AcquireMissionLease.srv"
+  "srv/ReleaseMissionLease.srv"
   DEPENDENCIES geometry_msgs
 )
 

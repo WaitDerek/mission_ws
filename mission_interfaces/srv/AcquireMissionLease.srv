@@ -1,0 +1,6 @@
+# Internal coordination service used by the depalletizing workflow node.
+string workflow_id
+---
+bool success
+string lease_token
+string message

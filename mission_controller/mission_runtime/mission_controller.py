@@ -10,6 +10,8 @@ from mission_interfaces.action import (
     ExecuteDragBoxGrasp,
     PlaceBoxTest,
 )
+from mission_interfaces.srv import AcquireMissionLease, ReleaseMissionLease
+
 try:
     from object_pose_interfaces.action import EstimateObjectPose
 except ModuleNotFoundError as exc:
@@ -62,6 +64,7 @@ from .adaptive_box_support import AdaptiveBoxSupportMixin
 from .action_runtime import ActionRuntimeMixin
 from .realman_sdk_adapter import RealManSdkAdapter
 from .parameters import MissionParametersMixin
+from .taskflow.lease import WorkflowLeaseManager
 
 __all__ = [
     "MissionController",
@@ -280,12 +283,23 @@ class MissionController(
                 logger=self.get_logger(),
             )
         self.state_lock = threading.Lock()
-        self.mission_reserved = False
-        self.active_mission = ""
+        self.mission_lease_manager = WorkflowLeaseManager()
         self.active_arm_joints_goal_handle = None
         self.active_go_ready_goal_handle = None
         self.active_box_object_pose_goal_handle = None
         self.active_pickup_task_goal_handle = None
+        self.acquire_mission_lease_service = self.create_service(
+            AcquireMissionLease,
+            self._string("acquire_mission_lease_service_name"),
+            self._acquire_mission_lease_callback,
+            callback_group=self.server_group,
+        )
+        self.release_mission_lease_service = self.create_service(
+            ReleaseMissionLease,
+            self._string("release_mission_lease_service_name"),
+            self._release_mission_lease_callback,
+            callback_group=self.server_group,
+        )
 
         self.adaptive_box_grasp_action_server = ActionServer(
             self,
@@ -371,18 +385,50 @@ class MissionController(
         mission: str,
         request_id: str,
     ) -> GoalResponse:
-        with self.state_lock:
-            if self.mission_reserved:
-                self.get_logger().warning(
-                    f"rejecting {mission} goal: {self.active_mission} mission is active"
-                )
-                return GoalResponse.REJECT
-            self.mission_reserved = True
-            self.active_mission = mission
+        reservation = self.mission_lease_manager.reserve_goal(mission, request_id)
+        if not reservation.accepted:
+            self.get_logger().warning(
+                f"rejecting {mission} goal: {reservation.message}; "
+                f"request_id={reservation.sanitized_request_id}"
+            )
+            return GoalResponse.REJECT
         self.get_logger().info(
-            f"accepted {mission} goal request_id={request_id or '<empty>'}"
+            f"accepted {mission} goal " f"request_id={reservation.sanitized_request_id}"
         )
         return GoalResponse.ACCEPT
+
+    def _acquire_mission_lease_callback(self, request, response):
+        result = self.mission_lease_manager.acquire(request.workflow_id)
+        response.success = result.success
+        response.lease_token = result.lease_token
+        response.message = result.message
+        if result.success:
+            self.get_logger().info(
+                f"workflow lease acquired workflow_id={request.workflow_id}"
+            )
+        else:
+            self.get_logger().warning(
+                "workflow lease rejected "
+                f"workflow_id={request.workflow_id}: {result.message}"
+            )
+        return response
+
+    def _release_mission_lease_callback(self, request, response):
+        result = self.mission_lease_manager.release(
+            request.workflow_id, request.lease_token
+        )
+        response.success = result.success
+        response.message = result.message
+        if result.success:
+            self.get_logger().info(
+                f"workflow lease released workflow_id={request.workflow_id}"
+            )
+        else:
+            self.get_logger().warning(
+                "workflow lease release rejected "
+                f"workflow_id={request.workflow_id}: {result.message}"
+            )
+        return response
 
     def _adaptive_box_grasp_goal_callback(
         self, request: ExecuteAdaptiveBoxGrasp.Goal
@@ -618,9 +664,8 @@ class MissionController(
             self.direct_sdk_adapter.close()
 
     def _release_goal(self) -> None:
+        self.mission_lease_manager.release_goal()
         with self.state_lock:
-            self.mission_reserved = False
-            self.active_mission = ""
             self.active_arm_joints_goal_handle = None
             self.active_go_ready_goal_handle = None
             self.active_box_object_pose_goal_handle = None

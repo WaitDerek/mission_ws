@@ -26,6 +26,14 @@ class ParameterDeclarationsMixin:
                 ),
                 ("execute_box_place_action_name", "/execute_box_place"),
                 ("place_box_test_action_name", "/place_box_test"),
+                (
+                    "acquire_mission_lease_service_name",
+                    "/mission/acquire_workflow_lease",
+                ),
+                (
+                    "release_mission_lease_service_name",
+                    "/mission/release_workflow_lease",
+                ),
                 # Small-box placement test taught at body joint1=-15 deg.
                 # The action requires a preceding /grasp_box_tf goal in the
                 # same controller process so the rigid box->Link7 transforms

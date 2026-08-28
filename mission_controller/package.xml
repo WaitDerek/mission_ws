@@ -3,7 +3,7 @@
 <package format="3">
   <name>mission_controller</name>
   <version>0.1.0</version>
-  <description>RealBot box-grasp and box-place mission orchestration.</description>
+  <description>RealBot box manipulation and depalletizing workflow orchestration.</description>
   <maintainer email="dekc@example.com">dekc</maintainer>
   <license>Apache-2.0</license>
 
@@ -23,6 +23,7 @@
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-paho-mqtt</exec_depend>
   <exec_depend>object_pose_ros</exec_depend>
   <exec_depend>robot_bringup</exec_depend>
   <exec_depend>realbots29</exec_depend>

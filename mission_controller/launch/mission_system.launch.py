@@ -71,9 +71,7 @@ def _validate_configuration(context):
         LaunchConfiguration("direct_motion_backend").perform(context).strip().lower()
     )
     if direct_motion_backend not in {"python_sdk", "ros_service"}:
-        raise RuntimeError(
-            "direct_motion_backend must be python_sdk or ros_service"
-        )
+        raise RuntimeError("direct_motion_backend must be python_sdk or ros_service")
     if mode == "simulation" and direct_motion_backend == "python_sdk":
         raise RuntimeError(
             "direct_motion_backend=python_sdk is only valid with mode:=hardware"
@@ -91,13 +89,9 @@ def _validate_configuration(context):
             "perception_start_delay_sec, and both delays must be valid"
         )
 
-    perception_enabled = (
-        LaunchConfiguration("enable_box_perception")
-        .perform(context)
-        .strip()
-        .lower()
-        in {"1", "true", "yes", "on"}
-    )
+    perception_enabled = LaunchConfiguration("enable_box_perception").perform(
+        context
+    ).strip().lower() in {"1", "true", "yes", "on"}
     if perception_enabled:
         required_files = {
             "box perception start script": LaunchConfiguration(
@@ -258,6 +252,7 @@ def generate_launch_description() -> LaunchDescription:
             # for users who start only the controller launch.
             "enable_global_tf": "false",
             "enable_robot_state_publisher": "false",
+            "taskflow_config_file": LaunchConfiguration("taskflow_config_file"),
         }.items(),
     )
 
@@ -272,9 +267,7 @@ def generate_launch_description() -> LaunchDescription:
         prefix=[FindExecutable(name="python3")],
         additional_env={
             "ROS_LOCALHOST_ONLY": "0",
-            "RMW_IMPLEMENTATION": LaunchConfiguration(
-                "global_tf_rmw_implementation"
-            ),
+            "RMW_IMPLEMENTATION": LaunchConfiguration("global_tf_rmw_implementation"),
             "CYCLONEDDS_URI": LaunchConfiguration("global_tf_cyclonedds_uri"),
         },
         parameters=[
@@ -343,7 +336,9 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("planning_pipeline", default_value="ompl"),
             DeclareLaunchArgument("dry_run", default_value="false"),
             DeclareLaunchArgument("enable_rviz", default_value="true"),
-            DeclareLaunchArgument("robot_ip", default_value="192.168.127.18,192.168.127.19"),
+            DeclareLaunchArgument(
+                "robot_ip", default_value="192.168.127.18,192.168.127.19"
+            ),
             DeclareLaunchArgument("robot_port", default_value="8080"),
             DeclareLaunchArgument("enable_robot_state_publisher", default_value="true"),
             DeclareLaunchArgument("enable_fk_pose_publisher", default_value="true"),
@@ -355,6 +350,17 @@ def generate_launch_description() -> LaunchDescription:
                 "mission_config_file",
                 default_value=PathJoinSubstitution(
                     [FindPackageShare("mission_controller"), "config", "mission.yaml"]
+                ),
+            ),
+            DeclareLaunchArgument(
+                "taskflow_config_file",
+                default_value=PathJoinSubstitution(
+                    [
+                        FindPackageShare("mission_controller"),
+                        "config",
+                        "mission",
+                        "taskflow.yaml",
+                    ]
                 ),
             ),
             DeclareLaunchArgument(

@@ -1,0 +1,45 @@
+execute_workflow:
+  ros__parameters:
+    workflow_action_name: /execute_workflow
+    global_observation_action_name: /depalletizing/observe
+    grasp_box_tf_action_name: /grasp_box_tf
+    execute_drag_box_grasp_tf_action_name: /execute_drag_box_grasp_tf
+    execute_box_place_action_name: /execute_box_place
+    acquire_mission_lease_service_name: /mission/acquire_workflow_lease
+    release_mission_lease_service_name: /mission/release_workflow_lease
+
+    # Minimal point-ID MQTT bridge. Mission publishes a plain ID and waits for
+    # the same ID (success) or a JSON result from the platform.
+    navigation_adapter: mqtt
+    mqtt_host: 127.0.0.1
+    mqtt_port: 1883
+    mqtt_request_topic: mission/navigation/request
+    mqtt_result_topic: mission/navigation/result
+    mqtt_client_id: ""
+    mqtt_qos: 1
+    mqtt_keepalive_sec: 60
+    mqtt_connect_timeout_sec: 10.0
+    mqtt_navigation_timeout_sec: 300.0
+
+    # Platform MQTT message -> /execute_workflow Action goal.
+    mqtt_start_enabled: true
+    mqtt_start_topic: mission/workflow/start
+    mqtt_status_topic: mission/workflow/status
+    mqtt_trigger_client_id: ""
+    mqtt_start_action_wait_timeout_sec: 5.0
+
+    global_observation_camera_side: left
+    global_observation_max_front_stacks: 2
+    global_observation_model_label: ""
+    global_observation_confidence_threshold: 0.0
+    global_observation_verify_front_stack_poses: true
+    global_observation_front_min_lateral_separation_m: 0.20
+    global_observation_front_max_depth_spread_m: 0.35
+    # Reject a complete rear row by camera depth; tune from现场标定 if needed.
+    # Zero disables only this absolute-depth gate while retaining row checks.
+    global_observation_front_max_camera_depth_m: 1.20
+    target_label: 0
+    dry_run: false
+    server_wait_timeout_sec: 10.0
+    child_result_timeout_sec: 1200.0
+    lease_service_timeout_sec: 5.0

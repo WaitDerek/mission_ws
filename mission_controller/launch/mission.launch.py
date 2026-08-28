@@ -55,6 +55,15 @@ def generate_launch_description() -> LaunchDescription:
         ],
     )
 
+    execute_workflow = Node(
+        package="mission_controller",
+        executable="execute_workflow",
+        name="execute_workflow",
+        output="screen",
+        prefix=[FindExecutable(name="python3")],
+        parameters=[LaunchConfiguration("taskflow_config_file")],
+    )
+
     global_tf = Node(
         package="mission_controller",
         executable="realbots_global_tf",
@@ -124,6 +133,17 @@ def generate_launch_description() -> LaunchDescription:
             DeclareLaunchArgument("enable_global_tf", default_value="true"),
             DeclareLaunchArgument("enable_robot_state_publisher", default_value="true"),
             DeclareLaunchArgument(
+                "taskflow_config_file",
+                default_value=PathJoinSubstitution(
+                    [
+                        FindPackageShare("mission_controller"),
+                        "config",
+                        "mission",
+                        "taskflow.yaml",
+                    ]
+                ),
+            ),
+            DeclareLaunchArgument(
                 "global_tf_config_file",
                 default_value=PathJoinSubstitution(
                     [
@@ -151,5 +171,6 @@ def generate_launch_description() -> LaunchDescription:
             robot_state_publisher,
             global_tf,
             controller,
+            execute_workflow,
         ]
     )

@@ -1,0 +1,934 @@
+# Generated from mission.yaml; edit by responsibility, not by size.
+mission_controller:
+  ros__parameters:
+    drag_box_tf_detection_arm: left
+    drag_box_tf_post_detection_left_movej_enabled: true
+    drag_box_left_arm_enabled: true
+    drag_box_left_join_mode: after_drag3
+    drag_box_left_join_motion_mode: movej_p
+    drag_box_left_join_pre_movej_enabled: true
+    drag_box_left_join_pre_movej_joint_units:
+    - -84292
+    - 27171
+    - -20170
+    - -102535
+    - -23911
+    - -9504
+    - 3760
+    drag_box_left_join_timeout_sec: 60.0
+    drag_box_left_join_velocity_percent: 10.0
+    drag_box_post_movel_enabled: true
+    drag_box_post_movel_step_drag1_left_xyz:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_post_movel_step_drag1_right_xyz:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_post_movel_step_drag2_left_xyz:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_post_movel_step_drag2_right_xyz:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_post_movel_step_drag3_left_xyz:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_post_movel_step_drag3_right_xyz:
+    - -0.14
+    - 0.0
+    - 0.0
+    execute_drag_box_grasp_action_name: /execute_drag_box_grasp
+    execute_drag_box_grasp_tf_action_name: /execute_drag_box_grasp_tf
+    drag_box_tf_box_layer_pre_detection_left_movej_joint_units_bigbox_layer1:
+    - -172278
+    - 7319
+    - 20124
+    - 51808
+    - -17856
+    - -23263
+    - -70442
+    drag_box_tf_box_layer_pre_detection_right_movej_joint_units_bigbox_layer1:
+    - 144725
+    - -5335
+    - 7032
+    - 9843
+    - 7540
+    - -5611
+    - 85414
+    drag_box_tf_box_layer_joint1_approach_angle_deg_bigbox_layer1: -13.0
+    drag_box_tf_box_layer_joint2_approach_angle_deg_bigbox_layer1: 0.0
+    drag_box_tf_box_layer_joint3_approach_angle_deg_bigbox_layer1: 0.0
+    drag_box_tf_direct_movel_left_offset_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - -0.5
+    drag_box_tf_direct_movel_right_offset_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.5
+    drag_box_tf_joint123_left_target_correction_pose_box_bigbox_layer1:
+    - 0.064762
+    - -0.049358
+    - 0.060595
+    - -0.058164
+    - -0.006476
+    - 0.081596
+    - 0.994946
+    drag_box_tf_joint123_right_target_correction_pose_box_bigbox_layer1:
+    - 0.081444
+    - -0.049338
+    - -0.020083
+    - 0.012614
+    - -0.032172
+    - 0.081927
+    - 0.996039
+    drag_box_tf_post_movel_left_step1_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.025
+    drag_box_tf_post_movel_left_step2_xyz_bigbox_layer1:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step3_xyz_bigbox_layer1:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step4_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - -0.1
+    drag_box_tf_post_movel_left_step5_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step1_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - -0.031
+    drag_box_tf_post_movel_right_step2_xyz_bigbox_layer1:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step3_xyz_bigbox_layer1:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step4_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.1
+    drag_box_tf_post_movel_right_step5_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_left_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_left_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_left_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_right_xyz_bigbox_layer1:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_right_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_right_xyz_bigbox_layer1:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_box_layer_pre_detection_left_movej_joint_units_bigbox_layer2:
+    - -161722
+    - 5480
+    - 933
+    - 104186
+    - 5631
+    - -2342
+    - -2903
+    drag_box_tf_box_layer_pre_detection_right_movej_joint_units_bigbox_layer2:
+    - 170647
+    - 3018
+    - 18744
+    - 95121
+    - -1950
+    - -8903
+    - 30524
+    drag_box_tf_box_layer_joint1_approach_angle_deg_bigbox_layer2: -45.0
+    drag_box_tf_box_layer_joint2_approach_angle_deg_bigbox_layer2: -85.0
+    drag_box_tf_box_layer_joint3_approach_angle_deg_bigbox_layer2: -55.0
+    drag_box_tf_direct_movel_left_offset_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - -0.5
+    drag_box_tf_direct_movel_right_offset_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.5
+    drag_box_tf_joint123_left_target_correction_pose_box_bigbox_layer2:
+    - 0.064762
+    - -0.049358
+    - 0.060595
+    - -0.058164
+    - -0.006476
+    - 0.081596
+    - 0.994946
+    drag_box_tf_joint123_right_target_correction_pose_box_bigbox_layer2:
+    - 0.081444
+    - -0.049338
+    - -0.020083
+    - 0.012614
+    - -0.032172
+    - 0.081927
+    - 0.996039
+    drag_box_tf_post_movel_left_step1_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.025
+    drag_box_tf_post_movel_left_step2_xyz_bigbox_layer2:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step3_xyz_bigbox_layer2:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step4_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - -0.1
+    drag_box_tf_post_movel_left_step5_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step1_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - -0.031
+    drag_box_tf_post_movel_right_step2_xyz_bigbox_layer2:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step3_xyz_bigbox_layer2:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step4_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.1
+    drag_box_tf_post_movel_right_step5_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_left_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_left_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_left_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_right_xyz_bigbox_layer2:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_right_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_right_xyz_bigbox_layer2:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_box_layer_pre_detection_left_movej_joint_units_bigbox_layer3:
+    - 18442
+    - 3544
+    - 2870
+    - -104500
+    - -2568
+    - 5250
+    - -24076
+    drag_box_tf_box_layer_pre_detection_right_movej_joint_units_bigbox_layer3:
+    - -39570
+    - 16276
+    - -17721
+    - -95245
+    - 14032
+    - -14558
+    - -23838
+    drag_box_tf_box_layer_joint1_approach_angle_deg_bigbox_layer3: -70.0
+    drag_box_tf_box_layer_joint2_approach_angle_deg_bigbox_layer3: -120.0
+    drag_box_tf_box_layer_joint3_approach_angle_deg_bigbox_layer3: -60.0
+    drag_box_tf_direct_movel_left_offset_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - -0.5
+    drag_box_tf_direct_movel_right_offset_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.5
+    drag_box_tf_joint123_left_target_correction_pose_box_bigbox_layer3:
+    - 0.064762
+    - -0.049358
+    - 0.060595
+    - -0.058164
+    - -0.006476
+    - 0.081596
+    - 0.994946
+    drag_box_tf_joint123_right_target_correction_pose_box_bigbox_layer3:
+    - 0.081444
+    - -0.049338
+    - -0.020083
+    - 0.012614
+    - -0.032172
+    - 0.081927
+    - 0.996039
+    drag_box_tf_post_movel_left_step1_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.025
+    drag_box_tf_post_movel_left_step2_xyz_bigbox_layer3:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step3_xyz_bigbox_layer3:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step4_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - -0.1
+    drag_box_tf_post_movel_left_step5_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step1_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - -0.031
+    drag_box_tf_post_movel_right_step2_xyz_bigbox_layer3:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step3_xyz_bigbox_layer3:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step4_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.1
+    drag_box_tf_post_movel_right_step5_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_left_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_left_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_left_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_right_xyz_bigbox_layer3:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_right_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_right_xyz_bigbox_layer3:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_box_layer_pre_detection_left_movej_joint_units_bigbox_layer4:
+    - -19238
+    - 3482
+    - 215
+    - -91196
+    - -2634
+    - 5268
+    - -78519
+    drag_box_tf_box_layer_pre_detection_right_movej_joint_units_bigbox_layer4:
+    - 21382
+    - -4978
+    - -274
+    - 1282
+    - -5472
+    - 3628
+    - -32636
+    drag_box_tf_box_layer_joint1_approach_angle_deg_bigbox_layer4: -89.0
+    drag_box_tf_box_layer_joint2_approach_angle_deg_bigbox_layer4: -149.0
+    drag_box_tf_box_layer_joint3_approach_angle_deg_bigbox_layer4: -85.0
+    drag_box_tf_direct_movel_left_offset_xyz_bigbox_layer4:
+    - 0.0
+    - -0.05
+    - -0.5
+    drag_box_tf_direct_movel_right_offset_xyz_bigbox_layer4:
+    - 0.0
+    - -0.05
+    - 0.5
+    drag_box_tf_joint123_left_target_correction_pose_box_bigbox_layer4:
+    - 0.064762
+    - -0.049358
+    - 0.060595
+    - -0.058164
+    - -0.006476
+    - 0.081596
+    - 0.994946
+    drag_box_tf_joint123_right_target_correction_pose_box_bigbox_layer4:
+    - 0.081444
+    - -0.049338
+    - -0.020083
+    - 0.012614
+    - -0.032172
+    - 0.081927
+    - 0.996039
+    drag_box_tf_post_movel_left_step1_xyz_bigbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.025
+    drag_box_tf_post_movel_left_step2_xyz_bigbox_layer4:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step3_xyz_bigbox_layer4:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step4_xyz_bigbox_layer4:
+    - 0.0
+    - 0.0
+    - -0.1
+    drag_box_tf_post_movel_left_step5_xyz_bigbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step1_xyz_bigbox_layer4:
+    - 0.0
+    - 0.0
+    - -0.033
+    drag_box_tf_post_movel_right_step2_xyz_bigbox_layer4:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step3_xyz_bigbox_layer4:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step4_xyz_bigbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.1
+    drag_box_tf_post_movel_right_step5_xyz_bigbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_left_xyz_bigbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_left_xyz_bigbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_left_xyz_bigbox_layer4:
+    - 0.07
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_right_xyz_bigbox_layer4:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_right_xyz_bigbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_right_xyz_bigbox_layer4:
+    - -0.07
+    - 0.0
+    - 0.0
+    drag_box_tf_box_layer_pre_detection_right_movej_joint_units_smallbox_layer1:
+    - 172102
+    - -3751
+    - 14348
+    - 95105
+    - 7730
+    - -5615
+    - 31841
+    drag_box_tf_box_layer_joint1_approach_angle_deg_smallbox_layer1: -13.0
+    drag_box_tf_box_layer_joint2_approach_angle_deg_smallbox_layer1: 0.0
+    drag_box_tf_box_layer_joint3_approach_angle_deg_smallbox_layer1: 0.0
+    drag_box_tf_direct_movel_left_offset_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - -0.5
+    drag_box_tf_direct_movel_right_offset_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.5
+    drag_box_tf_joint123_left_target_correction_pose_box_smallbox_layer1:
+    - 0.064762
+    - -0.049358
+    - 0.060595
+    - -0.058164
+    - -0.006476
+    - 0.081596
+    - 0.994946
+    drag_box_tf_joint123_right_target_correction_pose_box_smallbox_layer1:
+    - 0.081444
+    - -0.049338
+    - -0.020083
+    - 0.012614
+    - -0.032172
+    - 0.081927
+    - 0.996039
+    drag_box_tf_post_movel_left_step1_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.03
+    drag_box_tf_post_movel_left_step2_xyz_smallbox_layer1:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step3_xyz_smallbox_layer1:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step4_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - -0.1
+    drag_box_tf_post_movel_left_step5_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step1_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - -0.02
+    drag_box_tf_post_movel_right_step2_xyz_smallbox_layer1:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step3_xyz_smallbox_layer1:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step4_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.1
+    drag_box_tf_post_movel_right_step5_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_left_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_left_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_left_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_right_xyz_smallbox_layer1:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_right_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_right_xyz_smallbox_layer1:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_box_layer_pre_detection_right_movej_joint_units_smallbox_layer2:
+    - -20762
+    - 1539
+    - -12837
+    - -102889
+    - 1366
+    - -8774
+    - 3529
+    drag_box_tf_box_layer_joint1_approach_angle_deg_smallbox_layer2: -45.0
+    drag_box_tf_box_layer_joint2_approach_angle_deg_smallbox_layer2: -85.0
+    drag_box_tf_box_layer_joint3_approach_angle_deg_smallbox_layer2: -70.0
+    drag_box_tf_direct_movel_left_offset_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - -0.5
+    drag_box_tf_direct_movel_right_offset_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.5
+    drag_box_tf_joint123_left_target_correction_pose_box_smallbox_layer2:
+    - 0.064762
+    - -0.049358
+    - 0.060595
+    - -0.058164
+    - -0.006476
+    - 0.081596
+    - 0.994946
+    drag_box_tf_joint123_right_target_correction_pose_box_smallbox_layer2:
+    - 0.081444
+    - -0.049338
+    - -0.020083
+    - 0.012614
+    - -0.032172
+    - 0.081927
+    - 0.996039
+    drag_box_tf_post_movel_left_step1_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.03
+    drag_box_tf_post_movel_left_step2_xyz_smallbox_layer2:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step3_xyz_smallbox_layer2:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step4_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - -0.1
+    drag_box_tf_post_movel_left_step5_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step1_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - -0.02
+    drag_box_tf_post_movel_right_step2_xyz_smallbox_layer2:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step3_xyz_smallbox_layer2:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step4_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.1
+    drag_box_tf_post_movel_right_step5_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_left_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_left_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_left_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_right_xyz_smallbox_layer2:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_right_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_right_xyz_smallbox_layer2:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_box_layer_pre_detection_right_movej_joint_units_smallbox_layer3:
+    - 6894
+    - -3485
+    - -20092
+    - -19433
+    - 15367
+    - -7336
+    - -41454
+    drag_box_tf_box_layer_joint1_approach_angle_deg_smallbox_layer3: -70.0
+    drag_box_tf_box_layer_joint2_approach_angle_deg_smallbox_layer3: -120.0
+    drag_box_tf_box_layer_joint3_approach_angle_deg_smallbox_layer3: -73.0
+    drag_box_tf_direct_movel_left_offset_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - -0.5
+    drag_box_tf_direct_movel_right_offset_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.5
+    drag_box_tf_joint123_left_target_correction_pose_box_smallbox_layer3:
+    - 0.064762
+    - -0.049358
+    - 0.060595
+    - -0.058164
+    - -0.006476
+    - 0.081596
+    - 0.994946
+    drag_box_tf_joint123_right_target_correction_pose_box_smallbox_layer3:
+    - 0.081444
+    - -0.049338
+    - -0.020083
+    - 0.012614
+    - -0.032172
+    - 0.081927
+    - 0.996039
+    drag_box_tf_post_movel_left_step1_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.03
+    drag_box_tf_post_movel_left_step2_xyz_smallbox_layer3:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step3_xyz_smallbox_layer3:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step4_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - -0.1
+    drag_box_tf_post_movel_left_step5_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step1_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - -0.02
+    drag_box_tf_post_movel_right_step2_xyz_smallbox_layer3:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step3_xyz_smallbox_layer3:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step4_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.1
+    drag_box_tf_post_movel_right_step5_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_left_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_left_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_left_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_right_xyz_smallbox_layer3:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_right_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_right_xyz_smallbox_layer3:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_box_layer_pre_detection_right_movej_joint_units_smallbox_layer4:
+    - 2341
+    - 248
+    - -3624
+    - -16956
+    - 2290
+    - 10183
+    - -45681
+    drag_box_tf_box_layer_joint1_approach_angle_deg_smallbox_layer4: -89.0
+    drag_box_tf_box_layer_joint2_approach_angle_deg_smallbox_layer4: -149.0
+    drag_box_tf_box_layer_joint3_approach_angle_deg_smallbox_layer4: -89.0
+    drag_box_tf_direct_movel_left_offset_xyz_smallbox_layer4:
+    - 0.0
+    - -0.025
+    - -0.5
+    drag_box_tf_direct_movel_right_offset_xyz_smallbox_layer4:
+    - 0.0
+    - -0.025
+    - 0.5
+    drag_box_tf_joint123_left_target_correction_pose_box_smallbox_layer4:
+    - 0.064762
+    - -0.049358
+    - 0.060595
+    - -0.058164
+    - -0.006476
+    - 0.081596
+    - 0.994946
+    drag_box_tf_joint123_right_target_correction_pose_box_smallbox_layer4:
+    - 0.081444
+    - -0.049338
+    - -0.020083
+    - 0.012614
+    - -0.032172
+    - 0.081927
+    - 0.996039
+    drag_box_tf_post_movel_left_step1_xyz_smallbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.03
+    drag_box_tf_post_movel_left_step2_xyz_smallbox_layer4:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step3_xyz_smallbox_layer4:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_left_step4_xyz_smallbox_layer4:
+    - 0.0
+    - 0.0
+    - -0.1
+    drag_box_tf_post_movel_left_step5_xyz_smallbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step1_xyz_smallbox_layer4:
+    - 0.0
+    - 0.0
+    - -0.02
+    drag_box_tf_post_movel_right_step2_xyz_smallbox_layer4:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step3_xyz_smallbox_layer4:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_right_step4_xyz_smallbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.1
+    drag_box_tf_post_movel_right_step5_xyz_smallbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_left_xyz_smallbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_left_xyz_smallbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_left_xyz_smallbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag1_right_xyz_smallbox_layer4:
+    - 0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_post_movel_step_drag2_right_xyz_smallbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.2
+    drag_box_tf_post_movel_step_drag3_right_xyz_smallbox_layer4:
+    - -0.14
+    - 0.0
+    - 0.0
+    drag_box_tf_box_layer_post_detection_left_movej_joint_units_bigbox_layer1:
+    - -171982
+    - -204
+    - 93820
+    - 89651
+    - 4401
+    - 5999
+    - -4935
+    drag_box_tf_box_layer_post_detection_left_movej_joint_units_bigbox_layer2:
+    - -171982
+    - -204
+    - 93820
+    - 89651
+    - 4401
+    - 5999
+    - -4935
+    drag_box_tf_box_layer_post_detection_left_movej_joint_units_bigbox_layer3:
+    - -171982
+    - -204
+    - 93820
+    - 89651
+    - 4401
+    - 5999
+    - -4935
+    drag_box_tf_box_layer_post_detection_left_movej_joint_units_bigbox_layer4:
+    - -171982
+    - -204
+    - 93820
+    - 89651
+    - 4401
+    - 5999
+    - -4935
+    drag_box_tf_box_layer_post_detection_left_movej_joint_units_smallbox_layer1:
+    - -171982
+    - -204
+    - 93820
+    - 89651
+    - 4401
+    - 5999
+    - -4935
+    drag_box_tf_box_layer_post_detection_left_movej_joint_units_smallbox_layer2:
+    - -171982
+    - -204
+    - 93820
+    - 89651
+    - 4401
+    - 5999
+    - -4935
+    drag_box_tf_box_layer_post_detection_left_movej_joint_units_smallbox_layer3:
+    - -171982
+    - -204
+    - 93820
+    - 89651
+    - 4401
+    - 5999
+    - -4935
+    drag_box_tf_box_layer_post_detection_left_movej_joint_units_smallbox_layer4:
+    - -171982
+    - -204
+    - 93820
+    - 89651
+    - 4401
+    - 5999
+    - -4935

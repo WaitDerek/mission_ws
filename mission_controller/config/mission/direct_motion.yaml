@@ -1,0 +1,110 @@
+# Generated from mission.yaml; edit by responsibility, not by size.
+mission_controller:
+  ros__parameters:
+    direct_motion_backend: python_sdk
+    direct_movel_blocking: true
+    direct_movel_box_relative_model_label: bigbox
+    direct_movel_fixture_compensation_enabled: true
+    direct_movel_left_box_to_link8_orientation:
+    - 0.727393
+    - -0.011133
+    - -0.026761
+    - 0.685608
+    direct_movel_left_fixed_link8_orientation:
+    - -0.497
+    - -0.503
+    - -0.488
+    - 0.509
+    direct_movel_left_offset_xyz:
+    - 0.0
+    - 0.0
+    - -0.5
+    direct_movel_left_offset_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - -0.5
+    direct_movel_left_offset_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - -0.5
+    direct_movel_left_offset_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - -0.5
+    direct_movel_left_offset_xyz_bigbox_layer4:
+    - 0.0
+    - 0.0
+    - -0.5
+    direct_movel_left_offset_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - -0.5
+    direct_movel_left_offset_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - -0.5
+    direct_movel_left_offset_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - -0.5
+    direct_movel_left_offset_xyz_smallbox_layer4:
+    - 0.0
+    - -0.025
+    - -0.5
+    direct_movel_motion_mode: movej_p
+    direct_movel_right_box_to_link8_orientation:
+    - 0.716139
+    - -0.004665
+    - -0.021036
+    - 0.697625
+    direct_movel_right_fixed_link8_orientation:
+    - 0.482
+    - -0.463
+    - 0.522
+    - 0.528
+    direct_movel_right_offset_xyz:
+    - 0.0
+    - 0.0
+    - 0.5
+    direct_movel_right_offset_xyz_bigbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.5
+    direct_movel_right_offset_xyz_bigbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.5
+    direct_movel_right_offset_xyz_bigbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.5
+    direct_movel_right_offset_xyz_bigbox_layer4:
+    - 0.0
+    - 0.0
+    - 0.5
+    direct_movel_right_offset_xyz_smallbox_layer1:
+    - 0.0
+    - 0.0
+    - 0.5
+    direct_movel_right_offset_xyz_smallbox_layer2:
+    - 0.0
+    - 0.0
+    - 0.5
+    direct_movel_right_offset_xyz_smallbox_layer3:
+    - 0.0
+    - 0.0
+    - 0.5
+    direct_movel_right_offset_xyz_smallbox_layer4:
+    - 0.0
+    - -0.025
+    - 0.5
+    direct_movel_service_name: /realbot/movel
+    direct_movel_target_mode: camera_offset_box_orientation
+    direct_movel_use_current_fixture_orientation: false
+    direct_movel_velocity_percent: 10.0
+    direct_sdk_connect_level: 3
+    direct_sdk_left_ip: 192.168.127.18
+    direct_sdk_motion_timeout_sec: 120.0
+    direct_sdk_port: 8080
+    direct_sdk_right_ip: 192.168.127.19
+    direct_sdk_root: /rm_nvme/recordings/code/RM_API2/Demo/RMDemo_Python/RMDemo_SimpleProcess

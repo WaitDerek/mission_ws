@@ -1,0 +1,88 @@
+# Generated from mission.yaml; edit by responsibility, not by size.
+mission_controller:
+  ros__parameters:
+    box_place_release_delay_sec: 2.0
+    box_place_torso_positions:
+    - 0.61
+    - -0.81
+    - -0.6
+    - 0.0
+    box_place_torso_straighten_intermediate_positions:
+    - 0.61
+    - -1.2
+    - -0.6
+    - 0.0
+    execute_box_place_action_name: /execute_box_place
+    go_ready_action_name: /go_ready
+    go_ready_result_timeout_sec: 60.0
+    place_box_test_action_name: /place_box_test
+    place_box_test_enabled: true
+    place_box_test_box_type: smallbox
+    place_box_test_start_body_joint_units:
+    - 0
+    - 0
+    - 0
+    - 0
+    place_box_test_body_joint_units:
+    - -15000
+    - 0
+    - 0
+    - 0
+    place_box_test_left_target_pose_arm_base:
+    - -0.446381
+    - 0.569104
+    - -0.128351
+    - -0.395
+    - -0.461
+    - -0.577
+    - 0.545
+    place_box_test_right_target_pose_arm_base:
+    - -0.26007
+    - -0.611426
+    - -0.094985
+    - 0.463
+    - -0.444
+    - 0.566
+    - 0.516
+    place_box_test_segments: 6
+    place_box_test_body_velocity: 2
+    place_box_test_body_blend_radius: 5
+    place_box_test_arm_blend_radius: 5
+    place_box_test_left_movel_velocity_percent: 3.0
+    place_box_test_right_movel_velocity_percent: 3.0
+    place_box_test_final_correction_enabled: true
+    place_box_test_final_correction_velocity_percent: 3.0
+    place_box_test_timeout_sec: 180.0
+    place_box_test_start_body_tolerance_rad: 0.035
+    place_box_test_position_tolerance_m: 0.015
+    place_box_test_orientation_tolerance_rad: 0.1
+    place_box_test_stable_samples: 3
+    place_box_test_target_consistency_position_tolerance_m: 0.05
+    place_box_test_target_consistency_orientation_tolerance_rad: 0.35
+    place_box_test_body_stop_enabled: true
+    place_box_test_body_stop_command: stop
+    gripper_closed_position: 0.0
+    gripper_open_position: 100.0
+    gripper_settle_sec: 1.0
+    left_gripper_feedback_topic: /realbot/feedback/gripper_left
+    left_gripper_frame: left_arm_8_Link
+    left_gripper_topic: /realbot/motion_target/gripper_left
+    right_gripper_feedback_topic: /realbot/feedback/gripper_right
+    right_gripper_frame: right_arm_8_Link
+    right_gripper_topic: /realbot/motion_target/gripper_right
+    torso_feedback_topic: /realbot/feedback/torso
+    torso_reset_positions:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    torso_settle_sec: 1.0
+    torso_target_stable_samples: 3
+    torso_target_tolerance: 0.03
+    torso_target_wait_timeout_sec: 40.0
+    torso_topic: /realbot/motion_target/torso
+    torso_velocities:
+    - 0.1
+    - 0.1
+    - 0.1
+    - 0.1

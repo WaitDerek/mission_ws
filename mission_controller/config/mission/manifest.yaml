@@ -1,0 +1,12 @@
+# Mission fragment composition contract (not a ROS parameter file).
+fragment_order:
+- core.yaml
+- camera.yaml
+- adaptive.yaml
+- direct_motion.yaml
+- box_common.yaml
+- grasp_tf.yaml
+- drag.yaml
+- placement.yaml
+parameter_count: 779
+semantic_sha256: 8d041452ea7a7a35054ad957109c600897d6612b6ca8351b2cb7663389b94701

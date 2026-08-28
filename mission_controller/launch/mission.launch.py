@@ -16,14 +16,26 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description() -> LaunchDescription:
     config_file = LaunchConfiguration("config_file")
-    require_command_subscribers = LaunchConfiguration(
-        "require_command_subscribers"
+    fragment_names = (
+        "core.yaml",
+        "camera.yaml",
+        "adaptive.yaml",
+        "direct_motion.yaml",
+        "box_common.yaml",
+        "grasp_tf.yaml",
+        "drag.yaml",
+        "placement.yaml",
     )
+    mission_fragments = [
+        PathJoinSubstitution(
+            [FindPackageShare("mission_controller"), "config", "mission", name]
+        )
+        for name in fragment_names
+    ]
+    require_command_subscribers = LaunchConfiguration("require_command_subscribers")
     direct_motion_backend = LaunchConfiguration("direct_motion_backend")
     enable_global_tf = LaunchConfiguration("enable_global_tf")
-    enable_robot_state_publisher = LaunchConfiguration(
-        "enable_robot_state_publisher"
-    )
+    enable_robot_state_publisher = LaunchConfiguration("enable_robot_state_publisher")
 
     controller = Node(
         package="mission_controller",
@@ -32,6 +44,7 @@ def generate_launch_description() -> LaunchDescription:
         output="screen",
         prefix=[FindExecutable(name="python3")],
         parameters=[
+            *mission_fragments,
             config_file,
             {
                 "require_command_subscribers": ParameterValue(
@@ -51,9 +64,7 @@ def generate_launch_description() -> LaunchDescription:
         prefix=[FindExecutable(name="python3")],
         additional_env={
             "ROS_LOCALHOST_ONLY": "0",
-            "RMW_IMPLEMENTATION": LaunchConfiguration(
-                "global_tf_rmw_implementation"
-            ),
+            "RMW_IMPLEMENTATION": LaunchConfiguration("global_tf_rmw_implementation"),
             "CYCLONEDDS_URI": LaunchConfiguration("global_tf_cyclonedds_uri"),
         },
         parameters=[
@@ -111,9 +122,7 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="python_sdk",
             ),
             DeclareLaunchArgument("enable_global_tf", default_value="true"),
-            DeclareLaunchArgument(
-                "enable_robot_state_publisher", default_value="true"
-            ),
+            DeclareLaunchArgument("enable_robot_state_publisher", default_value="true"),
             DeclareLaunchArgument(
                 "global_tf_config_file",
                 default_value=PathJoinSubstitution(

@@ -1,0 +1,67 @@
+# Generated from mission.yaml; edit by responsibility, not by size.
+mission_controller:
+  ros__parameters:
+    camera_detection_arm: right
+    camera_dynamic_link8_extrinsics_enabled: true
+    camera_eepose_max_age_sec: 1.0
+    camera_fixed_cross_arm_transform_enabled: true
+    camera_left_base_rpy:
+    - 0.0
+    - 1.5707963267948966
+    - 1.5707963267948966
+    camera_left_base_xyz:
+    - 0.045
+    - 0.08
+    - -0.05
+    camera_left_link8_to_rgb_camera_quaternion_xyzw:
+    - 0.15304593219
+    - -0.15304593219
+    - -0.690345524096
+    - 0.690345524097
+    camera_left_link8_to_rgb_camera_xyz:
+    - 0.097294396234
+    - 0.000243365421
+    - 0.053076686984
+    camera_measured_extrinsics_enabled: true
+    camera_mount_child_frame: realbot_camera_link
+    camera_mount_correction_rpy:
+    - 0.0
+    - 0.0
+    - 0.0
+    camera_mount_parent_frame: right_arm_8_Link
+    camera_mount_rpy:
+    - -1.5707963267948966
+    - -1.5707963267948966
+    - 0.0
+    camera_mount_tf_enabled: false
+    camera_mount_xyz:
+    - 0.0
+    - 0.0
+    - 0.0
+    camera_right_base_rpy:
+    - 0.0
+    - -1.5707963267948966
+    - 1.5707963267948966
+    camera_right_base_to_left_base_quaternion_xyzw:
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
+    camera_right_base_to_left_base_xyz:
+    - 0.024
+    - 0.0
+    - 0.0
+    camera_right_base_xyz:
+    - 0.045
+    - -0.08
+    - -0.08
+    camera_right_link8_to_rgb_camera_quaternion_xyzw:
+    - -0.152364
+    - -0.111601
+    - 0.682613
+    - 0.705953
+    camera_right_link8_to_rgb_camera_xyz:
+    - 0.096527
+    - -0.016012
+    - 0.046146
+    camera_tf_timeout_sec: 2.0

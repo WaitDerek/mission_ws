@@ -1,0 +1,52 @@
+# Generated from mission.yaml; edit by responsibility, not by size.
+mission_controller:
+  ros__parameters:
+    arm_execution_frame: base_link
+    arm_joint_target_stable_samples: 3
+    arm_joint_target_tolerance: 0.1
+    arm_joint_target_wait_timeout_sec: 20.0
+    arm_joints_result_timeout_sec: 60.0
+    arm_joints_service_name: /move_arm_j
+    arm_settle_sec: 1.0
+    command_repeat_count: 10
+    command_repeat_interval_sec: 0.005
+    command_subscriber_wait_timeout_sec: 3.0
+    dependency_wait_timeout_sec: 10.0
+    execute_box_grasp_action_name: /execute_box_grasp
+    joint_state_topic: /joint_states
+    left_arm_base_frame: L_base_Link
+    left_arm_joint_names:
+    - L_JOINT_1
+    - L_JOINT_2
+    - L_JOINT_3
+    - L_JOINT_4
+    - L_JOINT_5
+    - L_JOINT_6
+    - L_JOINT_7
+    left_ee_frame: left_arm_8_Link
+    left_fixture_center_in_link8_xyz:
+    - -0.12
+    - -0.08
+    - 0.05
+    left_link8_frame: left_arm_8_Link
+    pickup_task_action_name: /pickup_task
+    pickup_task_result_timeout_sec: 120.0
+    require_command_subscribers: false
+    right_arm_base_frame: R_base_Link
+    right_arm_joint_names:
+    - R_JOINT_1
+    - R_JOINT_2
+    - R_JOINT_3
+    - R_JOINT_4
+    - R_JOINT_5
+    - R_JOINT_6
+    - R_JOINT_7
+    right_ee_frame: right_arm_8_Link
+    right_fixture_center_in_link8_xyz:
+    - -0.12
+    - 0.08
+    - 0.05
+    right_link8_frame: right_arm_8_Link
+    use_sim_time: false
+    verify_arm_joint_targets: true
+    wait_for_command_subscribers: false

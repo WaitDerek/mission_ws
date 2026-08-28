@@ -1,8 +1,19 @@
 from glob import glob
+from pathlib import Path
 from setuptools import find_packages, setup
 
 
 package_name = "mission_controller"
+
+
+def _install_tree(root: str, pattern: str) -> list[tuple[str, list[str]]]:
+    grouped: dict[str, list[str]] = {}
+    for filename in glob(f"{root}/**/{pattern}", recursive=True):
+        relative_parent = Path(filename).parent
+        destination = Path("share") / package_name / relative_parent
+        grouped.setdefault(str(destination), []).append(filename)
+    return [(destination, sorted(files)) for destination, files in grouped.items()]
+
 
 setup(
     name=package_name,
@@ -11,7 +22,7 @@ setup(
     data_files=[
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
-        (f"share/{package_name}/config", glob("config/*.yaml")),
+        *_install_tree("config", "*.yaml"),
         (f"share/{package_name}/launch", glob("launch/*.launch.py")),
     ],
     install_requires=["setuptools"],

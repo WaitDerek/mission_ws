@@ -1,7 +1,7 @@
 import math
 from pathlib import Path
 
-from mission_runtime.global_tf_publisher import (
+from mission_runtime.global_tf_kinematics import (
     RigidTransform,
     UrdfKinematics,
     compatibility_arm_base_transforms,
@@ -23,9 +23,7 @@ def test_realbots_urdf_contains_the_requested_camera_chain():
         "left_binocular_left_camera_Link",
         "right_binocular_left_camera_Link",
     ):
-        transform = model.transform_from_root(
-            "base_footprint", endpoint, zero_pose
-        )
+        transform = model.transform_from_root("base_footprint", endpoint, zero_pose)
 
         assert all(math.isfinite(value) for value in transform.translation)
         assert math.sqrt(sum(value * value for value in transform.translation)) > 0.1
@@ -61,12 +59,8 @@ def test_compatibility_arm_base_transforms_follow_live_waist_state():
     source_root = Path(__file__).resolve().parents[2]
     urdf = source_root / "realbots2" / "urdf" / "realbots29.urdf"
     model = UrdfKinematics(str(urdf))
-    left_chest_to_base = RigidTransform(
-        (0.012, 0.0, -0.2975), (0.0, 1.0, 0.0, 0.0)
-    )
-    right_chest_to_base = RigidTransform(
-        (-0.012, 0.0, -0.2975), (1.0, 0.0, 0.0, 0.0)
-    )
+    left_chest_to_base = RigidTransform((0.012, 0.0, -0.2975), (0.0, 1.0, 0.0, 0.0))
+    right_chest_to_base = RigidTransform((-0.012, 0.0, -0.2975), (1.0, 0.0, 0.0, 0.0))
     zero = {
         "waist_1_joint": 0.0,
         "waist_2_joint": 0.0,
@@ -91,9 +85,11 @@ def test_compatibility_arm_base_transforms_follow_live_waist_state():
         left_chest_to_base,
         right_chest_to_base,
     )
-    assert max(
-        abs(a - b) for a, b in zip(zero_left.translation, moved_left.translation)
-    ) > 1.0e-3
-    assert max(
-        abs(a - b) for a, b in zip(zero_right.translation, moved_right.translation)
-    ) > 1.0e-3
+    assert (
+        max(abs(a - b) for a, b in zip(zero_left.translation, moved_left.translation))
+        > 1.0e-3
+    )
+    assert (
+        max(abs(a - b) for a, b in zip(zero_right.translation, moved_right.translation))
+        > 1.0e-3
+    )

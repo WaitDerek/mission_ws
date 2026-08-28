@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="800" viewBox="0 0 1600 800">
+  <defs>
+    <marker id="arrow-dark" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#334155"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#7c3aed"/>
+    </marker>
+    <style>
+      .page-title { font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-weight:800; font-size:30px; fill:#0f172a; text-anchor:middle; }
+      .panel { fill:#f8fafc; stroke:#cbd5e1; stroke-width:2.5; rx:20; }
+      .panel-title { font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-weight:800; font-size:27px; fill:#0f172a; text-anchor:middle; }
+      .subtitle { font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-weight:600; font-size:18px; fill:#475569; text-anchor:middle; }
+      .pallet { fill:#dbeafe; stroke:#475569; stroke-width:3; rx:10; }
+      .box { fill:#f59e0b; stroke:#92400e; stroke-width:2.5; rx:8; }
+      .grid { stroke:#94a3b8; stroke-width:1.6; stroke-dasharray:7 6; }
+      .observation { fill:#1e293b; stroke:#0f172a; stroke-width:2.5; }
+      .operation { fill:#0f766e; stroke:#134e4a; stroke-width:2.2; }
+      .operation-inactive { fill:#94a3b8; stroke:#64748b; stroke-width:2.2; }
+      .placement { fill:#7c3aed; stroke:#4c1d95; stroke-width:3; }
+      .number { font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-weight:800; font-size:24px; fill:#ffffff; text-anchor:middle; dominant-baseline:middle; }
+      .op-number { font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-weight:800; font-size:17px; fill:#ffffff; text-anchor:middle; dominant-baseline:middle; }
+      .label { font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-weight:700; font-size:18px; fill:#334155; text-anchor:middle; }
+      .small { font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-weight:600; font-size:16px; fill:#64748b; text-anchor:middle; }
+      .rule { font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-weight:700; font-size:18px; fill:#0f172a; }
+      .view { stroke:#334155; stroke-width:3; marker-end:url(#arrow-dark); }
+      .association { stroke:#0f766e; stroke-width:2; stroke-dasharray:5 4; }
+      .association-inactive { stroke:#94a3b8; stroke-width:2; stroke-dasharray:5 4; }
+      .place-flow { stroke:#7c3aed; stroke-width:4; stroke-dasharray:10 7; marker-end:url(#arrow-purple); fill:none; }
+      .long-edge { stroke:#dc2626; stroke-width:5; stroke-linecap:round; }
+      .short-edge { stroke:#2563eb; stroke-width:5; stroke-linecap:round; }
+      .long-label { font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-weight:800; font-size:17px; fill:#dc2626; text-anchor:middle; }
+      .short-label { font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-weight:800; font-size:17px; fill:#2563eb; text-anchor:middle; }
+      .place-zone { fill:#f5f3ff; stroke:#8b5cf6; stroke-width:2.5; stroke-dasharray:9 6; rx:18; }
+      .callout { fill:#ffffff; stroke:#cbd5e1; stroke-width:1.8; rx:12; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="800" fill="#ffffff"/>
+  <rect class="panel" x="30" y="30" width="455" height="740"/>
+  <rect class="panel" x="515" y="30" width="1055" height="740"/>
+
+  <!-- Left: one possible pallet arrangement, fully numbered -->
+  <text class="panel-title" x="258" y="78">一种可能的栈板情况</text>
+  <text class="subtitle" x="258" y="108">示例：2×2 料箱，长边横向</text>
+
+  <rect class="pallet" x="110" y="225" width="300" height="300"/>
+  <line class="grid" x1="260" y1="225" x2="260" y2="525"/>
+  <line class="grid" x1="110" y1="375" x2="410" y2="375"/>
+  <rect class="box" x="125" y="250" width="125" height="85"/>
+  <rect class="box" x="270" y="250" width="125" height="85"/>
+  <rect class="box" x="125" y="415" width="125" height="85"/>
+  <rect class="box" x="270" y="415" width="125" height="85"/>
+
+  <circle class="observation" cx="260" cy="142" r="27"/><text class="number" x="260" y="143">1</text>
+  <circle class="observation" cx="458" cy="375" r="27"/><text class="number" x="458" y="376">2</text>
+  <circle class="observation" cx="260" cy="650" r="27"/><text class="number" x="260" y="651">3</text>
+  <circle class="observation" cx="62" cy="375" r="27"/><text class="number" x="62" y="376">4</text>
+  <line class="view" x1="260" y1="171" x2="260" y2="213"/>
+  <line class="view" x1="429" y1="375" x2="418" y2="375"/>
+  <line class="view" x1="260" y1="621" x2="260" y2="537"/>
+  <line class="view" x1="91" y1="375" x2="102" y2="375"/>
+
+  <!-- Clockwise physical numbering. From every observation pose, the visible
+       right stack is odd/drag and the visible left stack is even/direct. -->
+  <circle class="operation" cx="187" cy="200" r="18"/><text class="op-number" x="187" y="201">5</text>
+  <circle class="operation" cx="333" cy="200" r="18"/><text class="op-number" x="333" y="201">6</text>
+  <circle class="operation-inactive" cx="430" cy="292" r="18"/><text class="op-number" x="430" y="293">7</text>
+  <circle class="operation-inactive" cx="430" cy="458" r="18"/><text class="op-number" x="430" y="459">8</text>
+  <circle class="operation" cx="187" cy="550" r="18"/><text class="op-number" x="187" y="551">10</text>
+  <circle class="operation" cx="333" cy="550" r="18"/><text class="op-number" x="333" y="551">9</text>
+  <circle class="operation-inactive" cx="90" cy="292" r="18"/><text class="op-number" x="90" y="293">12</text>
+  <circle class="operation-inactive" cx="90" cy="458" r="18"/><text class="op-number" x="90" y="459">11</text>
+
+  <line class="association" x1="187" y1="220" x2="187" y2="248"/>
+  <line class="association" x1="333" y1="220" x2="333" y2="248"/>
+  <line class="association-inactive" x1="412" y1="292" x2="397" y2="292"/>
+  <line class="association-inactive" x1="412" y1="458" x2="397" y2="458"/>
+  <line class="association" x1="187" y1="532" x2="187" y2="502"/>
+  <line class="association" x1="333" y1="532" x2="333" y2="502"/>
+  <line class="association-inactive" x1="108" y1="292" x2="123" y2="292"/>
+  <line class="association-inactive" x1="108" y1="458" x2="123" y2="458"/>
+  <line class="long-edge" x1="130" y1="343" x2="245" y2="343"/>
+  <text class="long-label" x="187" y="366">长边</text>
+  <text class="small" x="258" y="710">本朝向只在长边侧 1/3 操作：5、6、9、10</text>
+  <text class="small" x="258" y="738">灰色 2/4 侧为短边，本朝向不执行</text>
+
+  <!-- Right: complete field map -->
+  <text class="panel-title" x="1042" y="78">拆垛任务场地图（点位 ID）</text>
+  <text class="subtitle" x="1042" y="108">中间为栈板；外围为观测、操作和固定放置位置</text>
+
+  <!-- Central pallet -->
+  <rect class="pallet" x="770" y="235" width="360" height="360"/>
+  <line class="grid" x1="950" y1="235" x2="950" y2="595"/>
+  <line class="grid" x1="770" y1="415" x2="1130" y2="415"/>
+  <rect class="box" x="815" y="250" width="95" height="150"/>
+  <rect class="box" x="990" y="250" width="95" height="150"/>
+  <rect class="box" x="815" y="430" width="95" height="150"/>
+  <rect class="box" x="990" y="430" width="95" height="150"/>
+  <text class="label" x="950" y="425">2×2 栈板区域</text>
+
+  <!-- Highlight one representative box edge orientation -->
+  <line class="long-edge" x1="803" y1="255" x2="803" y2="395"/>
+  <line x1="795" y1="255" x2="811" y2="255" stroke="#dc2626" stroke-width="3"/>
+  <line x1="795" y1="395" x2="811" y2="395" stroke="#dc2626" stroke-width="3"/>
+  <text class="long-label" x="787" y="325" transform="rotate(-90 787 325)">长边</text>
+  <line class="short-edge" x1="825" y1="275" x2="900" y2="275"/>
+  <line x1="825" y1="267" x2="825" y2="283" stroke="#2563eb" stroke-width="3"/>
+  <line x1="900" y1="267" x2="900" y2="283" stroke="#2563eb" stroke-width="3"/>
+  <text class="short-label" x="862" y="302">短边</text>
+
+  <!-- Observation points and view directions -->
+  <circle class="observation" cx="950" cy="145" r="27"/><text class="number" x="950" y="146">1</text>
+  <circle class="observation" cx="1218" cy="415" r="27"/><text class="number" x="1218" y="416">2</text>
+  <circle class="observation" cx="950" cy="685" r="27"/><text class="number" x="950" y="686">3</text>
+  <circle class="observation" cx="682" cy="415" r="27"/><text class="number" x="682" y="416">4</text>
+  <line class="view" x1="950" y1="174" x2="950" y2="222"/>
+  <line class="view" x1="1189" y1="415" x2="1143" y2="415"/>
+  <line class="view" x1="950" y1="656" x2="950" y2="608"/>
+  <line class="view" x1="711" y1="415" x2="757" y2="415"/>
+
+  <!-- Operation pairs for each observation side -->
+  <circle class="operation-inactive" cx="858" cy="205" r="19"/><text class="op-number" x="858" y="206">5</text>
+  <circle class="operation-inactive" cx="1042" cy="205" r="19"/><text class="op-number" x="1042" y="206">6</text>
+  <circle class="operation" cx="1160" cy="323" r="19"/><text class="op-number" x="1160" y="324">7</text>
+  <circle class="operation" cx="1160" cy="507" r="19"/><text class="op-number" x="1160" y="508">8</text>
+  <circle class="operation-inactive" cx="858" cy="625" r="19"/><text class="op-number" x="858" y="626">10</text>
+  <circle class="operation-inactive" cx="1042" cy="625" r="19"/><text class="op-number" x="1042" y="626">9</text>
+  <circle class="operation" cx="740" cy="323" r="19"/><text class="op-number" x="740" y="324">12</text>
+  <circle class="operation" cx="740" cy="507" r="19"/><text class="op-number" x="740" y="508">11</text>
+
+  <line class="association-inactive" x1="858" y1="225" x2="858" y2="248"/>
+  <line class="association-inactive" x1="1042" y1="225" x2="1042" y2="248"/>
+  <line class="association" x1="1141" y1="323" x2="1087" y2="323"/>
+  <line class="association" x1="1141" y1="507" x2="1087" y2="507"/>
+  <line class="association-inactive" x1="858" y1="606" x2="858" y2="582"/>
+  <line class="association-inactive" x1="1042" y1="606" x2="1042" y2="582"/>
+  <line class="association" x1="759" y1="323" x2="813" y2="323"/>
+  <line class="association" x1="759" y1="507" x2="813" y2="507"/>
+
+  <!-- Fixed place area -->
+  <rect class="place-zone" x="1295" y="255" width="225" height="320"/>
+  <text class="panel-title" x="1408" y="305">固定放置区</text>
+  <rect x="1340" y="360" width="135" height="100" rx="10" fill="#ddd6fe" stroke="#6d28d9" stroke-width="3"/>
+  <line x1="1355" y1="392" x2="1460" y2="392" stroke="#8b5cf6" stroke-width="2"/>
+  <line x1="1355" y1="428" x2="1460" y2="428" stroke="#8b5cf6" stroke-width="2"/>
+  <circle class="placement" cx="1408" cy="410" r="34"/><text class="number" x="1408" y="411">16</text>
+  <text class="label" x="1408" y="505">固定点、固定高度</text>
+  <text class="small" x="1408" y="535">所有箱子统一在此放置</text>
+  <path class="place-flow" d="M1142 590 C1220 630, 1280 590, 1328 520"/>
+
+  <!-- Rules and legend -->
+  <rect class="callout" x="530" y="615" width="290" height="120"/>
+  <text class="rule" x="570" y="652">观测流程：</text>
+  <text class="rule" x="570" y="682">1 有计划 → 3</text>
+  <text class="rule" x="570" y="712">1 无计划 → 2；2 有计划 → 4</text>
+
+  <circle class="observation" cx="1215" cy="655" r="15"/><text class="op-number" x="1215" y="656">1</text>
+  <text class="small" x="1265" y="662">观测点</text>
+  <circle class="operation" cx="1335" cy="655" r="15"/><text class="op-number" x="1335" y="656">7</text>
+  <text class="small" x="1400" y="662">长边操作点</text>
+  <circle class="placement" cx="1490" cy="655" r="15"/><text class="op-number" x="1490" y="656">16</text>
+  <text class="small" x="1535" y="662">放置</text>
+
+  <text class="small" x="1370" y="705">面向栈板：视野左摞偶数＝直接抱</text>
+  <text class="small" x="1370" y="735">视野右摞奇数＝抽拉；只操作长边</text>
+</svg>

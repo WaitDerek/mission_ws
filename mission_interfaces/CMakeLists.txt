@@ -12,8 +12,10 @@ find_package(rosidl_default_generators REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ExecuteAdaptiveBoxGrasp.action"
   "action/ExecuteBoxGrasp.action"
-  "action/ExecuteDragBoxGrasp.action"
   "action/ExecuteBoxPlace.action"
+  "action/ExecuteDragBoxGrasp.action"
+  "action/MoveBaseDistance.action"
+  "action/PlaceBoxTest.action"
   DEPENDENCIES geometry_msgs
 )
 

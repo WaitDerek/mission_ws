@@ -9,6 +9,7 @@ from mission_interfaces.action import (
     ExecuteBoxGrasp,
     ExecuteBoxPlace,
     ExecuteDragBoxGrasp,
+    PlaceBoxTest,
 )
 try:
     from object_pose_interfaces.action import EstimateObjectPose
@@ -151,6 +152,9 @@ class MissionController(
         self.latest_slave_arm_pose_sequences = {"left": 0, "right": 0}
         self.latest_slave_arm_pose_frames = {"left": "", "right": ""}
         self._last_grasp_box_tf_box_pose = None
+        self._last_grasp_box_tf_box_to_link7_targets = None
+        self._last_tf_body_home_carry_completed = False
+        self._last_tf_body_home_carry_arm_targets = None
         self.joint_state_subscription = self.create_subscription(
             JointState,
             self._string("joint_state_topic"),
@@ -338,6 +342,15 @@ class MissionController(
             cancel_callback=self._cancel_callback,
             callback_group=self.server_group,
         )
+        self.place_box_test_action_server = ActionServer(
+            self,
+            PlaceBoxTest,
+            self._string("place_box_test_action_name"),
+            execute_callback=self._execute_place_box_test,
+            goal_callback=self._place_box_test_goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=self.server_group,
+        )
         self.get_logger().info(
             "mission controller ready: "
             f"adaptive_box_grasp="
@@ -347,7 +360,8 @@ class MissionController(
             f"drag_box_grasp={self._string('execute_drag_box_grasp_action_name')} "
             f"drag_box_grasp_tf="
             f"{self._string('execute_drag_box_grasp_tf_action_name')} "
-            f"box_place={self._string('execute_box_place_action_name')}"
+            f"box_place={self._string('execute_box_place_action_name')} "
+            f"place_box_test={self._string('place_box_test_action_name')}"
         )
 
     def _declare_parameters(self) -> None:
@@ -369,6 +383,62 @@ class MissionController(
                     "/execute_drag_box_grasp_tf",
                 ),
                 ("execute_box_place_action_name", "/execute_box_place"),
+                ("place_box_test_action_name", "/place_box_test"),
+                # Small-box placement test taught at body joint1=-15 deg.
+                # The action requires a preceding /grasp_box_tf goal in the
+                # same controller process so the rigid box->Link7 transforms
+                # remain available after mobile-base transport.
+                ("place_box_test_enabled", True),
+                ("place_box_test_box_type", "smallbox"),
+                ("place_box_test_start_body_joint_units", [0, 0, 0, 0]),
+                ("place_box_test_body_joint_units", [-15000, 0, 0, 0]),
+                (
+                    "place_box_test_left_target_pose_arm_base",
+                    [
+                        -0.446381,
+                        0.569104,
+                        -0.128351,
+                        -0.395,
+                        -0.461,
+                        -0.577,
+                        0.545,
+                    ],
+                ),
+                (
+                    "place_box_test_right_target_pose_arm_base",
+                    [
+                        -0.260070,
+                        -0.611426,
+                        -0.094985,
+                        0.463,
+                        -0.444,
+                        0.566,
+                        0.516,
+                    ],
+                ),
+                ("place_box_test_segments", 6),
+                ("place_box_test_body_velocity", 2),
+                ("place_box_test_body_blend_radius", 5),
+                ("place_box_test_arm_blend_radius", 5),
+                ("place_box_test_left_movel_velocity_percent", 3.0),
+                ("place_box_test_right_movel_velocity_percent", 3.0),
+                ("place_box_test_final_correction_enabled", True),
+                ("place_box_test_final_correction_velocity_percent", 3.0),
+                ("place_box_test_timeout_sec", 180.0),
+                ("place_box_test_start_body_tolerance_rad", 0.035),
+                ("place_box_test_position_tolerance_m", 0.015),
+                ("place_box_test_orientation_tolerance_rad", 0.10),
+                ("place_box_test_stable_samples", 3),
+                (
+                    "place_box_test_target_consistency_position_tolerance_m",
+                    0.05,
+                ),
+                (
+                    "place_box_test_target_consistency_orientation_tolerance_rad",
+                    0.35,
+                ),
+                ("place_box_test_body_stop_enabled", True),
+                ("place_box_test_body_stop_command", "stop"),
                 ("adaptive_box_action_enabled", True),
                 ("adaptive_freeze_frame", "base_link"),
                 ("adaptive_require_detection_timestamp", True),
@@ -382,6 +452,48 @@ class MissionController(
                 ("grasp_box_tf_detection_tf_timeout_sec", 5.0),
                 ("grasp_box_tf_runtime_tf_timeout_sec", 5.0),
                 ("grasp_box_tf_require_detection_timestamp", True),
+                ("grasp_box_tf_detection_arm", "right"),
+                ("drag_box_tf_detection_arm", "left"),
+                # After a left-camera DragBox TF detection, move that arm to
+                # its configured safe/standby joint pose before pickup
+                # planning.  The target is independent for model and layer.
+                ("drag_box_tf_post_detection_left_movej_enabled", True),
+                # Optional post-Step2 carry controller for /grasp_box_tf.
+                # The waist uses MoveJ while both arms receive synchronized,
+                # segmented SDK MoveL endpoints.  Box translation follows the
+                # common chest frame, while its base_link orientation and both
+                # box->controller-TCP transforms remain fixed.
+                ("grasp_box_tf_body_home_carry_enabled", False),
+                ("grasp_box_tf_body_home_carry_carrier_frame", "chest_Link"),
+                ("grasp_box_tf_body_home_carry_joint_units", [0, 0, 0, 0]),
+                ("grasp_box_tf_body_home_carry_segments", 6),
+                ("grasp_box_tf_body_home_carry_continuous_enabled", False),
+                ("grasp_box_tf_body_home_carry_body_velocity", 2),
+                ("grasp_box_tf_body_home_carry_body_blend_radius", 0),
+                ("grasp_box_tf_body_home_carry_arm_blend_radius", 5),
+                (
+                    "grasp_box_tf_body_home_carry_left_movel_velocity_percent",
+                    3.0,
+                ),
+                (
+                    "grasp_box_tf_body_home_carry_right_movel_velocity_percent",
+                    3.0,
+                ),
+                ("grasp_box_tf_body_home_carry_timeout_sec", 180.0),
+                ("grasp_box_tf_body_home_carry_tf_timeout_sec", 5.0),
+                ("grasp_box_tf_body_home_carry_position_tolerance_m", 0.01),
+                (
+                    "grasp_box_tf_body_home_carry_orientation_tolerance_rad",
+                    0.0872665,
+                ),
+                ("grasp_box_tf_body_home_carry_stable_samples", 3),
+                ("grasp_box_tf_body_home_carry_final_correction_enabled", True),
+                (
+                    "grasp_box_tf_body_home_carry_final_correction_velocity_percent",
+                    3.0,
+                ),
+                ("grasp_box_tf_body_home_carry_body_stop_enabled", True),
+                ("grasp_box_tf_body_home_carry_body_stop_command", "stop"),
                 # Canonical object axes after pose normalization are X=down,
                 # Y=forward, Z=right. Grasp from the two object-Z side faces.
                 ("adaptive_grasp_span_axis_object", [0.0, 0.0, 1.0]),
@@ -405,8 +517,9 @@ class MissionController(
                 ("box_mission_enabled", True),
                 (
                     "box_object_pose_action_name",
-                    "/object_pose/estimate_right",
+                    "/object_pose/estimate",
                 ),
+                ("box_object_pose_camera_side", "right"),
                 ("box_object_pose_topic", "/mission/box_object_pose"),
                 ("box_object_pose_camera_topic", "/object_pose/pose"),
                 ("box_object_pose_raw_topic", "/mission/box_object_pose_raw"),
@@ -653,6 +766,54 @@ class MissionController(
                 ("box_pre_detection_right_movej_velocity_tolerance_rad_sec", 0.01),
                 ("box_pre_detection_right_movej_feedback_max_age_sec", 1.0),
                 ("box_pre_detection_right_movej_stable_samples", 3),
+                # Left-camera counterpart. Defaults mirror the current right
+                # table until each left observation pose is calibrated.
+                ("box_pre_detection_left_movej_enabled", True),
+                ("box_pre_detection_left_movej_device", 0),
+                (
+                    "box_pre_detection_left_movej_joint_units",
+                    [144725, -5335, 7032, 9843, 7540, -5611, 85414],
+                ),
+                (
+                    "box_layer_pre_detection_left_movej_joint_units",
+                    [
+                        144725, -5335, 7032, 9843, 7540, -5611, 85414,
+                        -12083, 5105, -17961, -50575, 9150, -5641, -66298,
+                        23227, 13389, -62736, -51630, 44662, -12958, -22269,
+                        21382, -4978, -274, 1282, -5472, 3628, -32636,
+                    ],
+                ),
+                (
+                    "box_layer_pre_detection_left_movej_joint_units_bigbox",
+                    [
+                        144725, -5335, 7032, 9843, 7540, -5611, 85414,
+                        -12083, 5105, -17961, -50575, 9150, -5641, -66298,
+                        23227, 13389, -62736, -51630, 44662, -12958, -22269,
+                        21382, -4978, -274, 1282, -5472, 3628, -32636,
+                    ],
+                ),
+                (
+                    "box_layer_pre_detection_left_movej_joint_units_smallbox",
+                    [
+                        144725, -5335, 7032, 9843, 7540, -5611, 85414,
+                        -12083, 5105, -17961, -50575, 9150, -5641, -66298,
+                        23227, 13389, -62736, -51630, 44662, -12958, -22269,
+                        1538, 252, 146, -25260, -8872, 92, -23259,
+                    ],
+                ),
+                (
+                    "box_layer_pre_detection_left_movej_configured",
+                    [True, True, True, True],
+                ),
+                ("box_pre_detection_left_movej_command_units_per_degree", 1000.0),
+                ("box_pre_detection_left_movej_velocity", 10),
+                ("box_pre_detection_left_movej_blend_radius", 0),
+                ("box_pre_detection_left_movej_trajectory_connect", 0),
+                ("box_pre_detection_left_movej_timeout_sec", 40.0),
+                ("box_pre_detection_left_movej_position_tolerance_rad", 0.01),
+                ("box_pre_detection_left_movej_velocity_tolerance_rad_sec", 0.01),
+                ("box_pre_detection_left_movej_feedback_max_age_sec", 1.0),
+                ("box_pre_detection_left_movej_stable_samples", 3),
                 # Move both arms to this intermediate pose after detection,
                 # then send the computed Link8 movej_p targets.
                 ("box_pre_target_arm_movej_enabled", True),
@@ -917,12 +1078,12 @@ class MissionController(
                 ("torso_target_wait_timeout_sec", 40.0),
                 ("torso_target_stable_samples", 3),
                 ("arm_execution_frame", "base_link"),
-                ("left_ee_frame", "L_Link_7"),
-                ("right_ee_frame", "R_Link_7"),
-                ("left_gripper_frame", "L_Link_8"),
-                ("right_gripper_frame", "R_Link_8"),
+                ("left_ee_frame", "left_arm_8_Link"),
+                ("right_ee_frame", "right_arm_8_Link"),
+                ("left_gripper_frame", "left_arm_8_Link"),
+                ("right_gripper_frame", "right_arm_8_Link"),
                 ("camera_mount_tf_enabled", False),
-                ("camera_mount_parent_frame", "R_Link_8"),
+                ("camera_mount_parent_frame", "right_arm_8_Link"),
                 (
                     "camera_mount_child_frame",
                     "realbot_camera_link",
@@ -956,8 +1117,8 @@ class MissionController(
                 ),
                 ("left_arm_base_frame", "L_base_Link"),
                 ("right_arm_base_frame", "R_base_Link"),
-                ("left_link8_frame", "L_Link_8"),
-                ("right_link8_frame", "R_Link_8"),
+                ("left_link8_frame", "left_arm_8_Link"),
+                ("right_link8_frame", "right_arm_8_Link"),
                 (
                     "camera_left_link8_to_rgb_camera_xyz",
                     [0.097294396234, 0.000243365421, 0.053076686984],
@@ -1080,6 +1241,222 @@ class MissionController(
             ],
         )
 
+        # TF GraspBox and TF DragBox have independent per-model/per-layer
+        # profiles.  Keep the legacy parameters above for the original
+        # actions, while these generated declarations provide a complete,
+        # explicit tuning surface for /grasp_box_tf and
+        # /execute_drag_box_grasp_tf.
+        self.declare_parameters(
+            namespace="",
+            parameters=self._tf_layer_parameter_defaults(),
+        )
+
+    @staticmethod
+    def _tf_layer_parameter_defaults():
+        """Return independent TF-action/model/layer defaults.
+
+        Values intentionally mirror the currently deployed bigbox/smallbox
+        profiles.  Each layer receives its own scalar/vector parameters so a
+        later calibration change cannot affect another layer or the other TF
+        action.
+        """
+        detection = {
+            "bigbox": [
+                [144725, -5335, 7032, 9843, 7540, -5611, 85414],
+                [170647, 3018, 18744, 95121, -1950, -8903, 30524],
+                [-39570, 16276, -17721, -95245, 14032, -14558, -23838],
+                [21382, -4978, -274, 1282, -5472, 3628, -32636],
+            ],
+            "smallbox": [
+                [172102, -3751, 14348, 95105, 7730, -5615, 31841],
+                [-20762, 1539, -12837, -102889, 1366, -8774, 3529],
+                [6894, -3485, -20092, -19433, 15367, -7336, -41454],
+                [2341, 248, -3624, -16956, 2290, 10183, -45681],
+            ],
+        }
+        # DragBox TF uses the left camera for detection.  Keep its calibrated
+        # bigbox poses independent from the GraspBox/right-camera profiles.
+        # The values are controller joint units (1000 units = 1 degree).
+        drag_left_detection = {
+            "bigbox": [
+                [-172278, 7319, 20124, 51808, -17856, -23263, -70442],
+                [-161722, 5480, 933, 104186, 5631, -2342, -2903],
+                [18442, 3544, 2870, -104500, -2568, 5250, -24076],
+                [-19238, 3482, 215, -91196, -2634, 5268, -78519],
+            ],
+            # Until separately calibrated, retain the existing left/smallbox
+            # defaults rather than coupling them to the bigbox calibration.
+            "smallbox": detection["smallbox"],
+        }
+        post_detection_left = {
+            model: [
+                [-171982, -204, 93820, 89651, 4401, 5999, -4935]
+                for _layer in range(1, 5)
+            ]
+            for model in ("bigbox", "smallbox")
+        }
+        angles = {
+            "bigbox": {
+                1: (-13.0, 0.0, 0.0),
+                2: (-45.0, -85.0, -55.0),
+                3: (-70.0, -120.0, -73.0),
+                4: (-89.0, -149.0, -89.0),
+            },
+            "smallbox": {
+                1: (-13.0, 0.0, 0.0),
+                2: (-45.0, -85.0, -70.0),
+                3: (-70.0, -120.0, -73.0),
+                4: (-89.0, -149.0, -89.0),
+            },
+        }
+        offsets = {
+            "bigbox": {
+                layer: ([0.0, 0.0, -0.5], [0.0, 0.0, 0.5])
+                for layer in range(1, 5)
+            },
+            "smallbox": {
+                layer: (
+                    [0.0, -0.025, -0.5],
+                    [0.0, -0.025, 0.5],
+                )
+                if layer == 4
+                else ([0.0, 0.0, -0.5], [0.0, 0.0, 0.5])
+                for layer in range(1, 5)
+            },
+        }
+        left_correction = [
+            0.064762,
+            -0.049358,
+            0.060595,
+            -0.058164,
+            -0.006476,
+            0.081596,
+            0.994946,
+        ]
+        right_correction = [
+            0.081444,
+            -0.049338,
+            -0.020083,
+            0.012614,
+            -0.032172,
+            0.081927,
+            0.996039,
+        ]
+        standard_steps = {
+            "left": {
+                1: [0.0, 0.0, 0.025],
+                2: [0.14, 0.0, 0.0],
+                3: [-0.14, 0.0, 0.0],
+                4: [0.0, 0.0, -0.1],
+                5: [0.0, 0.0, 0.0],
+            },
+            "right": {
+                1: [0.0, 0.0, -0.028],
+                2: [0.14, 0.0, 0.0],
+                3: [-0.14, 0.0, 0.0],
+                4: [0.0, 0.0, 0.1],
+                5: [0.0, 0.0, 0.0],
+            },
+        }
+        smallbox_step1 = {
+            "left": [0.0, 0.0, 0.03],
+            "right": [0.0, 0.0, -0.02],
+        }
+        drag_steps = {
+            "left": {
+                1: [0.0, 0.0, 0.0],
+                2: [0.0, 0.0, 0.2],
+                3: [0.0, 0.0, 0.0],
+            },
+            "right": {
+                1: [0.14, 0.0, 0.0],
+                2: [0.0, 0.0, 0.2],
+                3: [-0.14, 0.0, 0.0],
+            },
+        }
+        parameters = []
+        for action_prefix in ("grasp_box_tf", "drag_box_tf"):
+            for model in ("bigbox", "smallbox"):
+                for layer in range(1, 5):
+                    for arm in ("left", "right"):
+                        profile = (
+                            drag_left_detection[model][layer - 1]
+                            if action_prefix == "drag_box_tf" and arm == "left"
+                            else detection[model][layer - 1]
+                        )
+                        parameters.append(
+                            (
+                                f"{action_prefix}_box_layer_pre_detection_{arm}_movej_joint_units_"
+                                f"{model}_layer{layer}",
+                                list(profile),
+                            )
+                        )
+                    if action_prefix == "drag_box_tf":
+                        parameters.append(
+                            (
+                                f"drag_box_tf_box_layer_post_detection_left_movej_joint_units_"
+                                f"{model}_layer{layer}",
+                                list(post_detection_left[model][layer - 1]),
+                            )
+                        )
+                    for joint_index, angle in enumerate(
+                        angles[model][layer], start=1
+                    ):
+                        parameters.append(
+                            (
+                                f"{action_prefix}_box_layer_joint{joint_index}_"
+                                f"approach_angle_deg_{model}_layer{layer}",
+                                float(angle),
+                            )
+                        )
+                    parameters.extend(
+                        [
+                            (
+                                f"{action_prefix}_direct_movel_left_offset_xyz_"
+                                f"{model}_layer{layer}",
+                                list(offsets[model][layer][0]),
+                            ),
+                            (
+                                f"{action_prefix}_direct_movel_right_offset_xyz_"
+                                f"{model}_layer{layer}",
+                                list(offsets[model][layer][1]),
+                            ),
+                            (
+                                f"{action_prefix}_joint123_left_target_correction_pose_box_"
+                                f"{model}_layer{layer}",
+                                list(left_correction),
+                            ),
+                            (
+                                f"{action_prefix}_joint123_right_target_correction_pose_box_"
+                                f"{model}_layer{layer}",
+                                list(right_correction),
+                            ),
+                        ]
+                    )
+                    for arm in ("left", "right"):
+                        for step in range(1, 6):
+                            delta = standard_steps[arm][step]
+                            if model == "smallbox" and step == 1:
+                                delta = smallbox_step1[arm]
+                            parameters.append(
+                                (
+                                    f"{action_prefix}_post_movel_{arm}_step{step}_xyz_"
+                                    f"{model}_layer{layer}",
+                                    list(delta),
+                                )
+                            )
+                    if action_prefix == "drag_box_tf":
+                        for arm in ("left", "right"):
+                            for drag_index in range(1, 4):
+                                parameters.append(
+                                    (
+                                        f"drag_box_tf_post_movel_step_drag{drag_index}_"
+                                        f"{arm}_xyz_{model}_layer{layer}",
+                                        list(drag_steps[arm][drag_index]),
+                                    )
+                                )
+        return parameters
+
     def _validate_parameters(self) -> None:
         for name in (
             "execute_adaptive_box_grasp_action_name",
@@ -1090,6 +1467,9 @@ class MissionController(
             "execute_box_place_action_name",
             "adaptive_freeze_frame",
             "box_object_pose_action_name",
+            "box_object_pose_camera_side",
+            "grasp_box_tf_detection_arm",
+            "drag_box_tf_detection_arm",
             "box_object_pose_topic",
             "box_object_pose_camera_topic",
             "box_object_pose_raw_topic",
@@ -1198,6 +1578,9 @@ class MissionController(
             "right",
         ):
             raise ValueError("camera_detection_arm must be 'left' or 'right'")
+        for name in ("grasp_box_tf_detection_arm", "drag_box_tf_detection_arm"):
+            if self._string(name).strip().lower() not in ("left", "right"):
+                raise ValueError(f"{name} must be 'left' or 'right'")
         if target_mode == "camera_offset_box_orientation" and not self._boolean(
             "camera_measured_extrinsics_enabled"
         ):
@@ -1341,14 +1724,23 @@ class MissionController(
             ("box_post_arm_movej_left_joint_units", 7),
             ("box_post_arm_movej_right_joint_units", 7),
             ("box_pre_detection_right_movej_joint_units", 7),
+            ("box_pre_detection_left_movej_joint_units", 7),
             ("box_layer_pre_detection_right_movej_joint_units", 28),
             ("box_layer_pre_detection_right_movej_joint_units_bigbox", 28),
             ("box_layer_pre_detection_right_movej_joint_units_smallbox", 28),
+            ("box_layer_pre_detection_left_movej_joint_units", 28),
+            ("box_layer_pre_detection_left_movej_joint_units_bigbox", 28),
+            ("box_layer_pre_detection_left_movej_joint_units_smallbox", 28),
             ("box_pre_target_arm_movej_left_joint_units", 7),
             ("box_pre_target_arm_movej_right_joint_units", 7),
             ("drag_box_left_join_pre_movej_joint_units", 7),
             ("box_body_home_joint_units", 4),
             ("box_step2_waist_endpoint_sync_home_joint_units", 4),
+            ("grasp_box_tf_body_home_carry_joint_units", 4),
+            ("place_box_test_body_joint_units", 4),
+            ("place_box_test_start_body_joint_units", 4),
+            ("place_box_test_left_target_pose_arm_base", 7),
+            ("place_box_test_right_target_pose_arm_base", 7),
         ):
             values = self._float_array(name)
             if len(values) != expected_length:
@@ -1367,6 +1759,8 @@ class MissionController(
             "joint123_layer3_right_target_correction_pose_box",
             "joint123_layer4_left_target_correction_pose_box",
             "joint123_layer4_right_target_correction_pose_box",
+            "place_box_test_left_target_pose_arm_base",
+            "place_box_test_right_target_pose_arm_base",
         ):
             values = self._float_array(name)
             quaternion_norm = math.sqrt(sum(value * value for value in values[3:]))
@@ -1523,6 +1917,11 @@ class MissionController(
             "box_pre_detection_right_movej_position_tolerance_rad",
             "box_pre_detection_right_movej_velocity_tolerance_rad_sec",
             "box_pre_detection_right_movej_feedback_max_age_sec",
+            "box_pre_detection_left_movej_command_units_per_degree",
+            "box_pre_detection_left_movej_timeout_sec",
+            "box_pre_detection_left_movej_position_tolerance_rad",
+            "box_pre_detection_left_movej_velocity_tolerance_rad_sec",
+            "box_pre_detection_left_movej_feedback_max_age_sec",
             "box_pre_target_arm_movej_command_units_per_degree",
             "box_pre_target_arm_movej_position_tolerance_rad",
             "box_pre_target_arm_movej_velocity_tolerance_rad_sec",
@@ -1534,6 +1933,23 @@ class MissionController(
             "box_step2_waist_endpoint_sync_stable_samples",
             "box_step2_waist_endpoint_sync_final_position_tolerance_m",
             "box_step2_waist_endpoint_sync_final_orientation_tolerance_rad",
+            "grasp_box_tf_body_home_carry_timeout_sec",
+            "grasp_box_tf_body_home_carry_tf_timeout_sec",
+            "grasp_box_tf_body_home_carry_position_tolerance_m",
+            "grasp_box_tf_body_home_carry_orientation_tolerance_rad",
+            "grasp_box_tf_body_home_carry_stable_samples",
+            "grasp_box_tf_body_home_carry_left_movel_velocity_percent",
+            "grasp_box_tf_body_home_carry_right_movel_velocity_percent",
+            "grasp_box_tf_body_home_carry_final_correction_velocity_percent",
+            "place_box_test_left_movel_velocity_percent",
+            "place_box_test_right_movel_velocity_percent",
+            "place_box_test_final_correction_velocity_percent",
+            "place_box_test_timeout_sec",
+            "place_box_test_start_body_tolerance_rad",
+            "place_box_test_position_tolerance_m",
+            "place_box_test_orientation_tolerance_rad",
+            "place_box_test_target_consistency_position_tolerance_m",
+            "place_box_test_target_consistency_orientation_tolerance_rad",
         )
         for name in positive_parameters:
             if not math.isfinite(self._float(name)) or self._float(name) <= 0.0:
@@ -1544,6 +1960,12 @@ class MissionController(
             "adaptive_lift_velocity_percent",
             "box_post_movel_velocity_percent",
             "drag_box_left_join_velocity_percent",
+            "grasp_box_tf_body_home_carry_left_movel_velocity_percent",
+            "grasp_box_tf_body_home_carry_right_movel_velocity_percent",
+            "grasp_box_tf_body_home_carry_final_correction_velocity_percent",
+            "place_box_test_left_movel_velocity_percent",
+            "place_box_test_right_movel_velocity_percent",
+            "place_box_test_final_correction_velocity_percent",
         ):
             if self._float(name) > 100.0:
                 raise ValueError(f"{name} must be in (0, 100]")
@@ -1633,10 +2055,12 @@ class MissionController(
             raise ValueError(
                 "box_post_movel_step4_movej_stable_samples must be positive"
             )
-        if self._integer("box_pre_detection_right_movej_device") < 0:
-            raise ValueError(
-                "box_pre_detection_right_movej_device must be nonnegative"
-            )
+        for name in (
+            "box_pre_detection_right_movej_device",
+            "box_pre_detection_left_movej_device",
+        ):
+            if self._integer(name) < 0:
+                raise ValueError(f"{name} must be nonnegative")
         for name in (
             "box_pre_target_arm_movej_left_device",
             "box_pre_target_arm_movej_right_device",
@@ -1645,6 +2069,7 @@ class MissionController(
                 raise ValueError(f"{name} must be nonnegative")
         for name in (
             "box_pre_detection_right_movej_velocity",
+            "box_pre_detection_left_movej_velocity",
             "box_pre_target_arm_movej_velocity",
             "box_preparation_movej_velocity",
         ):
@@ -1652,12 +2077,14 @@ class MissionController(
                 raise ValueError(f"{name} must be in [1, 100]")
         for name in (
             "box_pre_detection_right_movej_blend_radius",
+            "box_pre_detection_left_movej_blend_radius",
             "box_pre_target_arm_movej_blend_radius",
         ):
             if self._integer(name) < 0:
                 raise ValueError(f"{name} must be nonnegative")
         for name in (
             "box_pre_detection_right_movej_trajectory_connect",
+            "box_pre_detection_left_movej_trajectory_connect",
             "box_pre_target_arm_movej_trajectory_connect",
         ):
             if self._integer(name) not in (0, 1):
@@ -1666,14 +2093,66 @@ class MissionController(
             raise ValueError(
                 "box_pre_target_arm_movej_stable_samples must be positive"
             )
-        if self._integer("box_pre_detection_right_movej_stable_samples") <= 0:
-            raise ValueError(
-                "box_pre_detection_right_movej_stable_samples must be positive"
-            )
+        for name in (
+            "box_pre_detection_right_movej_stable_samples",
+            "box_pre_detection_left_movej_stable_samples",
+        ):
+            if self._integer(name) <= 0:
+                raise ValueError(f"{name} must be positive")
         if self._integer("box_body_home_velocity") <= 0:
             raise ValueError("box_body_home_velocity must be positive")
         if self._integer("box_body_home_blend_radius") < 0:
             raise ValueError("box_body_home_blend_radius must be nonnegative")
+        if self._integer("grasp_box_tf_body_home_carry_segments") <= 0:
+            raise ValueError(
+                "grasp_box_tf_body_home_carry_segments must be positive"
+            )
+        if not 1 <= self._integer(
+            "grasp_box_tf_body_home_carry_body_velocity"
+        ) <= 100:
+            raise ValueError(
+                "grasp_box_tf_body_home_carry_body_velocity must be in [1, 100]"
+            )
+        if not 0 <= self._integer(
+            "grasp_box_tf_body_home_carry_body_blend_radius"
+        ) <= 100:
+            raise ValueError(
+                "grasp_box_tf_body_home_carry_body_blend_radius must be in [0, 100]"
+            )
+        if not 0 <= self._integer(
+            "grasp_box_tf_body_home_carry_arm_blend_radius"
+        ) <= 100:
+            raise ValueError(
+                "grasp_box_tf_body_home_carry_arm_blend_radius must be in [0, 100]"
+            )
+        if not self._string(
+            "grasp_box_tf_body_home_carry_carrier_frame"
+        ).strip().lstrip("/"):
+            raise ValueError(
+                "grasp_box_tf_body_home_carry_carrier_frame must not be empty"
+            )
+        if self._string("place_box_test_box_type").strip().lower() != "smallbox":
+            raise ValueError("place_box_test_box_type must be 'smallbox'")
+        if self._integer("place_box_test_segments") <= 0:
+            raise ValueError("place_box_test_segments must be positive")
+        if not 1 <= self._integer("place_box_test_body_velocity") <= 100:
+            raise ValueError("place_box_test_body_velocity must be in [1, 100]")
+        for name in (
+            "place_box_test_body_blend_radius",
+            "place_box_test_arm_blend_radius",
+        ):
+            if not 0 <= self._integer(name) <= 100:
+                raise ValueError(f"{name} must be in [0, 100]")
+        if self._integer("place_box_test_stable_samples") <= 0:
+            raise ValueError("place_box_test_stable_samples must be positive")
+        if (
+            self._boolean("grasp_box_tf_body_home_carry_enabled")
+            and self._boolean("box_step2_waist_endpoint_sync_enabled")
+        ):
+            raise ValueError(
+                "grasp_box_tf_body_home_carry_enabled and "
+                "box_step2_waist_endpoint_sync_enabled are mutually exclusive"
+            )
         if not 0 <= self._integer("box_step2_waist_endpoint_sync_body_blend_radius") <= 100:
             raise ValueError(
                 "box_step2_waist_endpoint_sync_body_blend_radius must be in [0, 100]"
@@ -1726,6 +2205,35 @@ class MissionController(
                     raise ValueError(
                         f"box_mission_enabled requires configured '{name}'"
                     )
+
+        # Validate every generated TF action/model/layer profile at startup.
+        # This catches a missing or malformed layer value before an action is
+        # accepted, while retaining the legacy parameter validation above.
+        for name, _default in self._tf_layer_parameter_defaults():
+            if "approach_angle_deg" in name:
+                if not math.isfinite(self._float(name)):
+                    raise ValueError(f"parameter '{name}' must be finite")
+                continue
+            expected_length = (
+                7
+                if (
+                    "pre_detection_" in name and "_movej_joint_units" in name
+                    or "post_detection_" in name and "_movej_joint_units" in name
+                    or "target_correction_pose_box" in name
+                )
+                else 3
+            )
+            values = self._float_array(name)
+            if len(values) != expected_length:
+                raise ValueError(
+                    f"parameter '{name}' must contain {expected_length} values"
+                )
+            if not all(math.isfinite(value) for value in values):
+                raise ValueError(f"parameter '{name}' contains NaN or Inf")
+            if "target_correction_pose_box" in name and math.sqrt(
+                sum(value * value for value in values[3:])
+            ) <= 1e-12:
+                raise ValueError(f"parameter '{name}' contains a zero quaternion")
 
     def _string(self, name: str) -> str:
         return str(self.get_parameter(name).value).strip()
@@ -1899,8 +2407,21 @@ class MissionController(
         )
 
     def _box_grasp_goal_callback_for_mission(
-        self, request, mission_name: str
+        self,
+        request,
+        mission_name: str,
+        *,
+        tf_mode: bool = False,
+        drag_mode: bool = False,
     ) -> GoalResponse:
+        tf_mode = tf_mode or mission_name in (
+            "grasp_box_tf",
+            "drag_box_grasp_tf",
+        )
+        drag_mode = drag_mode or mission_name in (
+            "drag_box_grasp",
+            "drag_box_grasp_tf",
+        )
         if request.box_layer < 1 or request.box_layer > 4:
             self.get_logger().warning(
                 "rejecting box grasp goal: box_layer must be in [1, 4]"
@@ -1911,11 +2432,21 @@ class MissionController(
             # backward-compatible and use the configured default model.
             model_label = self._box_model_label_for_request(request)
             self._box_layer_joint1_approach_angle_deg(
-                request.box_layer, model_label
+                request.box_layer,
+                model_label,
+                tf_mode=tf_mode,
+                drag_mode=drag_mode,
             )
-            if self._boolean("box_pre_detection_right_movej_enabled"):
-                self._box_layer_pre_detection_right_movej_joint_units(
-                    request.box_layer
+            detection_arm = self._box_detection_arm(
+                tf_mode=tf_mode, drag_mode=drag_mode
+            )
+            if self._boolean(f"box_pre_detection_{detection_arm}_movej_enabled"):
+                self._box_layer_pre_detection_arm_movej_joint_units(
+                    request.box_layer,
+                    model_label,
+                    arm=detection_arm,
+                    tf_mode=tf_mode,
+                    drag_mode=drag_mode,
                 )
         except MissionError as exc:
             self.get_logger().warning(f"rejecting box grasp goal: {exc}")
@@ -1957,6 +2488,32 @@ class MissionController(
             )
             return GoalResponse.REJECT
         return self._reserve_goal("box_place", request.request_id)
+
+    def _place_box_test_goal_callback(
+        self, request: PlaceBoxTest.Goal
+    ) -> GoalResponse:
+        if not self._boolean("place_box_test_enabled") and not request.dry_run:
+            self.get_logger().warning(
+                "rejecting place_box_test goal: place_box_test_enabled is false"
+            )
+            return GoalResponse.REJECT
+        if (
+            not request.dry_run
+            and self._string("direct_motion_backend").strip().lower()
+            != "python_sdk"
+        ):
+            self.get_logger().warning(
+                "rejecting place_box_test goal: physical execution requires "
+                "direct_motion_backend=python_sdk"
+            )
+            return GoalResponse.REJECT
+        if not self._last_grasp_box_tf_box_to_link7_targets:
+            self.get_logger().warning(
+                "rejecting place_box_test goal: no rigid box->Link7 state is "
+                "available; run /grasp_box_tf in this controller process first"
+            )
+            return GoalResponse.REJECT
+        return self._reserve_goal("place_box_test", request.request_id)
 
 
     def _cancel_callback(self, _goal_handle) -> CancelResponse:

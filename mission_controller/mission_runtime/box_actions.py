@@ -4,6 +4,7 @@ from mission_interfaces.action import (
     ExecuteBoxGrasp,
     ExecuteBoxPlace,
     ExecuteDragBoxGrasp,
+    PlaceBoxTest,
 )
 
 from .common import MissionCanceled, MissionError
@@ -32,6 +33,15 @@ class BoxActionsMixin:
         goal_handle, stage: str, detail: str
     ) -> None:
         feedback = ExecuteBoxPlace.Feedback()
+        feedback.stage = stage
+        feedback.detail = detail
+        goal_handle.publish_feedback(feedback)
+
+    @staticmethod
+    def _publish_place_box_test_feedback(
+        goal_handle, stage: str, detail: str
+    ) -> None:
+        feedback = PlaceBoxTest.Feedback()
         feedback.stage = stage
         feedback.detail = detail
         goal_handle.publish_feedback(feedback)
@@ -382,3 +392,85 @@ class BoxActionsMixin:
             self._finalize_action_result(
                 result, started_at, "execute_box_place"
             )
+
+    def _execute_place_box_test(self, goal_handle) -> PlaceBoxTest.Result:
+        """Place the currently held small box using TF and connected motion."""
+        started_at = time.monotonic()
+        request = goal_handle.request
+        result = PlaceBoxTest.Result()
+
+        try:
+            self._publish_place_box_test_feedback(
+                goal_handle,
+                "INITIALIZING",
+                "reading the home-waist state, live Link7 TF, and saved rigid grasp",
+            )
+            detail, left_target, right_target = self._execute_place_box_test_motion(
+                goal_handle,
+                self.direct_sdk_adapter,
+                request.dry_run,
+            )
+            result.left_target_pose = left_target
+            result.right_target_pose = right_target
+
+            if request.release_after_place:
+                if request.dry_run:
+                    self._publish_place_box_test_feedback(
+                        goal_handle,
+                        "DRY_RUN_RELEASE",
+                        "release_after_place=true; gripper opening skipped in dry-run",
+                    )
+                else:
+                    self._publish_place_box_test_feedback(
+                        goal_handle,
+                        "RELEASING_BOX",
+                        "placement target confirmed; opening both grippers",
+                    )
+                    self._publish_both_grippers(
+                        goal_handle, self._float("gripper_open_position")
+                    )
+                    result.gripper_command_published = True
+                    self._wait_delay(
+                        goal_handle,
+                        self._float("gripper_settle_sec"),
+                        "while waiting for the placed box to be released",
+                    )
+            else:
+                self._publish_place_box_test_feedback(
+                    goal_handle,
+                    "HOLDING_BOX",
+                    "placement target confirmed; test mode keeps both grippers closed",
+                )
+
+            result.success = True
+            result.message = (
+                "place_box_test dry run completed"
+                if request.dry_run
+                else f"place_box_test completed; {detail}"
+            )
+            self._finalize_action_result(result, started_at, "place_box_test")
+            self._publish_place_box_test_feedback(
+                goal_handle, "DONE", result.message
+            )
+            goal_handle.succeed()
+            return result
+        except MissionCanceled as exc:
+            result.success = False
+            result.message = str(exc)
+            goal_handle.canceled()
+            return result
+        except MissionError as exc:
+            result.success = False
+            result.message = str(exc)
+            self.get_logger().error(result.message)
+            goal_handle.abort()
+            return result
+        except Exception as exc:  # noqa: BLE001
+            result.success = False
+            result.message = f"unexpected place_box_test error: {exc}"
+            self.get_logger().error(result.message)
+            goal_handle.abort()
+            return result
+        finally:
+            self._release_goal()
+            self._finalize_action_result(result, started_at, "place_box_test")

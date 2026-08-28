@@ -605,6 +605,16 @@ class RealbotsGlobalTf(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
         )
+        # Hardware feedback topics are best-effort, but robot_state_publisher
+        # subscribes to /joint_states with reliable QoS.  Use a dedicated
+        # reliable publisher profile so normalized joint states enter the URDF
+        # FK tree instead of being rejected as an incompatible endpoint.
+        joint_state_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+        )
         self.body_subscription = self.create_subscription(
             BodyData,
             str(self.get_parameter("body_feedback_topic").value),
@@ -631,7 +641,7 @@ class RealbotsGlobalTf(Node):
             self.joint_state_publisher = self.create_publisher(
                 JointState,
                 joint_state_topic,
-                feedback_qos,
+                joint_state_qos,
             )
             self.joint_state_subscription = self.create_subscription(
                 JointState,

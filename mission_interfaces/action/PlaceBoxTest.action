@@ -1,0 +1,17 @@
+# Execute the current small-box placement test while preserving a rigid grasp.
+string request_id
+bool release_after_place
+bool dry_run
+
+---
+
+bool success
+string message
+geometry_msgs/Pose left_target_pose
+geometry_msgs/Pose right_target_pose
+bool gripper_command_published
+
+---
+
+string stage
+string detail

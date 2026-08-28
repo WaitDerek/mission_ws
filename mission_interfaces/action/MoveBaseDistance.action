@@ -1,0 +1,14 @@
+# Direction is one of: forward, backward, left, right.
+string direction
+# Requested physical travel distance in metres. Must be greater than zero.
+float64 distance_m
+# ROS1 timed_translate speed in m/s. Zero uses the action server default.
+float64 speed_mps
+---
+bool success
+string message
+float64 commanded_duration_s
+float64 estimated_distance_m
+---
+string stage
+float32 progress

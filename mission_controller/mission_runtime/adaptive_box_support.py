@@ -125,6 +125,7 @@ class AdaptiveBoxSupportMixin:
             )
 
         detection_goal = EstimateObjectPose.Goal()
+        detection_goal.camera_side = self._string("box_object_pose_camera_side")
         detection_goal.model_label = self._string("box_object_pose_model_label")
         configured_instance = self._integer("box_object_pose_instance_index")
         detection_goal.instance_index = (

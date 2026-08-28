@@ -26,6 +26,13 @@ class _Harness:
         "box_chest_to_left_arm_base_rpy": [0.0, math.pi, 0.0],
         "box_chest_to_right_arm_base_xyz": [-0.012, 0.0, -0.2975],
         "box_chest_to_right_arm_base_rpy": [math.pi, 0.0, 0.0],
+        "direct_movel_target_mode": "camera_offset_box_orientation",
+        "direct_movel_left_box_to_link8_orientation": [0.0, 0.0, 0.0, 1.0],
+        "direct_movel_right_box_to_link8_orientation": [0.0, 0.0, 0.0, 1.0],
+        "box_post_movel_left_step3_xyz": [-0.14, 0.0, 0.0],
+        "box_post_movel_right_step3_xyz": [-0.14, 0.0, 0.0],
+        "box_post_movel_left_step4_xyz": [0.0, 0.0, -0.1],
+        "box_post_movel_right_step4_xyz": [0.0, 0.0, 0.1],
     }
 
     def _float_array(self, name):
@@ -33,6 +40,9 @@ class _Harness:
 
     def _float(self, name):
         return float(self.VALUES[name])
+
+    def _string(self, name):
+        return str(self.VALUES[name])
 
 
 def _pose_values(pose):
@@ -83,6 +93,102 @@ class TestBoxJoint123Targets(unittest.TestCase):
         self.assertAlmostEqual(left[0][2], 1.349000, places=5)
         self.assertAlmostEqual(abs(right[1][3]), 1.0, places=6)
         self.assertAlmostEqual(abs(left[1][2]), 1.0, places=6)
+
+    def test_arm_base_transform_is_chest_transform_plus_fixed_mount(self):
+        angles = [math.radians(-45.0), math.radians(-85.0), math.radians(-55.0)]
+        chest = MissionController._joint123_chest_transform(
+            self.harness, angles
+        )
+        mount = MissionController._configured_rpy_transform(
+            self.harness,
+            "box_chest_to_right_arm_base_xyz",
+            "box_chest_to_right_arm_base_rpy",
+        )
+        expected = MissionController._compose_transform(chest, mount)
+        actual = MissionController._joint123_arm_base_transform(
+            self.harness, "right", angles
+        )
+        for actual_value, expected_value in zip(actual[0], expected[0]):
+            self.assertAlmostEqual(actual_value, expected_value, places=9)
+        self.assertAlmostEqual(
+            abs(sum(actual[1][i] * expected[1][i] for i in range(4))),
+            1.0,
+            places=9,
+        )
+
+    def test_tf_carry_keeps_box_orientation_and_box_to_link7_relation(self):
+        current_box = ((0.2, -0.4, 0.5), (0.0, 0.0, 0.0, 1.0))
+        box_to_link = ((0.0, 0.0, 0.5), (0.0, 0.0, 0.0, 1.0))
+        future_carrier = (
+            (0.1, 0.2, 0.3),
+            MissionController._quaternion_from_rpy(0.3, -0.2, 0.1),
+        )
+        carrier_point = (0.4, -0.1, 0.2)
+        future_position = MissionController._compose_transform(
+            future_carrier,
+            (carrier_point, (0.0, 0.0, 0.0, 1.0)),
+        )[0]
+        future_box = (future_position, current_box[1])
+        future_link = MissionController._compose_transform(
+            future_box, box_to_link
+        )
+        recovered_relation = MissionController._compose_transform(
+            MissionController._inverse_transform(future_box), future_link
+        )
+        for actual, expected in zip(recovered_relation[0], box_to_link[0]):
+            self.assertAlmostEqual(actual, expected, places=9)
+        self.assertEqual(future_box[1], current_box[1])
+
+    def test_place_box_slerp_preserves_normalization_and_endpoints(self):
+        start = MissionController._quaternion_from_rpy(0.0, 0.0, 0.0)
+        target = MissionController._quaternion_from_rpy(0.15, -0.08, 0.2)
+        first = MissionController._slerp_quaternion(start, target, 0.0)
+        middle = MissionController._slerp_quaternion(start, target, 0.5)
+        last = MissionController._slerp_quaternion(start, target, 1.0)
+        self.assertAlmostEqual(
+            abs(sum(first[index] * start[index] for index in range(4))),
+            1.0,
+            places=9,
+        )
+        self.assertAlmostEqual(
+            abs(sum(last[index] * target[index] for index in range(4))),
+            1.0,
+            places=9,
+        )
+        self.assertAlmostEqual(sum(value * value for value in middle), 1.0, places=9)
+
+    def test_place_box_slerp_treats_negated_quaternion_as_same_pose(self):
+        start = MissionController._quaternion_from_rpy(0.2, -0.1, 0.3)
+        target = tuple(-value for value in start)
+        result = MissionController._slerp_quaternion(start, target, 0.5)
+        self.assertAlmostEqual(
+            abs(sum(result[index] * start[index] for index in range(4))),
+            1.0,
+            places=9,
+        )
+
+    def test_post_steps_are_rebased_after_tf_carry(self):
+        left = Pose()
+        left.orientation.w = 1.0
+        right = Pose()
+        right.orientation.w = 1.0
+        self.harness._last_tf_body_home_carry_arm_targets = {
+            "left": left,
+            "right": right,
+        }
+        targets = [
+            ("step1", Pose(), Pose()),
+            ("step2", Pose(), Pose()),
+            ("step3", Pose(), Pose()),
+            ("step4", Pose(), Pose()),
+        ]
+        MissionController._rebase_post_movel_targets_after_tf_carry(
+            self.harness, targets, 2
+        )
+        self.assertAlmostEqual(targets[2][1].position.x, -0.14)
+        self.assertAlmostEqual(targets[2][2].position.x, -0.14)
+        self.assertAlmostEqual(targets[3][1].position.z, -0.1)
+        self.assertAlmostEqual(targets[3][2].position.z, 0.1)
 
     def test_zero_joint_change_keeps_complete_pose(self):
         result = MissionController._reexpress_link8_target_after_joint123_motion(

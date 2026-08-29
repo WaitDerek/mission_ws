@@ -14,6 +14,7 @@ from .mqtt_support import create_paho_client, mqtt_reason_is_failure
 @dataclass(frozen=True)
 class MqttStartRequest:
     request_id: str = ""
+    id: int = 0
 
 
 class MqttWorkflowStartBridge:
@@ -107,7 +108,13 @@ class MqttWorkflowStartBridge:
             raise ValueError("workflow start JSON must be an object")
         if value.get("start") is not True:
             raise ValueError("workflow start JSON requires start=true")
-        return MqttStartRequest(str(value.get("request_id", "")).strip())
+        mqtt_id = value.get("id", 0)
+        if isinstance(mqtt_id, bool) or not isinstance(mqtt_id, int):
+            raise ValueError("workflow start JSON id must be an integer")
+        return MqttStartRequest(
+            request_id=str(value.get("request_id", "")).strip(),
+            id=mqtt_id,
+        )
 
     def _on_message(self, _client, _userdata, message) -> None:
         if str(getattr(message, "topic", "")) != self._start_topic:

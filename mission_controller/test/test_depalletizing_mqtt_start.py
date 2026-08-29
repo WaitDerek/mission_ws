@@ -68,6 +68,7 @@ class TestMqttWorkflowStartBridge(unittest.TestCase):
 
         self.assertEqual(len(requests), 1)
         self.assertEqual(requests[0].request_id, "")
+        self.assertEqual(requests[0].id, 0)
         self.assertEqual(client.subscriptions, [("mission/workflow/start", 1)])
         bridge.close()
 
@@ -76,9 +77,45 @@ class TestMqttWorkflowStartBridge(unittest.TestCase):
         requests = []
         bridge = _bridge(client, requests)
 
-        client.emit(json.dumps({"start": True, "request_id": "platform-7"}))
+        client.emit(
+            json.dumps({"id": 0, "start": True, "request_id": "platform-7"})
+        )
 
         self.assertEqual(requests[0].request_id, "platform-7")
+        self.assertEqual(requests[0].id, 0)
+        bridge.close()
+
+    def test_json_start_defaults_missing_id_to_zero(self):
+        client = _FakeClient()
+        requests = []
+        bridge = _bridge(client, requests)
+
+        client.emit(json.dumps({"start": True}))
+
+        self.assertEqual(requests[0].id, 0)
+        bridge.close()
+
+    def test_nonzero_json_id_is_preserved_for_node_validation(self):
+        client = _FakeClient()
+        requests = []
+        bridge = _bridge(client, requests)
+
+        client.emit(json.dumps({"id": 1, "start": True}))
+
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0].id, 1)
+        bridge.close()
+
+    def test_json_id_must_be_an_integer(self):
+        client = _FakeClient()
+        requests = []
+        bridge = _bridge(client, requests)
+
+        client.emit(json.dumps({"id": "0", "start": True}))
+
+        self.assertEqual(requests, [])
+        status = json.loads(client.published[-1][1])
+        self.assertIn("an integer", status["message"])
         bridge.close()
 
     def test_invalid_start_is_rejected_on_status_topic(self):

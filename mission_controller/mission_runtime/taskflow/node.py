@@ -21,7 +21,7 @@ from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
 from .identifiers import new_workflow_id
-from .mqtt_navigation import MqttNavigationGateway
+from .mqtt_navigation import MqttNavigationGateway, parse_navigation_points_json
 from .mqtt_start import MqttStartRequest, MqttWorkflowStartBridge
 from .navigation import DisabledNavigationGateway
 from .ros_operations import ObservationGoalConfig, RosWorkflowOperations
@@ -147,6 +147,8 @@ class DepalletizingWorkflowNode(Node):
                 ("mqtt_keepalive_sec", 60),
                 ("mqtt_connect_timeout_sec", 10.0),
                 ("mqtt_navigation_timeout_sec", 300.0),
+                ("mqtt_navigation_frame_id", "map"),
+                ("mqtt_navigation_points_json", "{}"),
                 ("mqtt_start_enabled", False),
                 ("mqtt_start_topic", "mission/workflow/start"),
                 ("mqtt_status_topic", "mission/workflow/status"),
@@ -221,6 +223,11 @@ class DepalletizingWorkflowNode(Node):
                 "mqtt_result_topic"
             ):
                 raise ValueError("MQTT request and result topics must differ")
+            if not self._string("mqtt_navigation_frame_id").lstrip("/"):
+                raise ValueError("mqtt_navigation_frame_id must not be empty")
+            parse_navigation_points_json(
+                self._string("mqtt_navigation_points_json")
+            )
         if self._boolean("mqtt_start_enabled"):
             for name in ("mqtt_start_topic", "mqtt_status_topic"):
                 if not self._string(name):
@@ -236,8 +243,21 @@ class DepalletizingWorkflowNode(Node):
 
     def _queue_mqtt_start(self, request: MqttStartRequest) -> None:
         normalized = MqttStartRequest(
-            request.request_id or f"mqtt-{new_workflow_id()}"
+            request_id=request.request_id or f"mqtt-{new_workflow_id()}",
+            id=request.id,
         )
+        if normalized.id != 0:
+            bridge = self._mqtt_start_bridge
+            if bridge is not None:
+                bridge.publish_status(
+                    {
+                        "event": "rejected",
+                        "id": normalized.id,
+                        "request_id": normalized.request_id,
+                        "message": "workflow MQTT id must be 0",
+                    }
+                )
+            return
         with self._mqtt_start_lock:
             if self._mqtt_start_busy:
                 rejected = True
@@ -376,7 +396,7 @@ class DepalletizingWorkflowNode(Node):
         if bridge is None:
             return False
         return bridge.publish_status(
-            {"event": event, "request_id": request_id, **values}
+            {"event": event, "id": 0, "request_id": request_id, **values}
         )
 
     def _finish_mqtt_start(
@@ -550,6 +570,10 @@ class DepalletizingWorkflowNode(Node):
             keepalive_sec=self._integer("mqtt_keepalive_sec"),
             connect_timeout_sec=self._float("mqtt_connect_timeout_sec"),
             navigation_timeout_sec=self._float("mqtt_navigation_timeout_sec"),
+            frame_id=self._string("mqtt_navigation_frame_id"),
+            point_poses=parse_navigation_points_json(
+                self._string("mqtt_navigation_points_json")
+            ),
         )
 
     def _publish_progress(self, goal_handle, progress) -> None:

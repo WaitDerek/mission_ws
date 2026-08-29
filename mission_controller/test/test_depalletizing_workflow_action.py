@@ -197,8 +197,30 @@ class TestDepalletizingWorkflowAction(unittest.TestCase):
         self.assertIn("accepted", events)
         self.assertIn("feedback", events)
         self.assertTrue(result["success"])
+        self.assertEqual(result["id"], 0)
         self.assertEqual(result["request_id"], "platform-1")
         self.assertEqual(result["final_stage"], "COMPLETE")
+
+    def test_mqtt_nonzero_id_does_not_invoke_the_action(self):
+        bridge = _StatusBridge()
+        self.workflow_node._mqtt_start_bridge = bridge
+
+        self.workflow_node._queue_mqtt_start(
+            MqttStartRequest(request_id="platform-2", id=2)
+        )
+
+        self.assertEqual(self.operations.calls, [])
+        self.assertEqual(
+            bridge.statuses,
+            [
+                {
+                    "event": "rejected",
+                    "id": 2,
+                    "request_id": "platform-2",
+                    "message": "workflow MQTT id must be 0",
+                }
+            ],
+        )
 
     def test_cancel_stops_the_active_child_and_blocks_later_steps(self):
         blocking = _BlockingOperations()

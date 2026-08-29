@@ -8,8 +8,9 @@ execute_workflow:
     acquire_mission_lease_service_name: /mission/acquire_workflow_lease
     release_mission_lease_service_name: /mission/release_workflow_lease
 
-    # Minimal point-ID MQTT bridge. Mission publishes a plain ID and waits for
-    # the same ID (success) or a JSON result from the platform.
+    # Mission publishes the point ID together with its configured map pose.
+    # Keep this empty until现场 coordinates are measured; an unconfigured
+    # point fails closed and no MQTT navigation request is published.
     navigation_adapter: mqtt
     mqtt_host: 127.0.0.1
     mqtt_port: 1883
@@ -20,8 +21,10 @@ execute_workflow:
     mqtt_keepalive_sec: 60
     mqtt_connect_timeout_sec: 10.0
     mqtt_navigation_timeout_sec: 300.0
+    mqtt_navigation_frame_id: map
+    mqtt_navigation_points_json: "{}"
 
-    # Platform MQTT message -> /execute_workflow Action goal.
+    # Platform MQTT {"id":0,"start":true} -> /execute_workflow Action goal.
     mqtt_start_enabled: true
     mqtt_start_topic: mission/workflow/start
     mqtt_status_topic: mission/workflow/status

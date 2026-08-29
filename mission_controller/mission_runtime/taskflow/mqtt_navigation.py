@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
+import math
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from .model import NavigationRequest, NavigationResult
@@ -15,11 +17,68 @@ from .mqtt_support import create_paho_client, mqtt_reason_is_failure
 _VALID_POINT_IDS = frozenset(str(point_id) for point_id in range(1, 17))
 
 
-class MqttNavigationGateway:
-    """Publish one point ID and wait for the platform's matching result.
+@dataclass(frozen=True)
+class NavigationPoint:
+    x: float
+    y: float
+    yaw: float
 
-    Request payloads are plain UTF-8 point IDs. A matching plain-text result
-    means success. JSON results may explicitly report success or failure:
+
+def parse_navigation_points_json(payload: str) -> dict[str, NavigationPoint]:
+    text = str(payload).strip()
+    if not text:
+        raise ValueError("mqtt_navigation_points_json must not be empty")
+    try:
+        values = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError("mqtt_navigation_points_json is invalid JSON") from exc
+    if not isinstance(values, dict):
+        raise ValueError("mqtt_navigation_points_json must be a JSON object")
+
+    points: dict[str, NavigationPoint] = {}
+    for raw_id, raw_pose in values.items():
+        point_id = str(raw_id).strip()
+        if point_id not in _VALID_POINT_IDS:
+            raise ValueError(
+                f"MQTT navigation coordinate id must be in 1..16, got {point_id!r}"
+            )
+        if not isinstance(raw_pose, dict):
+            raise ValueError(f"MQTT navigation point {point_id} must be an object")
+        missing = {"x", "y", "yaw"}.difference(raw_pose)
+        if missing:
+            raise ValueError(
+                f"MQTT navigation point {point_id} is missing "
+                + ", ".join(sorted(missing))
+            )
+        coordinates = []
+        for name in ("x", "y", "yaw"):
+            value = raw_pose[name]
+            if isinstance(value, bool):
+                raise ValueError(
+                    f"MQTT navigation point {point_id} {name} must be numeric"
+                )
+            try:
+                coordinate = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"MQTT navigation point {point_id} {name} must be numeric"
+                ) from exc
+            if not math.isfinite(coordinate):
+                raise ValueError(
+                    f"MQTT navigation point {point_id} {name} must be finite"
+                )
+            coordinates.append(coordinate)
+        points[point_id] = NavigationPoint(*coordinates)
+    return points
+
+
+class MqttNavigationGateway:
+    """Publish a configured target pose and wait for the matching result.
+
+    Request payloads include the logical point ID and map pose, for example
+    ``{"id":5,"frame_id":"map","x":1.2,"y":3.4,"yaw":1.57}``.
+    A matching plain-text result means success. JSON results may explicitly
+    report success or failure:
     ``{"id":"5","success":true,"message":"arrived"}``.
     """
 
@@ -35,6 +94,8 @@ class MqttNavigationGateway:
         keepalive_sec: int = 60,
         connect_timeout_sec: float = 10.0,
         navigation_timeout_sec: float = 300.0,
+        frame_id: str = "map",
+        point_poses: Mapping[str, NavigationPoint] | None = None,
         client: Any | None = None,
     ) -> None:
         self._host = str(host).strip()
@@ -45,6 +106,8 @@ class MqttNavigationGateway:
         self._keepalive_sec = int(keepalive_sec)
         self._connect_timeout_sec = float(connect_timeout_sec)
         self._navigation_timeout_sec = float(navigation_timeout_sec)
+        self._frame_id = str(frame_id).strip().lstrip("/")
+        self._point_poses = dict(point_poses or {})
         self._validate_configuration()
 
         self._connected = threading.Event()
@@ -96,6 +159,14 @@ class MqttNavigationGateway:
             raise ValueError("mqtt_connect_timeout_sec must be positive")
         if self._navigation_timeout_sec <= 0.0:
             raise ValueError("mqtt_navigation_timeout_sec must be positive")
+        if not self._frame_id:
+            raise ValueError("mqtt_navigation_frame_id must not be empty")
+        invalid_ids = set(self._point_poses).difference(_VALID_POINT_IDS)
+        if invalid_ids:
+            raise ValueError(
+                "MQTT navigation coordinates contain invalid ids: "
+                + ", ".join(sorted(invalid_ids))
+            )
 
     def _on_connect(
         self,
@@ -212,6 +283,13 @@ class MqttNavigationGateway:
                 "invalid",
                 f"MQTT navigation point must be in 1..16, got {point_id!r}",
             )
+        target = self._point_poses.get(point_id)
+        if target is None:
+            return NavigationResult(
+                False,
+                "invalid",
+                f"MQTT navigation point {point_id} has no configured coordinates",
+            )
         with self._request_lock:
             if self._closed:
                 return NavigationResult(False, "unavailable", "MQTT gateway is closed")
@@ -233,7 +311,17 @@ class MqttNavigationGateway:
                 self._response_ready.clear()
             publish_info = self._client.publish(
                 self._request_topic,
-                payload=point_id,
+                payload=json.dumps(
+                    {
+                        "id": int(point_id),
+                        "frame_id": self._frame_id,
+                        "x": target.x,
+                        "y": target.y,
+                        "yaw": target.yaw,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
                 qos=self._qos,
                 retain=False,
             )

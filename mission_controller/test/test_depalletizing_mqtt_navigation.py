@@ -5,7 +5,11 @@ import unittest
 from types import SimpleNamespace
 
 from mission_runtime.taskflow.model import NavigationRequest
-from mission_runtime.taskflow.mqtt_navigation import MqttNavigationGateway
+from mission_runtime.taskflow.mqtt_navigation import (
+    MqttNavigationGateway,
+    NavigationPoint,
+    parse_navigation_points_json,
+)
 
 
 class _PublishInfo:
@@ -67,6 +71,14 @@ def _gateway(client, **overrides):
         "host": "broker",
         "connect_timeout_sec": 0.1,
         "navigation_timeout_sec": 0.2,
+        "point_poses": {
+            str(point_id): NavigationPoint(
+                x=float(point_id),
+                y=-float(point_id),
+                yaw=float(point_id) / 10.0,
+            )
+            for point_id in range(1, 17)
+        },
         "client": client,
     }
     values.update(overrides)
@@ -101,7 +113,14 @@ class TestMqttNavigationGateway(unittest.TestCase):
         self.assertTrue(results[0].success)
         self.assertEqual(
             client.published,
-            [("mission/navigation/request", "5", 1, False)],
+            [
+                (
+                    "mission/navigation/request",
+                    '{"id":5,"frame_id":"map","x":5.0,"y":-5.0,"yaw":0.5}',
+                    1,
+                    False,
+                )
+            ],
         )
         self.assertEqual(client.subscriptions, [("mission/navigation/result", 1)])
         gateway.close()
@@ -181,6 +200,32 @@ class TestMqttNavigationGateway(unittest.TestCase):
 
         self.assertEqual(result.status, "invalid")
         gateway.close()
+
+    def test_missing_point_coordinates_fail_without_publish(self):
+        client = _FakeClient()
+        gateway = _gateway(client, point_poses={})
+
+        result = gateway.navigate(
+            NavigationRequest("workflow", "step", "5"), lambda: False
+        )
+
+        self.assertEqual(result.status, "invalid")
+        self.assertIn("no configured coordinates", result.message)
+        self.assertEqual(client.published, [])
+        gateway.close()
+
+    def test_navigation_points_json_is_validated(self):
+        points = parse_navigation_points_json(
+            '{"1":{"x":1.25,"y":-2.5,"yaw":1.57}}'
+        )
+
+        self.assertEqual(points["1"], NavigationPoint(1.25, -2.5, 1.57))
+        with self.assertRaisesRegex(ValueError, "missing yaw"):
+            parse_navigation_points_json('{"1":{"x":1.0,"y":2.0}}')
+        with self.assertRaisesRegex(ValueError, "must be finite"):
+            parse_navigation_points_json(
+                '{"1":{"x":1e999,"y":2.0,"yaw":0.0}}'
+            )
 
     def _wait_for_publish(self, client):
         deadline = time.monotonic() + 1.0

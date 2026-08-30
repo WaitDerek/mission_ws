@@ -1,0 +1,30 @@
+# =========================
+# Goal
+# =========================
+
+string request_id
+string target_frame
+int32 target_label
+string arm
+bool publish_pose
+float32 detection_timeout_sec
+bool dry_run
+
+---
+# =========================
+# Result
+# =========================
+
+bool success
+string message
+string arm_message
+bool gripper_command_published
+bool torso_reset_command_published
+
+---
+# =========================
+# Feedback
+# =========================
+
+string stage
+string detail

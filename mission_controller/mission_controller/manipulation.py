@@ -30,10 +30,28 @@ class ManipulationMixin(
         self._initialize_run_pose_runtime()
         self._initialize_suction_runtime()
         self.get_logger().warning(
-            "legacy run_grip/run_peel methods are loaded for staged migration; "
+            "legacy /run_grip and /run_peel Actions are loaded for migration; "
             "workflow execution uses ExecuteGrip/ExecutePeel Actions"
         )
 
+        self.run_grip_action_server = ActionServer(
+            self,
+            ExecuteGrip,
+            self._string("run_grip_action_name"),
+            execute_callback=self._execute_run_grip,
+            goal_callback=self._goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=self._callback_group,
+        )
+        self.run_peel_action_server = ActionServer(
+            self,
+            ExecutePeel,
+            self._string("run_peel_action_name"),
+            execute_callback=self._execute_run_peel,
+            goal_callback=self._goal_callback,
+            cancel_callback=self._cancel_callback,
+            callback_group=self._callback_group,
+        )
         self.execute_grip_action_server = ActionServer(
             self,
             ExecuteGrip,
@@ -62,8 +80,11 @@ class ManipulationMixin(
             callback_group=self._callback_group,
         )
         self.get_logger().info(
-            "manipulation actions ready: grip=%s peel=%s assembly=%s"
+            "manipulation actions ready: run_grip=%s run_peel=%s "
+            "grip=%s peel=%s assembly=%s"
             % (
+                self._string("run_grip_action_name"),
+                self._string("run_peel_action_name"),
                 self._string("execute_grip_action_name"),
                 self._string("execute_peel_action_name"),
                 self._string("execute_assembly_action_name"),

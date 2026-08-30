@@ -315,9 +315,7 @@ class MqttNavigationGateway:
                     {
                         "id": int(point_id),
                         "frame_id": self._frame_id,
-                        "x": target.x,
-                        "y": target.y,
-                        "yaw": target.yaw,
+                        "pos": [target.x, target.y, target.yaw],
                     },
                     ensure_ascii=False,
                     separators=(",", ":"),

@@ -9,6 +9,7 @@ from builtin_interfaces.msg import Time
 from geometry_msgs.msg import PoseStamped
 
 from mission_controller.common import MissionCanceled, MissionError
+from mission_controller import manipulation as manipulation_module
 from mission_controller.manipulation import ManipulationMixin
 from mission_controller.manipulation_runtime import ManipulationRuntimeMixin
 from mission_controller import suction_runtime
@@ -19,6 +20,12 @@ CONFIG_ROOT = Path(__file__).resolve().parents[1] / "config"
 
 class _Logger:
     def error(self, _message):
+        pass
+
+    def info(self, _message):
+        pass
+
+    def warning(self, _message):
         pass
 
 
@@ -35,6 +42,8 @@ def test_execute_and_run_pose_topics_are_kept_separate():
     )
     assert "run_left_ee_pose_topic: /left_ee_pose" in mission_config
     assert "run_right_ee_pose_topic: /right_ee_pose" in mission_config
+    assert "run_grip_action_name: /run_grip" in mission_config
+    assert "run_peel_action_name: /run_peel" in mission_config
 
 
 class _GoalHandle:
@@ -238,6 +247,70 @@ def test_mission_node_keeps_legacy_run_methods_during_migration():
 
     assert callable(harness.run_grip)
     assert callable(harness.run_peel)
+    assert callable(harness._execute_run_grip)
+    assert callable(harness._execute_run_peel)
+
+
+def test_manipulation_registers_both_legacy_action_endpoints(monkeypatch):
+    harness = _Harness()
+    action_names = []
+    harness._initialize_pipeline_runtime = lambda: None
+    harness._initialize_run_pose_runtime = lambda: None
+    harness._initialize_suction_runtime = lambda: None
+    harness._callback_group = object()
+    harness._goal_callback = lambda _request: None
+    harness._cancel_callback = lambda _goal: None
+    harness._string = lambda name: {
+        "run_grip_action_name": "/run_grip",
+        "run_peel_action_name": "/run_peel",
+        "execute_grip_action_name": "/execute_grip",
+        "execute_peel_action_name": "/execute_peel",
+        "execute_assembly_action_name": "/execute_assembly",
+    }[name]
+
+    class _ActionServer:
+        def __init__(self, _node, _action_type, action_name, **_kwargs):
+            action_names.append(action_name)
+
+    monkeypatch.setattr(manipulation_module, "ActionServer", _ActionServer)
+
+    harness._initialize_manipulation()
+
+    assert action_names == [
+        "/run_grip",
+        "/run_peel",
+        "/execute_grip",
+        "/execute_peel",
+        "/execute_assembly",
+    ]
+
+
+def test_run_grip_action_wraps_the_legacy_flow():
+    harness = _Harness()
+    goal = _GoalHandle(target_type="badge")
+
+    result = harness._execute_run_grip(goal)
+
+    assert result.success
+    assert result.contact_detected
+    assert goal.status == "succeeded"
+    assert ("wait_run_pose", True, False, False) in harness.events
+    assert not any(event[0] == "wait_pose" for event in harness.events)
+    assert not harness._active
+
+
+def test_run_peel_action_wraps_the_legacy_flow():
+    harness = _Harness()
+    goal = _GoalHandle()
+
+    result = harness._execute_run_peel(goal)
+
+    assert result.success
+    assert result.contact_detected
+    assert goal.status == "succeeded"
+    assert ("wait_run_pose", True, True, True) in harness.events
+    assert not any(event[0] == "wait_pose" for event in harness.events)
+    assert not harness._active
 
 
 def test_run_peel_remains_a_separate_one_shot_flow():

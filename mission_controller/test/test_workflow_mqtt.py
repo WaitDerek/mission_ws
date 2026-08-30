@@ -64,7 +64,7 @@ def test_navigation_points_accept_only_ids_1_through_4():
         require_all_navigation_points(points)
 
 
-def test_navigation_publishes_pose_json_and_waits_for_matching_result():
+def test_navigation_publishes_pos_json_and_waits_for_matching_result():
     client = _MqttClient()
     gateway = MqttNavigationGateway(
         host="localhost",
@@ -90,9 +90,7 @@ def test_navigation_publishes_pose_json_and_waits_for_matching_result():
     assert payload == {
         "id": 1,
         "frame_id": "map",
-        "x": 1.2,
-        "y": 3.4,
-        "yaw": 0.5,
+        "pos": [1.2, 3.4, 0.5],
     }
     gateway._on_message(
         client,

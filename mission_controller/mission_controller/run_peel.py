@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 
 from mission_interfaces.action import ExecutePeel
 
+from .common import MissionCanceled, MissionError
 from .manipulation_math import (
     local_y_approach,
     matrix_to_pose_array,
@@ -26,6 +28,45 @@ class PeelRunResult:
 
 class RunPeelMixin:
     """Run the original right-suction dual-arm peel sequence exactly once."""
+
+    def _execute_run_peel(self, goal_handle) -> ExecutePeel.Result:
+        """Expose the legacy-compatible peel sequence as a ROS Action."""
+        result = ExecutePeel.Result()
+        started = time.monotonic()
+        try:
+            outcome = self.run_peel(goal_handle)
+            result.success = True
+            result.contact_detected = outcome.contact_detected
+            result.force_delta = outcome.force_delta
+            result.message = outcome.message
+            goal_handle.succeed()
+            return result
+        except MissionCanceled as exc:
+            self._cancel_children()
+            result.success = False
+            result.message = str(exc)
+            goal_handle.canceled()
+            return result
+        except (MissionError, ValueError, KeyError, TypeError) as exc:
+            result.success = False
+            result.message = f"legacy peel pipeline failed: {exc}"
+            self.get_logger().error(result.message)
+            goal_handle.abort()
+            return result
+        except Exception as exc:  # noqa: BLE001
+            result.success = False
+            result.message = f"unexpected legacy peel pipeline error: {exc}"
+            self.get_logger().error(result.message)
+            goal_handle.abort()
+            return result
+        finally:
+            if result.message:
+                result.message += (
+                    f" (elapsed_sec={time.monotonic() - started:.3f})"
+                )
+            with self._state_lock:
+                self._active = False
+                self._active_child_handles.clear()
 
     def run_peel(self, goal_handle) -> PeelRunResult:
         self._require_hardware_messages()

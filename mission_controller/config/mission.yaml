@@ -2,6 +2,8 @@ mission_controller:
   ros__parameters:
     # Badge tracking plus the original grip and peel pipelines.
     execute_grasp_action_name: /execute_grasp
+    run_grip_action_name: /run_grip
+    run_peel_action_name: /run_peel
     execute_grip_action_name: /execute_grip
     execute_peel_action_name: /execute_peel
     execute_assembly_action_name: /execute_assembly

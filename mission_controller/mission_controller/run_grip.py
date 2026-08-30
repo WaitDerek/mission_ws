@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import time
 
 from mission_interfaces.action import ExecuteGrip
 
-from .common import MissionError
+from .common import MissionCanceled, MissionError
 from .manipulation_math import (
     grip_base_targets,
     local_y_approach,
@@ -26,6 +27,48 @@ class GripRunResult:
 
 class RunGripMixin:
     """Run the original left-suction grip sequence exactly once."""
+
+    def _execute_run_grip(self, goal_handle) -> ExecuteGrip.Result:
+        """Expose the legacy-compatible grip sequence as a ROS Action."""
+        result = ExecuteGrip.Result()
+        started = time.monotonic()
+        try:
+            target_type = (
+                str(goal_handle.request.target_type).strip().lower() or "badge"
+            )
+            outcome = self.run_grip(goal_handle, target_type)
+            result.success = True
+            result.contact_detected = outcome.contact_detected
+            result.force_delta = outcome.force_delta
+            result.message = outcome.message
+            goal_handle.succeed()
+            return result
+        except MissionCanceled as exc:
+            self._cancel_children()
+            result.success = False
+            result.message = str(exc)
+            goal_handle.canceled()
+            return result
+        except (MissionError, ValueError, KeyError, TypeError) as exc:
+            result.success = False
+            result.message = f"legacy grip pipeline failed: {exc}"
+            self.get_logger().error(result.message)
+            goal_handle.abort()
+            return result
+        except Exception as exc:  # noqa: BLE001
+            result.success = False
+            result.message = f"unexpected legacy grip pipeline error: {exc}"
+            self.get_logger().error(result.message)
+            goal_handle.abort()
+            return result
+        finally:
+            if result.message:
+                result.message += (
+                    f" (elapsed_sec={time.monotonic() - started:.3f})"
+                )
+            with self._state_lock:
+                self._active = False
+                self._active_child_handles.clear()
 
     def run_grip(self, goal_handle, target_type: str) -> GripRunResult:
         self._require_hardware_messages()

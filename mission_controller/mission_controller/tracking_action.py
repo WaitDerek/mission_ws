@@ -171,6 +171,8 @@ class MissionController(ManipulationMixin, Node):
             namespace="",
             parameters=[
                 ("execute_grasp_action_name", "/execute_grasp"),
+                ("run_grip_action_name", "/run_grip"),
+                ("run_peel_action_name", "/run_peel"),
                 ("execute_grip_action_name", "/execute_grip"),
                 ("execute_peel_action_name", "/execute_peel"),
                 ("execute_assembly_action_name", "/execute_assembly"),
@@ -223,6 +225,8 @@ class MissionController(ManipulationMixin, Node):
     def _validate_parameters(self) -> None:
         for name in (
             "execute_grasp_action_name",
+            "run_grip_action_name",
+            "run_peel_action_name",
             "execute_grip_action_name",
             "execute_peel_action_name",
             "execute_assembly_action_name",

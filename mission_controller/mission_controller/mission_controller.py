@@ -1,6 +1,6 @@
-from .g1d_grasp import G1DGraspController, main
+from .tracking_action import MissionController, main
 
-__all__ = ["G1DGraspController", "main"]
+__all__ = ["MissionController", "main"]
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import math
 from geometry_msgs.msg import Pose
 
 from mission_controller.common import pose_from_transform
-from mission_controller.g1d_grasp import (
+from mission_controller.tracking_action import (
     OBJECT_TO_TARGET_MATRIX,
     compute_target_poses,
 )

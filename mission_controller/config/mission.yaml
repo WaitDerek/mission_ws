@@ -1,17 +1,30 @@
 mission_controller:
   ros__parameters:
-    # G1-D exposes exactly one mission action. Goal fields retained in the
-    # interface are accepted for CLI compatibility; tracking always uses left.
+    # Badge tracking plus the original grip and peel pipelines.
     execute_grasp_action_name: /execute_grasp
+    execute_grip_action_name: /execute_grip
+    execute_peel_action_name: /execute_peel
+    execute_assembly_action_name: /execute_assembly
 
     move_arm_joints_action_name: /move_arm_j
     move_arm_pose_action_name: /move_arm_p
+    move_arm_linear_action_name: /move_arm_l
     object_pose_action_name: /object_pose/estimate
+    front_bumper_pose_action_name: /front_bumper_pose/estimate
     object_model_label: badge
     object_instance_index: 0
     object_confidence_threshold: 0.0
 
     ee_pose_topic: /pinocchio_g1d/left_ee_pose
+    # Current g1_d bringup publishes FK poses under /pinocchio_g1d.
+    pipeline_left_ee_pose_topic: /pinocchio_g1d/left_ee_pose
+    pipeline_right_ee_pose_topic: /pinocchio_g1d/right_ee_pose
+    # Staged-migration run_* methods retain the original G1D topics.
+    run_left_ee_pose_topic: /left_ee_pose
+    run_right_ee_pose_topic: /right_ee_pose
+    force_torque_topic: /force_torque/data
+    suction_relay_goal_topic: /arto/usb_relay_ctrl_goal
+    suction_relay_result_topic: /arto/usb_relay_ctrl_result
     execution_frame: torso_link
     ee_frame: left_gripper_base_link
     camera_frame: camera_color_optical_frame
@@ -32,6 +45,10 @@ mission_controller:
     # Relative to this package's config directory. The YAML contains
     # ee_to_camera.matrix for left_gripper_base_link -> camera_color_optical_frame.
     handeye_file: handeye_result_12.yaml
+    grip_config_file: grip.json
+    connector_grip_config_file: connector_grip.json
+    peel_config_file: peel.json
+    assembly_config_file: assembly.json
 
     # obj_T_tar from track.py. Translation is -5 cm along badge-local X;
     # rotation aligns the target axes with the left gripper axes.

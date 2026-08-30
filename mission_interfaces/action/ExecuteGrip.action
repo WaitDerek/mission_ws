@@ -1,0 +1,15 @@
+# Execute a suction-grip pipeline for a badge or connector.
+string request_id
+string target_type
+
+---
+
+bool success
+string message
+bool contact_detected
+float64 force_delta
+
+---
+
+string stage
+string detail

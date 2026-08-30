@@ -12,6 +12,7 @@
   <depend>rclpy</depend>
   <depend>action_msgs</depend>
   <depend>ament_index_python</depend>
+  <depend>brsd_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>object_pose_interfaces</depend>
   <depend>visualization_msgs</depend>
@@ -21,6 +22,7 @@
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
   <exec_depend>robot_bringup</exec_depend>
 
   <export>

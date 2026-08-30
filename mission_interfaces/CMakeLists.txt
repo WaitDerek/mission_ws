@@ -11,6 +11,9 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ExecuteGrasp.action"
+  "action/ExecuteGrip.action"
+  "action/ExecuteAssembly.action"
+  "action/ExecutePeel.action"
   DEPENDENCIES geometry_msgs
 )
 

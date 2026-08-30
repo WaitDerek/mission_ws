@@ -1,0 +1,14 @@
+# Execute the badge-back film peeling pipeline.
+string request_id
+
+---
+
+bool success
+string message
+bool contact_detected
+float64 force_delta
+
+---
+
+string stage
+string detail

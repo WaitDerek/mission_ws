@@ -27,6 +27,7 @@ from .common import (
     pose_to_array,
     rotate_vector,
 )
+from .manipulation import ManipulationMixin
 
 
 LEFT_JOINT_WAYPOINTS = [
@@ -76,8 +77,8 @@ def compute_target_poses(
     return camera_pose, badge_pose, target_pose
 
 
-class G1DGraspController(Node):
-    """Run the G1-D badge tracking sequence behind /execute_grasp."""
+class MissionController(ManipulationMixin, Node):
+    """Run tracking, grip, peel, and assembly actions from one controller."""
 
     def __init__(self) -> None:
         super().__init__("mission_controller")
@@ -153,8 +154,9 @@ class G1DGraspController(Node):
             cancel_callback=self._cancel_callback,
             callback_group=self._callback_group,
         )
+        self._initialize_manipulation()
         self.get_logger().info(
-            "G1-D mission ready: only %s; observation=LEFT_JOINT_WAYPOINTS, "
+            "G1-D mission ready: tracking=%s; observation=LEFT_JOINT_WAYPOINTS, "
             "ee_topic=%s, object_action=%s, move_pose=%s"
             % (
                 self._string("execute_grasp_action_name"),
@@ -169,13 +171,31 @@ class G1DGraspController(Node):
             namespace="",
             parameters=[
                 ("execute_grasp_action_name", "/execute_grasp"),
+                ("execute_grip_action_name", "/execute_grip"),
+                ("execute_peel_action_name", "/execute_peel"),
+                ("execute_assembly_action_name", "/execute_assembly"),
                 ("move_arm_joints_action_name", "/move_arm_j"),
                 ("move_arm_pose_action_name", "/move_arm_p"),
+                ("move_arm_linear_action_name", "/move_arm_l"),
                 ("object_pose_action_name", "/object_pose/estimate"),
+                ("front_bumper_pose_action_name", "/front_bumper_pose/estimate"),
                 ("object_model_label", "badge"),
                 ("object_instance_index", 0),
                 ("object_confidence_threshold", 0.0),
                 ("ee_pose_topic", "/pinocchio_g1d/left_ee_pose"),
+                (
+                    "pipeline_left_ee_pose_topic",
+                    "/pinocchio_g1d/left_ee_pose",
+                ),
+                (
+                    "pipeline_right_ee_pose_topic",
+                    "/pinocchio_g1d/right_ee_pose",
+                ),
+                ("run_left_ee_pose_topic", "/left_ee_pose"),
+                ("run_right_ee_pose_topic", "/right_ee_pose"),
+                ("force_torque_topic", "/force_torque/data"),
+                ("suction_relay_goal_topic", "/arto/usb_relay_ctrl_goal"),
+                ("suction_relay_result_topic", "/arto/usb_relay_ctrl_result"),
                 ("execution_frame", "torso_link"),
                 ("ee_frame", "left_gripper_base_link"),
                 ("camera_frame", "camera_color_optical_frame"),
@@ -186,6 +206,10 @@ class G1DGraspController(Node):
                 ("left_observation_joint_positions", LEFT_JOINT_WAYPOINTS[0]),
                 ("right_observation_joint_positions", []),
                 ("handeye_file", "handeye_result_12.yaml"),
+                ("grip_config_file", "grip.json"),
+                ("connector_grip_config_file", "connector_grip.json"),
+                ("peel_config_file", "peel.json"),
+                ("assembly_config_file", "assembly.json"),
                 ("object_to_target_matrix", OBJECT_TO_TARGET_MATRIX),
                 ("joint_motion_duration_sec", 5.0),
                 ("dependency_wait_timeout_sec", 10.0),
@@ -199,11 +223,23 @@ class G1DGraspController(Node):
     def _validate_parameters(self) -> None:
         for name in (
             "execute_grasp_action_name",
+            "execute_grip_action_name",
+            "execute_peel_action_name",
+            "execute_assembly_action_name",
             "move_arm_joints_action_name",
             "move_arm_pose_action_name",
+            "move_arm_linear_action_name",
             "object_pose_action_name",
+            "front_bumper_pose_action_name",
             "object_model_label",
             "ee_pose_topic",
+            "pipeline_left_ee_pose_topic",
+            "pipeline_right_ee_pose_topic",
+            "run_left_ee_pose_topic",
+            "run_right_ee_pose_topic",
+            "force_torque_topic",
+            "suction_relay_goal_topic",
+            "suction_relay_result_topic",
             "execution_frame",
             "ee_frame",
             "camera_frame",
@@ -211,6 +247,10 @@ class G1DGraspController(Node):
             "object_pose_topic",
             "target_pose_topic",
             "visualization_topic",
+            "grip_config_file",
+            "connector_grip_config_file",
+            "peel_config_file",
+            "assembly_config_file",
         ):
             if not self._string(name):
                 raise ValueError(f"parameter '{name}' must not be empty")
@@ -526,7 +566,7 @@ class G1DGraspController(Node):
                 marker = Marker()
                 marker.header.frame_id = frame
                 marker.header.stamp = self.get_clock().now().to_msg()
-                marker.ns = "g1d_grasp"
+                marker.ns = "badge_grasp"
                 marker.id = marker_id
                 marker.type = Marker.ARROW
                 marker.action = Marker.ADD
@@ -550,7 +590,7 @@ class G1DGraspController(Node):
             label = Marker()
             label.header.frame_id = frame
             label.header.stamp = self.get_clock().now().to_msg()
-            label.ns = "g1d_grasp_labels"
+            label.ns = "badge_grasp_labels"
             label.id = marker_id
             label.type = Marker.TEXT_VIEW_FACING
             label.action = Marker.ADD
@@ -682,7 +722,7 @@ class G1DGraspController(Node):
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = G1DGraspController()
+    node = MissionController()
     executor = MultiThreadedExecutor(num_threads=4)
     executor.add_node(node)
     try:

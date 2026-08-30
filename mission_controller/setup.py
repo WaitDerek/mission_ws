@@ -25,6 +25,7 @@ setup(
     entry_points={
         "console_scripts": [
             "mission_controller = mission_controller.mission_controller:main",
+            "execute_workflow = mission_controller.taskflow.node:main",
         ],
     },
 )

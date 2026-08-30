@@ -1,0 +1,36 @@
+execute_workflow:
+  ros__parameters:
+    workflow_action_name: /execute_workflow
+    execute_grip_action_name: /execute_grip
+    execute_peel_action_name: /execute_peel
+    execute_assembly_action_name: /execute_assembly
+    connector_point_id: "1"
+    badge_point_id: "2"
+    assembly_point_id: "3"
+    # The platform start message must carry this value in `robot_id`.
+    robot_id: g1d
+
+    # Four logical navigation points. The standard workflow uses 1, 2, and 3;
+    # point 4 remains reserved. Configure measured map coordinates before use.
+    navigation_adapter: mqtt
+    mqtt_host: 127.0.0.1
+    mqtt_port: 1883
+    mqtt_request_topic: mission/navigation/request
+    mqtt_result_topic: mission/navigation/result
+    mqtt_client_id: ""
+    mqtt_qos: 1
+    mqtt_keepalive_sec: 60
+    mqtt_connect_timeout_sec: 10.0
+    mqtt_navigation_timeout_sec: 300.0
+    mqtt_navigation_frame_id: map
+    mqtt_navigation_points_json: "{}"
+
+    # Platform MQTT {"robot_id":"g1d","start":true,"request_id":"..."} starts one run.
+    mqtt_start_enabled: true
+    mqtt_start_topic: mission/workflow/start
+    mqtt_status_topic: mission/workflow/status
+    mqtt_trigger_client_id: ""
+    mqtt_start_action_wait_timeout_sec: 5.0
+
+    server_wait_timeout_sec: 10.0
+    child_result_timeout_sec: 1200.0

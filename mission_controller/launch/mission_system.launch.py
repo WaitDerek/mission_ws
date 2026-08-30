@@ -1,4 +1,4 @@
-"""Start G1-D dual-arm bringup and the single execute_grasp mission."""
+"""Start G1-D bringup, manipulation actions, and the MQTT workflow."""
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
@@ -53,6 +53,7 @@ def generate_launch_description() -> LaunchDescription:
         launch_arguments={
             "config_file": LaunchConfiguration("config_file"),
             "handeye_file": LaunchConfiguration("handeye_file"),
+            "taskflow_config_file": LaunchConfiguration("taskflow_config_file"),
         }.items(),
     )
     return LaunchDescription(
@@ -73,6 +74,12 @@ def generate_launch_description() -> LaunchDescription:
                 "handeye_file",
                 default_value="handeye_result_12.yaml",
                 description="Hand-eye YAML filename relative to the mission config directory.",
+            ),
+            DeclareLaunchArgument(
+                "taskflow_config_file",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("mission_controller"), "config", "taskflow.yaml"]
+                ),
             ),
             simulation,
             hardware,

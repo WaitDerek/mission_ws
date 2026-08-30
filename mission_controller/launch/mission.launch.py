@@ -1,4 +1,4 @@
-"""Start the G1-D-only mission controller."""
+"""Start manipulation actions and the MQTT-driven workflow."""
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -21,6 +21,12 @@ def generate_launch_description() -> LaunchDescription:
                 default_value="handeye_result_12.yaml",
                 description="Hand-eye YAML filename relative to the mission config directory.",
             ),
+            DeclareLaunchArgument(
+                "taskflow_config_file",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("mission_controller"), "config", "taskflow.yaml"]
+                ),
+            ),
             Node(
                 package="mission_controller",
                 executable="mission_controller",
@@ -30,6 +36,13 @@ def generate_launch_description() -> LaunchDescription:
                     LaunchConfiguration("config_file"),
                     {"handeye_file": LaunchConfiguration("handeye_file")},
                 ],
+            ),
+            Node(
+                package="mission_controller",
+                executable="execute_workflow",
+                name="execute_workflow",
+                output="screen",
+                parameters=[LaunchConfiguration("taskflow_config_file")],
             ),
         ]
     )

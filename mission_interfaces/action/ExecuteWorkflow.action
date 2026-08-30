@@ -1,0 +1,20 @@
+# Start the complete connector-and-badge installation workflow.
+bool start
+
+---
+
+bool success
+string workflow_id
+string message
+uint32 completed_task_count
+string final_stage
+
+---
+
+string workflow_id
+string stage
+string current_point_id
+string current_task
+uint32 current_step
+uint32 total_steps
+string detail

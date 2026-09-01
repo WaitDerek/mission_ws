@@ -59,16 +59,17 @@ def _bridge(client, requests):
 
 
 class TestMqttWorkflowStartBridge(unittest.TestCase):
-    def test_plain_start_requests_the_workflow(self):
+    def test_plain_start_is_rejected(self):
         client = _FakeClient()
         requests = []
         bridge = _bridge(client, requests)
 
         client.emit("start")
 
-        self.assertEqual(len(requests), 1)
-        self.assertEqual(requests[0].request_id, "")
-        self.assertEqual(requests[0].id, 0)
+        self.assertEqual(requests, [])
+        status = json.loads(client.published[-1][1])
+        self.assertEqual(status["event"], "rejected")
+        self.assertIn("JSON object", status["message"])
         self.assertEqual(client.subscriptions, [("mission/workflow/start", 1)])
         bridge.close()
 
@@ -78,44 +79,60 @@ class TestMqttWorkflowStartBridge(unittest.TestCase):
         bridge = _bridge(client, requests)
 
         client.emit(
-            json.dumps({"id": 0, "start": True, "request_id": "platform-7"})
+            json.dumps(
+                {"robot_id": "6", "start": True, "request_id": "platform-7"}
+            )
         )
 
         self.assertEqual(requests[0].request_id, "platform-7")
-        self.assertEqual(requests[0].id, 0)
+        self.assertEqual(requests[0].robot_id, "6")
         bridge.close()
 
-    def test_json_start_defaults_missing_id_to_zero(self):
+    def test_json_start_requires_robot_id(self):
         client = _FakeClient()
         requests = []
         bridge = _bridge(client, requests)
 
         client.emit(json.dumps({"start": True}))
 
-        self.assertEqual(requests[0].id, 0)
+        self.assertEqual(requests, [])
+        status = json.loads(client.published[-1][1])
+        self.assertIn("requires robot_id", status["message"])
         bridge.close()
 
-    def test_nonzero_json_id_is_preserved_for_node_validation(self):
+    def test_other_robot_id_is_preserved_for_node_validation(self):
         client = _FakeClient()
         requests = []
         bridge = _bridge(client, requests)
 
-        client.emit(json.dumps({"id": 1, "start": True}))
+        client.emit(json.dumps({"robot_id": "7", "start": True}))
 
         self.assertEqual(len(requests), 1)
-        self.assertEqual(requests[0].id, 1)
+        self.assertEqual(requests[0].robot_id, "7")
         bridge.close()
 
-    def test_json_id_must_be_an_integer(self):
+    def test_json_robot_id_must_be_scalar(self):
         client = _FakeClient()
         requests = []
         bridge = _bridge(client, requests)
 
-        client.emit(json.dumps({"id": "0", "start": True}))
+        client.emit(json.dumps({"robot_id": {"value": 0}, "start": True}))
 
         self.assertEqual(requests, [])
         status = json.loads(client.published[-1][1])
-        self.assertIn("an integer", status["message"])
+        self.assertIn("string or integer", status["message"])
+        bridge.close()
+
+    def test_legacy_id_field_is_not_used(self):
+        client = _FakeClient()
+        requests = []
+        bridge = _bridge(client, requests)
+
+        client.emit(json.dumps({"id": 0, "start": True}))
+
+        self.assertEqual(requests, [])
+        status = json.loads(client.published[-1][1])
+        self.assertIn("requires robot_id", status["message"])
         bridge.close()
 
     def test_invalid_start_is_rejected_on_status_topic(self):

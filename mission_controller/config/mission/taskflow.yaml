@@ -8,12 +8,13 @@ execute_workflow:
     acquire_mission_lease_service_name: /mission/acquire_workflow_lease
     release_mission_lease_service_name: /mission/release_workflow_lease
 
-    # Mission publishes the point ID together with its configured map pose.
+    # Robot 6 publishes point_id together with its configured map pose.
     # Keep this empty until现场 coordinates are measured; an unconfigured
     # point fails closed and no MQTT navigation request is published.
     navigation_adapter: mqtt
     mqtt_host: 127.0.0.1
     mqtt_port: 1883
+    mqtt_robot_id: "6"
     mqtt_request_topic: mission/navigation/request
     mqtt_result_topic: mission/navigation/result
     mqtt_client_id: ""
@@ -24,7 +25,7 @@ execute_workflow:
     mqtt_navigation_frame_id: map
     mqtt_navigation_points_json: "{}"
 
-    # Platform MQTT {"id":0,"start":true} -> /execute_workflow Action goal.
+    # Platform MQTT {"robot_id":"6","start":true} -> Action goal.
     mqtt_start_enabled: true
     mqtt_start_topic: mission/workflow/start
     mqtt_status_topic: mission/workflow/status

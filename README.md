@@ -124,9 +124,9 @@ ID、层数、左右列和 size 规划任务。1 有有效计划时继续 3；1 
 平台通过 MQTT 启动完整任务流：
 
 - `execute_workflow` 节点启动后订阅 `mission/workflow/start`。
-- 推荐发布 `{"id":0,"start":true,"request_id":"platform-001"}`；`id`
-  缺省为 `0`，只有 `id=0` 才会调用任务流 Action。兼容纯文本 `start`、
-  `true` 或 `1`，这些纯文本消息同样按 `id=0` 处理。
+- 推荐发布 `{"robot_id":"6","start":true,"request_id":"platform-001"}`；
+  只有 `robot_id="6"` 才会调用任务流 Action。JSON 启动消息不再使用 `id`
+  字段，缺少 `robot_id` 会被拒绝；纯文本启动消息同样会被拒绝。
 - Mission 收到后通过 ROS ActionClient 调用现有
   `/execute_workflow`，因此仍经过原有 goal 校验、Mission lease、取消和
   严格串行状态机。
@@ -139,7 +139,7 @@ ID、层数、左右列和 size 规划任务。1 有有效计划时继续 3；1 
 示例启动消息：
 
 ```json
-{"id":0,"start":true,"request_id":"platform-001"}
+{"robot_id":"6","start":true,"request_id":"platform-001"}
 ```
 
 ROS 节点本身仍需先通过 `mission.launch.py` 或 `mission_system.launch.py` 启动；MQTT
@@ -148,12 +148,12 @@ ROS 节点本身仍需先通过 `mission.launch.py` 或 `mission_system.launch.p
 任务流内部需要导航时：
 
 - Mission 向 `mission/navigation/request` 发布点位及地图位姿，例如
-  `{"id":5,"frame_id":"map","x":1.2,"y":3.4,"yaw":1.57}`。
-- 平台到点后向 `mission/navigation/result` 返回相同纯文本 ID，例如 `5`，即为成功。
-- 平台也可返回 JSON：
-  `{"id":"5","success":true,"message":"arrived"}`；将 `success` 设为
-  `false` 可让任务流在当前导航步骤失败并停止。
-- 任务流同一时刻只等待一个导航结果，忽略其他 ID 和 retained 旧消息；默认 QoS 1、
+  `{"robot_id":"6","point_id":5,"frame_id":"map","x":1.2,"y":3.4,"yaw":1.57}`。
+- 平台到点后向 `mission/navigation/result` 返回
+  `{"robot_id":"6","success":true,"message":"arrived"}`。将 `success` 设为
+  `false` 可让任务流在当前导航步骤失败并停止；纯文本以及包含 `id` 或
+  `point_id` 的旧回执会被拒绝。
+- 任务流同一时刻只等待一个导航结果，忽略其他机器人和 retained 旧消息；默认 QoS 1、
   连接超时 10 秒、单次导航超时 300 秒。
 
 Broker、Topic、QoS 和超时均可在
@@ -167,6 +167,21 @@ Broker、Topic、QoS 和超时均可在
 
 仓库不包含现场测量坐标，因此默认值为空对象。任务流请求未配置的点位时会明确失败，
 且不会向平台发布 `(0,0,0)` 等可能导致误移动的占位坐标。
+
+以上均为 MQTT Topic，不是 ROS 2 Topic，不能使用 `ros2 topic echo` 查看。监听平台
+导航结果可使用：
+
+```zsh
+mosquitto_sub -h 127.0.0.1 -t mission/navigation/result -v
+```
+
+模拟平台返回：
+
+```zsh
+mosquitto_pub -h 127.0.0.1 \
+  -t mission/navigation/result \
+  -m '{"robot_id":"6","success":true,"message":"arrived"}'
+```
 
 任务流采用内部 Mission lease，防止平台在自动任务中间直接插入旧 Action。
 异常退出后 lease 保持 fail-closed，需要受控重启 MissionController；第一版不做

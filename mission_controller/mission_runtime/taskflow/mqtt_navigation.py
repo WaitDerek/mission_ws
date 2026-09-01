@@ -76,10 +76,9 @@ class MqttNavigationGateway:
     """Publish a configured target pose and wait for the matching result.
 
     Request payloads include the logical point ID and map pose, for example
-    ``{"id":5,"frame_id":"map","x":1.2,"y":3.4,"yaw":1.57}``.
-    A matching plain-text result means success. JSON results may explicitly
-    report success or failure:
-    ``{"id":"5","success":true,"message":"arrived"}``.
+    ``{"robot_id":"6","point_id":5,"frame_id":"map",...}``.
+    Results use the platform robot-level protocol:
+    ``{"robot_id":"6","success":true,"message":"arrived"}``.
     """
 
     def __init__(
@@ -94,6 +93,7 @@ class MqttNavigationGateway:
         keepalive_sec: int = 60,
         connect_timeout_sec: float = 10.0,
         navigation_timeout_sec: float = 300.0,
+        robot_id: str = "6",
         frame_id: str = "map",
         point_poses: Mapping[str, NavigationPoint] | None = None,
         client: Any | None = None,
@@ -106,6 +106,7 @@ class MqttNavigationGateway:
         self._keepalive_sec = int(keepalive_sec)
         self._connect_timeout_sec = float(connect_timeout_sec)
         self._navigation_timeout_sec = float(navigation_timeout_sec)
+        self._robot_id = str(robot_id).strip()
         self._frame_id = str(frame_id).strip().lstrip("/")
         self._point_poses = dict(point_poses or {})
         self._validate_configuration()
@@ -159,6 +160,8 @@ class MqttNavigationGateway:
             raise ValueError("mqtt_connect_timeout_sec must be positive")
         if self._navigation_timeout_sec <= 0.0:
             raise ValueError("mqtt_navigation_timeout_sec must be positive")
+        if not self._robot_id:
+            raise ValueError("mqtt_robot_id must not be empty")
         if not self._frame_id:
             raise ValueError("mqtt_navigation_frame_id must not be empty")
         invalid_ids = set(self._point_poses).difference(_VALID_POINT_IDS)
@@ -213,21 +216,32 @@ class MqttNavigationGateway:
         if not text:
             raise ValueError("navigation result payload is empty")
         if not text.startswith("{"):
-            return text, True, "platform reported arrival"
+            raise ValueError("navigation result payload must be a JSON object")
         try:
             result = json.loads(text)
         except json.JSONDecodeError as exc:
             raise ValueError("navigation result is invalid JSON") from exc
         if not isinstance(result, dict):
             raise ValueError("navigation result JSON must be an object")
-        point_id = str(result.get("id", result.get("point_id", ""))).strip()
+        if "id" in result or "point_id" in result:
+            raise ValueError(
+                "navigation result JSON must not contain id or point_id"
+            )
+        raw_robot_id = result.get("robot_id")
         success = result.get("success")
-        if not point_id:
-            raise ValueError("navigation result JSON is missing id")
+        if isinstance(raw_robot_id, bool) or not isinstance(
+            raw_robot_id, (str, int)
+        ):
+            raise ValueError(
+                "navigation result JSON robot_id must be a string or integer"
+            )
+        robot_id = str(raw_robot_id).strip()
+        if not robot_id:
+            raise ValueError("navigation result JSON robot_id must not be empty")
         if not isinstance(success, bool):
             raise ValueError("navigation result JSON success must be boolean")
         message = str(result.get("message", "")).strip()
-        return point_id, success, message
+        return robot_id, success, message
 
     def _on_message(self, _client, _userdata, message) -> None:
         if str(getattr(message, "topic", "")) != self._result_topic:
@@ -235,23 +249,25 @@ class MqttNavigationGateway:
         if bool(getattr(message, "retain", False)):
             return
         try:
-            point_id, success, detail = self._decode_result(message.payload)
+            robot_id, success, detail = self._decode_result(message.payload)
         except (AttributeError, TypeError, ValueError):
             return
         with self._state_lock:
             if (
                 self._cancel_requested.is_set()
                 or self._response_ready.is_set()
-                or point_id != self._pending_point_id
+                or not self._pending_point_id
+                or robot_id != self._robot_id
             ):
                 return
+            resolved_point_id = self._pending_point_id
             self._response = NavigationResult(
                 success,
                 "succeeded" if success else "failed",
                 detail or (
-                    f"platform reached point {point_id}"
+                    f"platform reached point {resolved_point_id}"
                     if success
-                    else f"platform failed to reach point {point_id}"
+                    else f"platform failed to reach point {resolved_point_id}"
                 ),
             )
             self._response_ready.set()
@@ -313,7 +329,8 @@ class MqttNavigationGateway:
                 self._request_topic,
                 payload=json.dumps(
                     {
-                        "id": int(point_id),
+                        "robot_id": self._robot_id,
+                        "point_id": int(point_id),
                         "frame_id": self._frame_id,
                         "x": target.x,
                         "y": target.y,

@@ -140,6 +140,7 @@ class DepalletizingWorkflowNode(Node):
                 ("navigation_adapter", "disabled"),
                 ("mqtt_host", "127.0.0.1"),
                 ("mqtt_port", 1883),
+                ("mqtt_robot_id", "6"),
                 ("mqtt_request_topic", "mission/navigation/request"),
                 ("mqtt_result_topic", "mission/navigation/result"),
                 ("mqtt_client_id", ""),
@@ -212,9 +213,11 @@ class DepalletizingWorkflowNode(Node):
             "mqtt_start_enabled"
         )
         if mqtt_used:
-            for name in ("mqtt_host",):
+            for name in ("mqtt_host", "mqtt_robot_id"):
                 if not self._string(name):
                     raise ValueError(f"{name} must not be empty")
+        if self._string("mqtt_robot_id") != "6":
+            raise ValueError("mqtt_robot_id must be 6")
         if self._string("navigation_adapter") == "mqtt":
             for name in ("mqtt_request_topic", "mqtt_result_topic"):
                 if not self._string(name):
@@ -244,17 +247,20 @@ class DepalletizingWorkflowNode(Node):
     def _queue_mqtt_start(self, request: MqttStartRequest) -> None:
         normalized = MqttStartRequest(
             request_id=request.request_id or f"mqtt-{new_workflow_id()}",
-            id=request.id,
+            robot_id=str(request.robot_id).strip(),
         )
-        if normalized.id != 0:
+        expected_robot_id = self._string("mqtt_robot_id")
+        if normalized.robot_id != expected_robot_id:
             bridge = self._mqtt_start_bridge
             if bridge is not None:
                 bridge.publish_status(
                     {
                         "event": "rejected",
-                        "id": normalized.id,
+                        "robot_id": normalized.robot_id,
                         "request_id": normalized.request_id,
-                        "message": "workflow MQTT id must be 0",
+                        "message": (
+                            f"workflow MQTT robot_id must be {expected_robot_id}"
+                        ),
                     }
                 )
             return
@@ -396,7 +402,12 @@ class DepalletizingWorkflowNode(Node):
         if bridge is None:
             return False
         return bridge.publish_status(
-            {"event": event, "id": 0, "request_id": request_id, **values}
+            {
+                "event": event,
+                "robot_id": self._string("mqtt_robot_id"),
+                "request_id": request_id,
+                **values,
+            }
         )
 
     def _finish_mqtt_start(
@@ -570,6 +581,7 @@ class DepalletizingWorkflowNode(Node):
             keepalive_sec=self._integer("mqtt_keepalive_sec"),
             connect_timeout_sec=self._float("mqtt_connect_timeout_sec"),
             navigation_timeout_sec=self._float("mqtt_navigation_timeout_sec"),
+            robot_id=self._string("mqtt_robot_id"),
             frame_id=self._string("mqtt_navigation_frame_id"),
             point_poses=parse_navigation_points_json(
                 self._string("mqtt_navigation_points_json")

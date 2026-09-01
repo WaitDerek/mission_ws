@@ -14,7 +14,7 @@ from .mqtt_support import create_paho_client, mqtt_reason_is_failure
 @dataclass(frozen=True)
 class MqttStartRequest:
     request_id: str = ""
-    id: int = 0
+    robot_id: str = "6"
 
 
 class MqttWorkflowStartBridge:
@@ -97,9 +97,7 @@ class MqttWorkflowStartBridge:
         if not text:
             raise ValueError("workflow start payload is empty")
         if not text.startswith("{"):
-            if text.lower() not in ("start", "true", "1"):
-                raise ValueError("workflow start payload must be start, true, or 1")
-            return MqttStartRequest()
+            raise ValueError("workflow start payload must be a JSON object")
         try:
             value = json.loads(text)
         except json.JSONDecodeError as exc:
@@ -108,12 +106,17 @@ class MqttWorkflowStartBridge:
             raise ValueError("workflow start JSON must be an object")
         if value.get("start") is not True:
             raise ValueError("workflow start JSON requires start=true")
-        mqtt_id = value.get("id", 0)
-        if isinstance(mqtt_id, bool) or not isinstance(mqtt_id, int):
-            raise ValueError("workflow start JSON id must be an integer")
+        if "robot_id" not in value:
+            raise ValueError("workflow start JSON requires robot_id")
+        raw_robot_id = value["robot_id"]
+        if isinstance(raw_robot_id, bool) or not isinstance(raw_robot_id, (str, int)):
+            raise ValueError("workflow start JSON robot_id must be a string or integer")
+        robot_id = str(raw_robot_id).strip()
+        if not robot_id:
+            raise ValueError("workflow start JSON robot_id must not be empty")
         return MqttStartRequest(
             request_id=str(value.get("request_id", "")).strip(),
-            id=mqtt_id,
+            robot_id=robot_id,
         )
 
     def _on_message(self, _client, _userdata, message) -> None:

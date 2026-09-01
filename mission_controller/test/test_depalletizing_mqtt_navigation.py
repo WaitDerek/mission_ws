@@ -100,13 +100,17 @@ def _navigate_in_thread(gateway, point_id):
 
 
 class TestMqttNavigationGateway(unittest.TestCase):
-    def test_plain_matching_id_completes_navigation(self):
+    def test_navigation_request_and_platform_result_protocol(self):
         client = _FakeClient()
         gateway = _gateway(client)
         thread, results = _navigate_in_thread(gateway, "5")
         self._wait_for_publish(client)
 
-        client.emit("5")
+        client.emit(
+            json.dumps(
+                {"robot_id": "6", "success": True, "message": "arrived"}
+            )
+        )
         thread.join(timeout=1.0)
 
         self.assertFalse(thread.is_alive())
@@ -116,7 +120,7 @@ class TestMqttNavigationGateway(unittest.TestCase):
             [
                 (
                     "mission/navigation/request",
-                    '{"id":5,"frame_id":"map","x":5.0,"y":-5.0,"yaw":0.5}',
+                    '{"robot_id":"6","point_id":5,"frame_id":"map","x":5.0,"y":-5.0,"yaw":0.5}',
                     1,
                     False,
                 )
@@ -131,12 +135,34 @@ class TestMqttNavigationGateway(unittest.TestCase):
         thread, results = _navigate_in_thread(gateway, "8")
         self._wait_for_publish(client)
 
-        client.emit(json.dumps({"id": "8", "success": False, "message": "blocked"}))
+        client.emit(
+            json.dumps(
+                {
+                    "robot_id": "6",
+                    "success": False,
+                    "message": "blocked",
+                }
+            )
+        )
         thread.join(timeout=1.0)
 
         self.assertFalse(results[0].success)
         self.assertEqual(results[0].status, "failed")
         self.assertEqual(results[0].message, "blocked")
+        gateway.close()
+
+    def test_legacy_plain_and_point_id_results_are_rejected(self):
+        client = _FakeClient()
+        gateway = _gateway(client, navigation_timeout_sec=0.05)
+        thread, results = _navigate_in_thread(gateway, "4")
+        self._wait_for_publish(client)
+
+        client.emit("4")
+        client.emit(json.dumps({"id": "4", "success": True}))
+        client.emit(json.dumps({"point_id": "4", "success": True}))
+        thread.join(timeout=1.0)
+
+        self.assertEqual(results[0].status, "timeout")
         gateway.close()
 
     def test_mismatched_and_retained_results_are_ignored(self):
@@ -145,8 +171,11 @@ class TestMqttNavigationGateway(unittest.TestCase):
         thread, results = _navigate_in_thread(gateway, "16")
         self._wait_for_publish(client)
 
-        client.emit("5")
-        client.emit("16", retain=True)
+        client.emit(json.dumps({"robot_id": "7", "success": True}))
+        client.emit(
+            json.dumps({"robot_id": "6", "success": True}),
+            retain=True,
+        )
         thread.join(timeout=1.0)
 
         self.assertEqual(results[0].status, "timeout")

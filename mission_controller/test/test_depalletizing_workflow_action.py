@@ -197,16 +197,16 @@ class TestDepalletizingWorkflowAction(unittest.TestCase):
         self.assertIn("accepted", events)
         self.assertIn("feedback", events)
         self.assertTrue(result["success"])
-        self.assertEqual(result["id"], 0)
+        self.assertEqual(result["robot_id"], "6")
         self.assertEqual(result["request_id"], "platform-1")
         self.assertEqual(result["final_stage"], "COMPLETE")
 
-    def test_mqtt_nonzero_id_does_not_invoke_the_action(self):
+    def test_mqtt_other_robot_id_does_not_invoke_the_action(self):
         bridge = _StatusBridge()
         self.workflow_node._mqtt_start_bridge = bridge
 
         self.workflow_node._queue_mqtt_start(
-            MqttStartRequest(request_id="platform-2", id=2)
+            MqttStartRequest(request_id="platform-2", robot_id="7")
         )
 
         self.assertEqual(self.operations.calls, [])
@@ -215,9 +215,9 @@ class TestDepalletizingWorkflowAction(unittest.TestCase):
             [
                 {
                     "event": "rejected",
-                    "id": 2,
+                    "robot_id": "7",
                     "request_id": "platform-2",
-                    "message": "workflow MQTT id must be 0",
+                    "message": "workflow MQTT robot_id must be 6",
                 }
             ],
         )

@@ -62,7 +62,7 @@ def test_left_camera_children_apply_local_optical_roll_correction():
         )
 
 
-def test_left_depth_camera_mount_moves_back_1cm_z_and_09cm_y():
+def test_camera_mounts_move_2cm_along_corrected_local_negative_x():
     source_root = Path(__file__).resolve().parents[2]
     urdf = source_root / "realbots2" / "urdf" / "realbots29.urdf"
     model = UrdfKinematics(str(urdf))
@@ -74,15 +74,15 @@ def test_left_depth_camera_mount_moves_back_1cm_z_and_09cm_y():
         )
     )
     parameters = config["realbots_global_tf"]["ros__parameters"]
-    configured = tuple(
-        float(value)
-        for value in parameters["camera_mount_xyz"]
+    configured_left = tuple(float(value) for value in parameters["camera_mount_xyz"])
+    configured_right = tuple(
+        float(value) for value in parameters["right_camera_mount_xyz"]
     )
-    quaternion = tuple(
-        float(value) for value in parameters["camera_mount_quaternion_xyzw"]
-    )
-    norm = math.sqrt(sum(value * value for value in quaternion))
-    x, y, z, w = (value / norm for value in quaternion)
+    # Reproduce the pre-shift calibrated origin from the orientation that was
+    # active when that translation was measured.
+    calibrated_quaternion = (0.031607850, 0.030185435, 0.706565983, -0.706296181)
+    norm = math.sqrt(sum(value * value for value in calibrated_quaternion))
+    x, y, z, w = (value / norm for value in calibrated_quaternion)
     y_axis = (
         2.0 * (x * y - z * w),
         1.0 - 2.0 * (x * x + z * z),
@@ -93,13 +93,31 @@ def test_left_depth_camera_mount_moves_back_1cm_z_and_09cm_y():
         2.0 * (y * z - x * w),
         1.0 - 2.0 * (x * x + y * y),
     )
-    expected = tuple(
+    calibrated_origin = tuple(
         rgb_origin[index] - 0.01 * z_axis[index] - 0.009 * y_axis[index]
         for index in range(3)
     )
 
-    for actual, target in zip(configured, expected):
-        assert math.isclose(actual, target, abs_tol=1.0e-12)
+    # Convert the requested local [-0.02, 0, 0] displacement through the
+    # corrected camera-link rotation before adding it to the parent-frame XYZ.
+    corrected_quaternion = tuple(
+        float(value) for value in parameters["camera_mount_quaternion_xyzw"]
+    )
+    norm = math.sqrt(sum(value * value for value in corrected_quaternion))
+    x, y, z, w = (value / norm for value in corrected_quaternion)
+    local_x_in_parent = (
+        1.0 - 2.0 * (y * y + z * z),
+        2.0 * (x * y + z * w),
+        2.0 * (x * z - y * w),
+    )
+    expected = tuple(
+        calibrated_origin[index] - 0.02 * local_x_in_parent[index]
+        for index in range(3)
+    )
+
+    for configured in (configured_left, configured_right):
+        for actual, target in zip(configured, expected):
+            assert math.isclose(actual, target, abs_tol=1.0e-12)
 
 
 def test_left_depth_camera_axes_apply_requested_local_remap():
@@ -109,21 +127,19 @@ def test_left_depth_camera_axes_apply_requested_local_remap():
             encoding="utf-8"
         )
     )
+    parameters = config["realbots_global_tf"]["ros__parameters"]
     configured = tuple(
+        float(value) for value in parameters["camera_mount_quaternion_xyzw"]
+    )
+    configured_right = tuple(
         float(value)
-        for value in config["realbots_global_tf"]["ros__parameters"][
-            "camera_mount_quaternion_xyzw"
-        ]
+        for value in parameters["right_camera_mount_quaternion_xyzw"]
     )
-    old_mount = (0.500617260, 0.499457371, 0.499528938, -0.500395377)
-    correction = math.radians(-5.0)
-    roll_correction = (
-        math.sin(correction / 2.0),
-        0.0,
-        0.0,
-        math.cos(correction / 2.0),
-    )
-    axis_remap = (0.0, math.sin(math.pi / 4.0), 0.0, math.cos(math.pi / 4.0))
+    # This is the mount relation that was active before the requested update.
+    # Compose the new axes in the current camera-link frame: X_new=-Y_old,
+    # Y_new=X_old, Z_new=Z_old, i.e. a -90-degree local-Z rotation.
+    old_mount = (0.031607850, 0.030185435, 0.706565983, -0.706296181)
+    axis_remap = (0.0, 0.0, -math.sin(math.pi / 4.0), math.cos(math.pi / 4.0))
 
     def multiply(lhs, rhs):
         lx, ly, lz, lw = lhs
@@ -135,7 +151,7 @@ def test_left_depth_camera_axes_apply_requested_local_remap():
             lw * rw - lx * rx - ly * ry - lz * rz,
         )
 
-    expected = multiply(multiply(roll_correction, old_mount), axis_remap)
+    expected = multiply(old_mount, axis_remap)
     configured_norm = math.sqrt(sum(value * value for value in configured))
     expected_norm = math.sqrt(sum(value * value for value in expected))
     configured = tuple(value / configured_norm for value in configured)
@@ -143,6 +159,13 @@ def test_left_depth_camera_axes_apply_requested_local_remap():
 
     assert math.isclose(
         abs(sum(a * b for a, b in zip(configured, expected))),
+        1.0,
+        abs_tol=1.0e-9,
+    )
+    right_norm = math.sqrt(sum(value * value for value in configured_right))
+    configured_right = tuple(value / right_norm for value in configured_right)
+    assert math.isclose(
+        abs(sum(a * b for a, b in zip(configured, configured_right))),
         1.0,
         abs_tol=1.0e-9,
     )

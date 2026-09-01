@@ -22,6 +22,7 @@ class RealManSdkMotionMixin:
         blocking: bool,
         cancel_requested: Optional[Callable[[], bool]] = None,
         timeout_sec: float = 120.0,
+        progress_callback: Optional[Callable[[], object]] = None,
     ) -> str:
         mode = str(motion_mode).strip().lower()
         if mode not in ("movel", "movej_p"):
@@ -109,6 +110,15 @@ class RealManSdkMotionMixin:
                         if not stop_requested:
                             self.stop_all()
                             stop_requested = True
+                    if progress_callback is not None:
+                        try:
+                            progress_callback()
+                        except Exception as exc:  # noqa: BLE001
+                            self.stop_all()
+                            motion_error = RealManSdkError(
+                                f"direct {mode} progress callback aborted motion: {exc}"
+                            )
+                            break
                     if time.monotonic() >= deadline:
                         self.stop_all()
                         motion_error = RealManSdkError(
@@ -162,6 +172,7 @@ class RealManSdkMotionMixin:
         blocking: bool,
         cancel_requested: Optional[Callable[[], bool]] = None,
         timeout_sec: float = 120.0,
+        progress_callback: Optional[Callable[[], object]] = None,
     ) -> str:
         """Execute a blocking Cartesian motion on exactly one arm."""
         mode = str(motion_mode).strip().lower()
@@ -219,6 +230,15 @@ class RealManSdkMotionMixin:
                             f"mission canceled during direct Python SDK {arm} motion"
                         )
                         break
+                    if progress_callback is not None:
+                        try:
+                            progress_callback()
+                        except Exception as exc:  # noqa: BLE001
+                            self.stop_arm(arm)
+                            motion_error = RealManSdkError(
+                                f"direct {mode} {arm} progress callback aborted motion: {exc}"
+                            )
+                            break
                     if time.monotonic() >= deadline:
                         self.stop_arm(arm)
                         motion_error = RealManSdkError(
@@ -346,15 +366,24 @@ class RealManSdkMotionMixin:
         before_start: Optional[Callable[[], object]] = None,
         abort_callback: Optional[Callable[[], object]] = None,
         progress_callback: Optional[Callable[[], object]] = None,
+        after_start: Optional[Callable[[], object]] = None,
+        *,
+        motion_mode: str = "movel",
     ) -> str:
-        """Execute one synchronized dual-arm SDK MoveL endpoint.
+        """Execute one synchronized dual-arm SDK Cartesian endpoint.
 
-        The body MoveJ is released by ``before_start`` while both arm worker
-        threads are waiting at the same barrier.  Each arm receives its own
-        configured MoveL speed.  This intentionally sends one endpoint per
-        arm (``trajectory_connect=0``) and never queues a connected or
-        interpolated path.
+        The body MoveJ can be submitted by ``before_start`` while both arm
+        worker threads are waiting at the same barrier.  ``after_start`` is
+        invoked immediately after the arm release event, allowing a caller
+        to start the arms first and submit the body command afterwards.
+        ``motion_mode`` selects
+        ``rm_movel`` or ``rm_movej_p`` for each arm.  This intentionally sends
+        one endpoint per arm (``trajectory_connect=0``) and never queues a
+        connected or interpolated path.
         """
+        mode = str(motion_mode).strip().lower()
+        if mode not in ("movel", "movej_p"):
+            raise RealManSdkError(f"unsupported RealMan motion mode: {mode}")
         left = list(left_target)
         right = list(right_target)
         if len(left) != 6 or len(right) != 6:
@@ -376,7 +405,7 @@ class RealManSdkMotionMixin:
             left_robot, right_robot = self._robots()
             if left_robot is None or right_robot is None:
                 raise RealManSdkError(
-                    "dual-arm endpoint MoveL requires both SDK connections"
+                    "dual-arm endpoint motion requires both SDK connections"
                 )
             self._stop_event.clear()
             barrier = threading.Barrier(3)
@@ -391,7 +420,10 @@ class RealManSdkMotionMixin:
                     release_event.wait(timeout=5.0)
                     if self._stop_event.is_set():
                         return
-                    code = int(robot.rm_movel(list(target), speed, 0, 0, 1))
+                    if mode == "movel":
+                        code = int(robot.rm_movel(list(target), speed, 0, 0, 1))
+                    else:
+                        code = int(robot.rm_movej_p(list(target), speed, 0, 0, 1))
                     results[name] = code
                     if code != 0:
                         errors[name] = f"return_code={code}"
@@ -438,11 +470,13 @@ class RealManSdkMotionMixin:
                     if before_start is not None:
                         before_start()
                     release_event.set()
+                    if after_start is not None:
+                        after_start()
                 except Exception as exc:  # noqa: BLE001
                     release_event.set()
                     stop_after_failure()
                     motion_error = RealManSdkError(
-                        f"endpoint MoveL start synchronization failed: {exc}"
+                        f"endpoint {mode} start synchronization failed: {exc}"
                     )
                 deadline = time.monotonic() + float(timeout_sec)
                 while motion_error is None and any(
@@ -451,7 +485,7 @@ class RealManSdkMotionMixin:
                     if cancel_requested is not None and cancel_requested():
                         stop_after_failure()
                         motion_error = RealManSdkCanceled(
-                            "mission canceled during endpoint dual-arm MoveL"
+                            f"mission canceled during endpoint dual-arm {mode}"
                         )
                         break
                     if failure_event.is_set():
@@ -461,13 +495,14 @@ class RealManSdkMotionMixin:
                             for name in ("left", "right")
                         )
                         motion_error = RealManSdkError(
-                            "endpoint dual-arm MoveL worker failed: " + worker_detail
+                            f"endpoint dual-arm {mode} worker failed: " + worker_detail
                         )
                         break
                     if time.monotonic() >= deadline:
                         stop_after_failure()
                         motion_error = RealManSdkError(
-                            f"endpoint dual-arm MoveL timed out after {timeout_sec:.1f}s"
+                            f"endpoint dual-arm {mode} timed out after "
+                            f"{timeout_sec:.1f}s"
                         )
                         break
                     time.sleep(0.02)
@@ -482,7 +517,7 @@ class RealManSdkMotionMixin:
                     stop_after_failure()
                     if motion_error is None:
                         motion_error = RealManSdkError(
-                            "endpoint dual-arm MoveL workers did not stop"
+                            f"endpoint dual-arm {mode} workers did not stop"
                         )
             finally:
                 self._motion_active = False
@@ -492,14 +527,14 @@ class RealManSdkMotionMixin:
             if errors or set(results) != {"left", "right"}:
                 stop_after_failure()
                 raise RealManSdkError(
-                    "endpoint dual-arm MoveL failed: "
+                    f"endpoint dual-arm {mode} failed: "
                     + "; ".join(
                         f"{name}={errors.get(name, results.get(name, 'missing'))}"
                         for name in ("left", "right")
                     )
                 )
             return (
-                "direct Python SDK endpoint dual-arm MoveL completed: "
+                f"direct Python SDK endpoint dual-arm {mode} completed: "
                 f"left_speed={left_speed}, right_speed={right_speed}, "
                 "trajectory_connect=0"
             )

@@ -3,9 +3,87 @@ mission_controller:
   ros__parameters:
     drag_box_tf_detection_arm: left
     drag_box_tf_post_detection_left_movej_enabled: true
+    drag_box_tf_body_home_carry_body_blend_radius: 0
+    drag_box_tf_body_home_carry_body_stop_command: stop
+    drag_box_tf_body_home_carry_body_stop_enabled: true
+    drag_box_tf_body_home_carry_body_velocity: 12
+    drag_box_tf_body_home_carry_carrier_frame: chest_Link
+    drag_box_tf_body_home_carry_enabled: true
+    drag_box_tf_body_home_carry_continuous_enabled: true
+    drag_box_tf_body_home_carry_arm_motion_mode: movel
+    drag_box_tf_body_home_carry_arm_blend_radius: 5
+    drag_box_tf_body_home_carry_final_correction_enabled: true
+    drag_box_tf_body_home_carry_final_correction_velocity_percent: 12.0
+    drag_box_tf_body_home_carry_joint_units:
+    - 0
+    - 0
+    - 0
+    - 0
+    drag_box_tf_body_home_carry_left_movel_velocity_percent: 12.0
+    drag_box_tf_body_home_carry_orientation_tolerance_rad: 0.0872665
+    drag_box_tf_body_home_carry_position_tolerance_m: 0.01
+    drag_box_tf_body_home_carry_right_movel_velocity_percent: 12.0
+    # Layer/model-specific carry speeds; initialized from the unified 12% value.
+    drag_box_tf_body_home_carry_left_movel_velocity_percent_bigbox_layer1: 12.0
+    drag_box_tf_body_home_carry_right_movel_velocity_percent_bigbox_layer1: 12.0
+    drag_box_tf_body_home_carry_left_movel_velocity_percent_bigbox_layer2: 12.0
+    drag_box_tf_body_home_carry_right_movel_velocity_percent_bigbox_layer2: 12.0
+    drag_box_tf_body_home_carry_left_movel_velocity_percent_bigbox_layer3: 12.0
+    drag_box_tf_body_home_carry_right_movel_velocity_percent_bigbox_layer3: 12.0
+    drag_box_tf_body_home_carry_left_movel_velocity_percent_bigbox_layer4: 12.0
+    drag_box_tf_body_home_carry_right_movel_velocity_percent_bigbox_layer4: 12.0
+    drag_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer1: 12.0
+    drag_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer1: 12.0
+    drag_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer2: 12.0
+    drag_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer2: 12.0
+    drag_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer3: 12.0
+    drag_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer3: 12.0
+    drag_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer4: 12.0
+    drag_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer4: 12.0
+    drag_box_tf_body_home_carry_arm_start_delay_sec: 0.0
+    drag_box_tf_body_home_carry_arm_start_lead_sec: 0.0
+    drag_box_tf_body_home_carry_segments: 6
+    drag_box_tf_body_home_carry_stable_samples: 3
+    drag_box_tf_body_home_carry_tf_timeout_sec: 5.0
+    drag_box_tf_body_home_carry_timeout_sec: 180.0
+    # Force-limited Step1 clamping; disabled preserves position-only motion.
+    drag_box_tf_force_clamp_mode: closed_loop
+    drag_box_tf_force_clamp_baseline_duration_sec: 0.75
+    drag_box_tf_force_clamp_baseline_min_samples: 50
+    drag_box_tf_force_clamp_baseline_timeout_sec: 3.0
+    drag_box_tf_force_clamp_filter_samples: 20
+    drag_box_tf_force_clamp_contact_threshold_left_counts: 3000.0
+    drag_box_tf_force_clamp_contact_threshold_right_counts: 3000.0
+    drag_box_tf_force_clamp_clamped_threshold_left_counts: 8000.0
+    drag_box_tf_force_clamp_clamped_threshold_right_counts: 8000.0
+    drag_box_tf_force_clamp_hold_threshold_left_counts: 7000.0
+    drag_box_tf_force_clamp_hold_threshold_right_counts: 7000.0
+    drag_box_tf_force_clamp_emergency_threshold_left_counts: 15000.0
+    drag_box_tf_force_clamp_emergency_threshold_right_counts: 15000.0
+    drag_box_tf_force_clamp_force_sign_left: -1.0
+    drag_box_tf_force_clamp_force_sign_right: -1.0
+    drag_box_tf_force_clamp_arm_velocity_tolerance_rad_sec: 0.02
+    drag_box_tf_force_clamp_search_step_m: 0.0015
+    drag_box_tf_force_clamp_fine_step_m: 0.0005
+    drag_box_tf_force_clamp_max_distance_left_m: 0.10
+    drag_box_tf_force_clamp_max_distance_right_m: 0.10
+    drag_box_tf_force_clamp_movel_velocity_percent: 12.0
+    drag_box_tf_force_clamp_motion_timeout_sec: 15.0
+    # Overall deadline for the complete Step1 force-search/hold sequence.
+    drag_box_tf_force_clamp_timeout_sec: 60.0
+    drag_box_tf_force_clamp_sensor_max_age_sec: 0.2
+    drag_box_tf_force_clamp_contact_required_duration_sec: 0.1
+    drag_box_tf_force_clamp_clamped_required_duration_sec: 0.1
+    drag_box_tf_force_clamp_hold_wait_sec: 0.3
+    drag_box_tf_force_clamp_hold_required_duration_sec: 0.2
+    drag_box_tf_force_clamp_max_correction_count: 2
+    drag_box_tf_force_clamp_stop_after_clamp_confirmed: false
     drag_box_left_arm_enabled: true
     drag_box_left_join_mode: after_drag3
     drag_box_left_join_motion_mode: movej_p
+    # After Drag3, infer the moved box from the actual right Link7 TF. Rebuild
+    # the delayed left join and Step2 from one shared physical box frame.
+    drag_box_tf_reanchor_after_drag3_enabled: true
     drag_box_left_join_pre_movej_enabled: true
     drag_box_left_join_pre_movej_joint_units:
     - -84292
@@ -72,21 +150,21 @@ mission_controller:
     - 0.0
     - 0.5
     drag_box_tf_joint123_left_target_correction_pose_box_bigbox_layer1:
-    - 0.064762
-    - -0.049358
-    - 0.060595
-    - -0.058164
-    - -0.006476
-    - 0.081596
-    - 0.994946
+    - -0.010360606269942396
+    - -0.01656146935185538
+    - 0.023477689824480674
+    - -0.03847410711778021
+    - -0.012422624689334097
+    - 0.025012154601038054
+    - 0.998869267521797
     drag_box_tf_joint123_right_target_correction_pose_box_bigbox_layer1:
-    - 0.081444
-    - -0.049338
-    - -0.020083
-    - 0.012614
-    - -0.032172
-    - 0.081927
-    - 0.996039
+    - 0.028030752671143633
+    - -0.014424930567041964
+    - -0.009883884912308072
+    - 0.0027826897983531072
+    - 0.030809448525580437
+    - 0.020979638622716297
+    - 0.9993012004807641
     drag_box_tf_post_movel_left_step1_xyz_bigbox_layer1:
     - 0.0
     - 0.0
@@ -179,21 +257,21 @@ mission_controller:
     - 0.0
     - 0.5
     drag_box_tf_joint123_left_target_correction_pose_box_bigbox_layer2:
-    - 0.064762
-    - -0.049358
-    - 0.060595
-    - -0.058164
-    - -0.006476
-    - 0.081596
-    - 0.994946
+    - -0.001512713129506904
+    - -0.017326438594685658
+    - 0.02465607037394374
+    - -0.055460657965860076
+    - -0.021489934720961088
+    - 0.011948473039760545
+    - 0.9981580697042433
     drag_box_tf_joint123_right_target_correction_pose_box_bigbox_layer2:
-    - 0.081444
-    - -0.049338
-    - -0.020083
-    - 0.012614
-    - -0.032172
-    - 0.081927
-    - 0.996039
+    - 0.015379205527599249
+    - -0.010093061518994624
+    - -0.0020028630962495297
+    - -0.015230473727020421
+    - -0.006707841586519728
+    - 0.019440964714253613
+    - 0.9996724895796022
     drag_box_tf_post_movel_left_step1_xyz_bigbox_layer2:
     - 0.0
     - 0.0
@@ -286,21 +364,21 @@ mission_controller:
     - 0.0
     - 0.5
     drag_box_tf_joint123_left_target_correction_pose_box_bigbox_layer3:
-    - 0.064762
-    - -0.049358
-    - 0.060595
-    - -0.058164
-    - -0.006476
-    - 0.081596
-    - 0.994946
+    - 0.018716139292241085
+    - -0.03214008536037485
+    - 0.01772271719111207
+    - -0.04178183831049393
+    - -0.048777076312343556
+    - 0.026036706232690308
+    - 0.9975956920227594
     drag_box_tf_joint123_right_target_correction_pose_box_bigbox_layer3:
-    - 0.081444
-    - -0.049338
-    - -0.020083
-    - 0.012614
-    - -0.032172
-    - 0.081927
-    - 0.996039
+    - 0.025762279056177728
+    - -0.01395523508338454
+    - -0.02918562925010909
+    - -0.02944665089970002
+    - 0.011863347628118056
+    - 0.018974981134747312
+    - 0.999315818860475
     drag_box_tf_post_movel_left_step1_xyz_bigbox_layer3:
     - 0.0
     - 0.0
@@ -386,28 +464,28 @@ mission_controller:
     drag_box_tf_box_layer_joint3_approach_angle_deg_bigbox_layer4: -85.0
     drag_box_tf_direct_movel_left_offset_xyz_bigbox_layer4:
     - 0.0
-    - -0.05
+    - 0.0
     - -0.5
     drag_box_tf_direct_movel_right_offset_xyz_bigbox_layer4:
     - 0.0
-    - -0.05
+    - 0.0
     - 0.5
     drag_box_tf_joint123_left_target_correction_pose_box_bigbox_layer4:
-    - 0.064762
-    - -0.049358
-    - 0.060595
-    - -0.058164
-    - -0.006476
-    - 0.081596
-    - 0.994946
+    - -0.0041538855233831384
+    - -0.020958928265192793
+    - 0.02223649050509169
+    - -0.030948861482426045
+    - -0.0275425732364293
+    - 0.01354897643170898
+    - 0.9990495482557962
     drag_box_tf_joint123_right_target_correction_pose_box_bigbox_layer4:
-    - 0.081444
-    - -0.049338
-    - -0.020083
-    - 0.012614
-    - -0.032172
-    - 0.081927
-    - 0.996039
+    - 0.030649478294881793
+    - -0.028055146418456942
+    - -0.012782492350304653
+    - -0.00812531179068127
+    - 0.015786533062947986
+    - 0.0213759486604191
+    - 0.9996138421915854
     drag_box_tf_post_movel_left_step1_xyz_bigbox_layer4:
     - 0.0
     - 0.0
@@ -492,21 +570,21 @@ mission_controller:
     - 0.0
     - 0.5
     drag_box_tf_joint123_left_target_correction_pose_box_smallbox_layer1:
-    - 0.064762
-    - -0.049358
-    - 0.060595
-    - -0.058164
-    - -0.006476
-    - 0.081596
-    - 0.994946
+    - -0.024769244990457406
+    - -0.01337586994443405
+    - 0.025665298183084384
+    - -0.0409016770246383
+    - -0.005322026261497299
+    - 0.004869346783480698
+    - 0.9991371368911008
     drag_box_tf_joint123_right_target_correction_pose_box_smallbox_layer1:
-    - 0.081444
-    - -0.049338
-    - -0.020083
-    - 0.012614
-    - -0.032172
-    - 0.081927
-    - 0.996039
+    - -0.009671877107732207
+    - 0.003927317182550709
+    - -0.006190585967192297
+    - -0.01701548216856919
+    - 0.010605546992932553
+    - 0.015524937975556796
+    - 0.9996784343179596
     drag_box_tf_post_movel_left_step1_xyz_smallbox_layer1:
     - 0.0
     - 0.0
@@ -591,21 +669,21 @@ mission_controller:
     - 0.0
     - 0.5
     drag_box_tf_joint123_left_target_correction_pose_box_smallbox_layer2:
-    - 0.064762
-    - -0.049358
-    - 0.060595
-    - -0.058164
-    - -0.006476
-    - 0.081596
-    - 0.994946
+    - -0.02439095006296138
+    - -0.027233043455418736
+    - 0.030983323062266643
+    - -0.04076456627698225
+    - -0.020982539741452574
+    - 0.05061510473457476
+    - 0.9976653218063439
     drag_box_tf_joint123_right_target_correction_pose_box_smallbox_layer2:
-    - 0.081444
-    - -0.049338
-    - -0.020083
-    - 0.012614
-    - -0.032172
-    - 0.081927
-    - 0.996039
+    - -0.009507964659178525
+    - -0.011582813786790205
+    - -0.010682294381636759
+    - -0.029774685274946158
+    - 0.01574864829256469
+    - 0.048748397547102834
+    - 0.9982429774009557
     drag_box_tf_post_movel_left_step1_xyz_smallbox_layer2:
     - 0.0
     - 0.0
@@ -690,21 +768,21 @@ mission_controller:
     - 0.0
     - 0.5
     drag_box_tf_joint123_left_target_correction_pose_box_smallbox_layer3:
-    - 0.064762
-    - -0.049358
-    - 0.060595
-    - -0.058164
-    - -0.006476
-    - 0.081596
-    - 0.994946
+    - -0.020937377972780002
+    - -0.022674075104648715
+    - 0.03549700576227505
+    - -0.030162512049753298
+    - -0.007245652386973223
+    - 0.020281529809487085
+    - 0.9993129554533569
     drag_box_tf_joint123_right_target_correction_pose_box_smallbox_layer3:
-    - 0.081444
-    - -0.049338
-    - -0.020083
-    - 0.012614
-    - -0.032172
-    - 0.081927
-    - 0.996039
+    - 0.025633135248648853
+    - -0.03050639763803887
+    - -0.00249477065522552
+    - -0.004497467650589407
+    - 0.02105093996591032
+    - 0.026881317516181967
+    - 0.9994068368186592
     drag_box_tf_post_movel_left_step1_xyz_smallbox_layer3:
     - 0.0
     - 0.0
@@ -782,28 +860,28 @@ mission_controller:
     drag_box_tf_box_layer_joint3_approach_angle_deg_smallbox_layer4: -89.0
     drag_box_tf_direct_movel_left_offset_xyz_smallbox_layer4:
     - 0.0
-    - -0.025
+    - 0.0
     - -0.5
     drag_box_tf_direct_movel_right_offset_xyz_smallbox_layer4:
     - 0.0
-    - -0.025
+    - 0.0
     - 0.5
     drag_box_tf_joint123_left_target_correction_pose_box_smallbox_layer4:
-    - 0.064762
-    - -0.049358
-    - 0.060595
-    - -0.058164
-    - -0.006476
-    - 0.081596
-    - 0.994946
+    - -0.0004479445216695188
+    - -0.019891755590293526
+    - 0.02618804042419981
+    - -0.027994422731676776
+    - -0.028955709193889963
+    - 0.013952339353583655
+    - 0.9990911927484706
     drag_box_tf_joint123_right_target_correction_pose_box_smallbox_layer4:
-    - 0.081444
-    - -0.049338
-    - -0.020083
-    - 0.012614
-    - -0.032172
-    - 0.081927
-    - 0.996039
+    - 0.004111764032499576
+    - -0.023607666486309065
+    - -0.008640338403560932
+    - -0.018987502518210474
+    - -0.004931537366992632
+    - 0.01943437674694293
+    - 0.9996186571326972
     drag_box_tf_post_movel_left_step1_xyz_smallbox_layer4:
     - 0.0
     - 0.0

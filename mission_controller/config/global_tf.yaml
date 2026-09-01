@@ -9,39 +9,37 @@ realbots_global_tf:
 
     base_frame: base_footprint
     output_frame: base_footprint
-    camera_optical_frame: left_arm_depth_cam_color_optical_frame
+    # Kept for backward-compatible parameter loading. The corrected
+    # camera-link frame is the pose reference used by the TF grasp actions;
+    # no optical-frame-to-camera-link pose conversion is required.
+    camera_optical_frame: left_arm_depth_cam_link
 
     # Gemini 305's optical origin is the left RGB module. In the URDF the
     # physical chain is Link8 -> left_camera_Link (the 90-degree connector /
     # camera assembly) -> left_binocular_left_camera_Link (left RGB origin).
-    # Attach the Orbbec driver's root at that assembly and use the CAD offset
-    # to put its color optical frame on the URDF left-eye origin.
+    # Attach the corrected camera-link root at that assembly. FoundationPose
+    # poses are already expressed in this camera-link frame.
     camera_mount_parent_link: left_camera_Link
     camera_mount_child_frame: left_arm_depth_cam_link
-    # Restore the URDF left_rgb_camera_Link origin, then move 1.0 cm backward
-    # along the corrected depth frame's local -Z and another 0.9 cm along -Y.
-    camera_mount_xyz: [0.016325263935158, -0.000868828307099, -0.010043858627213]
-    # The driver publishes the optical frame below left_arm_depth_cam_link.
-    # Requested corrected axes (expressed in the currently published optical
-    # frame): X_correct=-Z_current, Y_correct=-X_current, Z_correct=Y_current.
-    # This is C=[[0,-1,0],[0,0,1],[-1,0,0]], q_xyzw=[-0.5,0.5,0.5,0.5].
-    # C is conjugated through the driver's link->optical transform and folded
-    # into this upstream mount, so the optical frame keeps one TF parent.
-    # Prepend a local -5-degree roll so left_camera_Link remains at its
-    # original 25-degree mechanical mount while downstream camera frames use
-    # a 20-degree optical-frame alignment. Then remap the resulting local
-    # axes as X_new=-Z_current, Y_new=Y_current, Z_new=X_current.
-    camera_mount_quaternion_xyzw: [0.031607850, 0.030185435, 0.706565983, -0.706296181]
+    # Preserve the calibrated optical-center offset, then move the published
+    # camera-link origin another 2.0 cm along its corrected local -X axis.
+    camera_mount_xyz: [0.036325222014028, -0.000878210088295, -0.010083718702881]
+    # Any driver optical frame below this link is not used as a pose frame.
+    # Requested camera-link axis remap, expressed in the currently published
+    # camera-link frame:
+    #   X_new = -Y_current, Y_new = X_current, Z_new = Z_current.
+    # This is a -90-degree rotation about the current/local Z axis.  The
+    # correction is composed with the existing left mount relation and kept
+    # in this one upstream TF edge, so the optical frame keeps one TF parent.
+    # Both camera mounts intentionally use the same rotational relationship.
+    camera_mount_quaternion_xyzw: [0.001005799, 0.043694451, 0.999044417, 0.000190779]
 
-    # The right camera uses the same URDF assembly chain and left-RGB origin.
-    # Relative to the currently observed optical frame, the requested
-    # correction is x_new=-x_old, y_new=y_old, z_new=-z_old.  This is a
-    # 180-degree rotation about the optical Y axis.  It is conjugated through
-    # the depth-camera driver transform before being folded into this mount.
+    # The right camera keeps its own parent and measured translation, but uses
+    # the same corrected camera-link rotation as the left camera.
     right_camera_mount_parent_link: right_camera_Link
     right_camera_mount_child_frame: right_arm_depth_cam_link
-    right_camera_mount_xyz: [0.049094570020, 0.0, -0.000100000000]
-    right_camera_mount_quaternion_xyzw: [-0.497028867, -0.503278286, -0.498134947, 0.501532498]
+    right_camera_mount_xyz: [0.036325222014028, -0.000878210088295, -0.010083718702881]
+    right_camera_mount_quaternion_xyzw: [0.001005799, 0.043694451, 0.999044417, 0.000190779]
 
     body_input_joint_names: [joint1, joint2, joint3, joint4]
     body_urdf_joint_names: [

@@ -185,6 +185,25 @@ class TfLayerProfilesMixin:
                             ),
                         ]
                     )
+                    # TF waist-carry arm speeds are independently tunable
+                    # for each action, box model, and layer.  Initialize every
+                    # profile from the current unified 12% defaults while
+                    # keeping the legacy action-wide parameters as fallback
+                    # for callers that do not provide a model/layer.
+                    parameters.extend(
+                        [
+                            (
+                                f"{action_prefix}_body_home_carry_left_movel_velocity_percent_"
+                                f"{model}_layer{layer}",
+                                12.0,
+                            ),
+                            (
+                                f"{action_prefix}_body_home_carry_right_movel_velocity_percent_"
+                                f"{model}_layer{layer}",
+                                12.0,
+                            ),
+                        ]
+                    )
                     for arm in ("left", "right"):
                         for step in range(1, 6):
                             delta = standard_steps[arm][step]

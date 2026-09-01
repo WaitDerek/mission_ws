@@ -55,6 +55,8 @@ class ParameterValidationMixin:
             "left_gripper_frame",
             "right_gripper_frame",
             "camera_detection_arm",
+            "grasp_box_tf_force_clamp_mode",
+            "drag_box_tf_force_clamp_mode",
         ):
             if not self._string(name):
                 raise ValueError(f"parameter '{name}' must not be empty")
@@ -282,6 +284,7 @@ class ParameterValidationMixin:
             ("box_body_home_joint_units", 4),
             ("box_step2_waist_endpoint_sync_home_joint_units", 4),
             ("grasp_box_tf_body_home_carry_joint_units", 4),
+            ("drag_box_tf_body_home_carry_joint_units", 4),
             ("place_box_test_body_joint_units", 4),
             ("place_box_test_start_body_joint_units", 4),
             ("place_box_test_left_target_pose_arm_base", 7),
@@ -481,6 +484,14 @@ class ParameterValidationMixin:
             "grasp_box_tf_body_home_carry_left_movel_velocity_percent",
             "grasp_box_tf_body_home_carry_right_movel_velocity_percent",
             "grasp_box_tf_body_home_carry_final_correction_velocity_percent",
+            "drag_box_tf_body_home_carry_timeout_sec",
+            "drag_box_tf_body_home_carry_tf_timeout_sec",
+            "drag_box_tf_body_home_carry_position_tolerance_m",
+            "drag_box_tf_body_home_carry_orientation_tolerance_rad",
+            "drag_box_tf_body_home_carry_stable_samples",
+            "drag_box_tf_body_home_carry_left_movel_velocity_percent",
+            "drag_box_tf_body_home_carry_right_movel_velocity_percent",
+            "drag_box_tf_body_home_carry_final_correction_velocity_percent",
             "place_box_test_left_movel_velocity_percent",
             "place_box_test_right_movel_velocity_percent",
             "place_box_test_final_correction_velocity_percent",
@@ -503,6 +514,9 @@ class ParameterValidationMixin:
             "grasp_box_tf_body_home_carry_left_movel_velocity_percent",
             "grasp_box_tf_body_home_carry_right_movel_velocity_percent",
             "grasp_box_tf_body_home_carry_final_correction_velocity_percent",
+            "drag_box_tf_body_home_carry_left_movel_velocity_percent",
+            "drag_box_tf_body_home_carry_right_movel_velocity_percent",
+            "drag_box_tf_body_home_carry_final_correction_velocity_percent",
             "place_box_test_left_movel_velocity_percent",
             "place_box_test_right_movel_velocity_percent",
             "place_box_test_final_correction_velocity_percent",
@@ -528,6 +542,10 @@ class ParameterValidationMixin:
             "box_foundation_pose_post_settle_sec",
             "box_detection_posture_settle_sec",
             "box_place_release_delay_sec",
+            "grasp_box_tf_body_home_carry_arm_start_delay_sec",
+            "drag_box_tf_body_home_carry_arm_start_delay_sec",
+            "grasp_box_tf_body_home_carry_arm_start_lead_sec",
+            "drag_box_tf_body_home_carry_arm_start_lead_sec",
         )
         for name in nonnegative_parameters:
             if not math.isfinite(self._float(name)) or self._float(name) < 0.0:
@@ -637,36 +655,96 @@ class ParameterValidationMixin:
             raise ValueError("box_body_home_velocity must be positive")
         if self._integer("box_body_home_blend_radius") < 0:
             raise ValueError("box_body_home_blend_radius must be nonnegative")
-        if self._integer("grasp_box_tf_body_home_carry_segments") <= 0:
-            raise ValueError("grasp_box_tf_body_home_carry_segments must be positive")
-        if not 1 <= self._integer("grasp_box_tf_body_home_carry_body_velocity") <= 100:
-            raise ValueError(
-                "grasp_box_tf_body_home_carry_body_velocity must be in [1, 100]"
-            )
-        if (
-            not 0
-            <= self._integer("grasp_box_tf_body_home_carry_body_blend_radius")
-            <= 100
+        for prefix in (
+            "grasp_box_tf_body_home_carry",
+            "drag_box_tf_body_home_carry",
         ):
-            raise ValueError(
-                "grasp_box_tf_body_home_carry_body_blend_radius must be in [0, 100]"
-            )
-        if (
-            not 0
-            <= self._integer("grasp_box_tf_body_home_carry_arm_blend_radius")
-            <= 100
-        ):
-            raise ValueError(
-                "grasp_box_tf_body_home_carry_arm_blend_radius must be in [0, 100]"
-            )
-        if (
-            not self._string("grasp_box_tf_body_home_carry_carrier_frame")
-            .strip()
-            .lstrip("/")
-        ):
-            raise ValueError(
-                "grasp_box_tf_body_home_carry_carrier_frame must not be empty"
-            )
+            motion_mode = self._string(
+                f"{prefix}_arm_motion_mode"
+            ).strip().lower()
+            if motion_mode not in ("movel", "movej_p"):
+                raise ValueError(
+                    f"{prefix}_arm_motion_mode must be 'movel' or 'movej_p'"
+                )
+            if self._integer(f"{prefix}_segments") <= 0:
+                raise ValueError(f"{prefix}_segments must be positive")
+            if not 1 <= self._integer(f"{prefix}_body_velocity") <= 100:
+                raise ValueError(f"{prefix}_body_velocity must be in [1, 100]")
+            for name in ("body_blend_radius", "arm_blend_radius"):
+                if not 0 <= self._integer(f"{prefix}_{name}") <= 100:
+                    raise ValueError(f"{prefix}_{name} must be in [0, 100]")
+            if not self._string(f"{prefix}_carrier_frame").strip().lstrip("/"):
+                raise ValueError(f"{prefix}_carrier_frame must not be empty")
+        for prefix in ("grasp_box_tf_force_clamp", "drag_box_tf_force_clamp"):
+            mode = self._string(f"{prefix}_mode").strip().lower()
+            if mode not in ("disabled", "monitor_only", "closed_loop"):
+                raise ValueError(
+                    f"{prefix}_mode must be disabled, monitor_only, or closed_loop"
+                )
+            for arm in ("left", "right"):
+                contact_value = self._float(
+                    f"{prefix}_contact_threshold_{arm}_counts"
+                )
+                clamped_value = self._float(
+                    f"{prefix}_clamped_threshold_{arm}_counts"
+                )
+                hold_value = self._float(f"{prefix}_hold_threshold_{arm}_counts")
+                emergency_value = self._float(
+                    f"{prefix}_emergency_threshold_{arm}_counts"
+                )
+                for suffix in (
+                    "contact_threshold",
+                    "clamped_threshold",
+                    "hold_threshold",
+                    "emergency_threshold",
+                ):
+                    name = f"{prefix}_{suffix}_{arm}_counts"
+                    if not math.isfinite(self._float(name)) or self._float(name) < 0.0:
+                        raise ValueError(f"{name} must be finite and nonnegative")
+                if not contact_value <= clamped_value <= emergency_value:
+                    raise ValueError(
+                        f"{prefix} {arm} thresholds must satisfy "
+                        "contact <= clamped <= emergency"
+                    )
+                if hold_value > clamped_value:
+                    raise ValueError(
+                        f"{prefix}_hold_threshold_{arm}_counts must not exceed "
+                        f"{prefix}_clamped_threshold_{arm}_counts"
+                    )
+                sign = self._float(f"{prefix}_force_sign_{arm}")
+                if not math.isfinite(sign) or abs(sign) <= 1e-12:
+                    raise ValueError(f"{prefix}_force_sign_{arm} must be nonzero")
+                max_distance = self._float(f"{prefix}_max_distance_{arm}_m")
+                if not math.isfinite(max_distance) or max_distance <= 0.0:
+                    raise ValueError(
+                        f"{prefix}_max_distance_{arm}_m must be finite and positive"
+                    )
+            for suffix in (
+                "baseline_duration_sec",
+                "baseline_timeout_sec",
+                "arm_velocity_tolerance_rad_sec",
+                "search_step_m",
+                "fine_step_m",
+                "movel_velocity_percent",
+                "motion_timeout_sec",
+                "timeout_sec",
+                "sensor_max_age_sec",
+                "contact_required_duration_sec",
+                "clamped_required_duration_sec",
+                "hold_wait_sec",
+                "hold_required_duration_sec",
+            ):
+                name = f"{prefix}_{suffix}"
+                if not math.isfinite(self._float(name)) or self._float(name) <= 0.0:
+                    raise ValueError(f"{name} must be finite and positive")
+            if self._float(f"{prefix}_movel_velocity_percent") > 100.0:
+                raise ValueError(f"{prefix}_movel_velocity_percent must be in (0, 100]")
+            if self._integer(f"{prefix}_baseline_min_samples") <= 0:
+                raise ValueError(f"{prefix}_baseline_min_samples must be positive")
+            if self._integer(f"{prefix}_filter_samples") <= 0:
+                raise ValueError(f"{prefix}_filter_samples must be positive")
+            if self._integer(f"{prefix}_max_correction_count") < 0:
+                raise ValueError(f"{prefix}_max_correction_count must be nonnegative")
         if self._string("place_box_test_box_type").strip().lower() != "smallbox":
             raise ValueError("place_box_test_box_type must be 'smallbox'")
         if self._integer("place_box_test_segments") <= 0:
@@ -681,13 +759,16 @@ class ParameterValidationMixin:
                 raise ValueError(f"{name} must be in [0, 100]")
         if self._integer("place_box_test_stable_samples") <= 0:
             raise ValueError("place_box_test_stable_samples must be positive")
-        if self._boolean("grasp_box_tf_body_home_carry_enabled") and self._boolean(
-            "box_step2_waist_endpoint_sync_enabled"
-        ):
-            raise ValueError(
-                "grasp_box_tf_body_home_carry_enabled and "
-                "box_step2_waist_endpoint_sync_enabled are mutually exclusive"
-            )
+        if self._boolean("box_step2_waist_endpoint_sync_enabled"):
+            for prefix in (
+                "grasp_box_tf_body_home_carry",
+                "drag_box_tf_body_home_carry",
+            ):
+                if self._boolean(f"{prefix}_enabled"):
+                    raise ValueError(
+                        f"{prefix}_enabled and "
+                        "box_step2_waist_endpoint_sync_enabled are mutually exclusive"
+                    )
         if (
             not 0
             <= self._integer("box_step2_waist_endpoint_sync_body_blend_radius")
@@ -750,6 +831,16 @@ class ParameterValidationMixin:
             if "approach_angle_deg" in name:
                 if not math.isfinite(self._float(name)):
                     raise ValueError(f"parameter '{name}' must be finite")
+                continue
+            if (
+                "body_home_carry_" in name
+                and "_movel_velocity_percent_" in name
+            ):
+                speed = self._float(name)
+                if not math.isfinite(speed) or not 1.0 <= speed <= 100.0:
+                    raise ValueError(
+                        f"{name} must be finite and in [1, 100]"
+                    )
                 continue
             expected_length = (
                 7

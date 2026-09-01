@@ -45,13 +45,13 @@ mission_controller:
     - 0.566
     - 0.516
     place_box_test_segments: 6
-    place_box_test_body_velocity: 2
+    place_box_test_body_velocity: 12
     place_box_test_body_blend_radius: 5
     place_box_test_arm_blend_radius: 5
-    place_box_test_left_movel_velocity_percent: 3.0
-    place_box_test_right_movel_velocity_percent: 3.0
+    place_box_test_left_movel_velocity_percent: 12.0
+    place_box_test_right_movel_velocity_percent: 12.0
     place_box_test_final_correction_enabled: true
-    place_box_test_final_correction_velocity_percent: 3.0
+    place_box_test_final_correction_velocity_percent: 12.0
     place_box_test_timeout_sec: 180.0
     place_box_test_start_body_tolerance_rad: 0.035
     place_box_test_position_tolerance_m: 0.015

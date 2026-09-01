@@ -19,14 +19,14 @@ mission_controller:
     - 0.0
     - 1.0
     adaptive_grasp_timeout_sec: 120.0
-    adaptive_grasp_velocity_percent: 5.0
+    adaptive_grasp_velocity_percent: 12.0
     adaptive_left_grasp_extra_rpy:
     - 0.0
     - 0.0
     - 3.141592653589793
     adaptive_lift_distance_m: 0.1
     adaptive_lift_timeout_sec: 120.0
-    adaptive_lift_velocity_percent: 5.0
+    adaptive_lift_velocity_percent: 12.0
     adaptive_require_detection_timestamp: true
     adaptive_right_grasp_extra_rpy:
     - 0.0

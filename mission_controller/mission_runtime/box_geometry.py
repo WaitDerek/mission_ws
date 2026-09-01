@@ -91,6 +91,26 @@ class BoxGeometryMixin:
                 pose_values = pose_values[:3] + tuple(
                     value / pose_norm for value in pose_values[3:]
                 )
+        # The force controller uses only the raw force-X channel and computes
+        # a per-task baseline.  Drivers that omit wrench_stamped still provide
+        # valid joint/pose feedback; in that case force-clamp mode will report
+        # a clear sensor-availability error when explicitly enabled.
+        wrench_values = None
+        wrench_stamped = getattr(message, "wrench_stamped", None)
+        wrench = getattr(wrench_stamped, "wrench", None)
+        force = getattr(wrench, "force", None)
+        torque = getattr(wrench, "torque", None)
+        if force is not None and torque is not None:
+            candidate = (
+                float(getattr(force, "x", math.nan)),
+                float(getattr(force, "y", math.nan)),
+                float(getattr(force, "z", math.nan)),
+                float(getattr(torque, "x", math.nan)),
+                float(getattr(torque, "y", math.nan)),
+                float(getattr(torque, "z", math.nan)),
+            )
+            if all(math.isfinite(value) for value in candidate):
+                wrench_values = candidate
         with self.joint_state_lock:
             state_time = time.monotonic()
             self.latest_slave_arm_positions[arm] = positions
@@ -103,6 +123,10 @@ class BoxGeometryMixin:
                 self.latest_slave_arm_pose_sequences[arm] += 1
                 if pose_frame:
                     self.latest_slave_arm_pose_frames[arm] = pose_frame
+            if wrench_values is not None:
+                self.latest_slave_arm_wrenches[arm] = wrench_values
+                self.latest_slave_arm_wrench_times[arm] = state_time
+                self.latest_slave_arm_wrench_sequences[arm] += 1
 
     def _body_joint1_feedback_callback(self, message) -> None:
         joint_state = message.joint_state

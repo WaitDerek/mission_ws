@@ -56,7 +56,10 @@ class MqttWorkflowStartBridge:
             self._port,
             self._keepalive_sec,
         )
-        if int(connect_result) != self._mqtt_success:
+        # Paho's asynchronous connect API schedules the connection and
+        # intentionally returns None.  Older/fake clients may return the
+        # usual numeric status, so validate it only when one is provided.
+        if connect_result is not None and int(connect_result) != self._mqtt_success:
             raise RuntimeError(
                 f"MQTT start connect_async returned error {int(connect_result)}"
             )

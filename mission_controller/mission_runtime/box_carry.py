@@ -39,6 +39,51 @@ BoxSupportMixin = None
 class BoxCarryMixin:
     """Post targets, endpoint synchronization, TF carry, and test place."""
 
+    _DEFAULT_TF_CARRY_PARAMETER_PREFIX = "grasp_box_tf_body_home_carry"
+
+    @classmethod
+    def _tf_carry_parameter_name(cls, suffix: str, parameter_prefix: str | None = None) -> str:
+        """Resolve a TF waist-carry parameter without coupling TF actions."""
+        prefix = parameter_prefix or cls._DEFAULT_TF_CARRY_PARAMETER_PREFIX
+        return f"{prefix}_{suffix}"
+
+    @classmethod
+    def _tf_carry_layer_speed_parameter_name(
+        cls,
+        arm: str,
+        box_layer: int | None,
+        model_label: str | None,
+        parameter_prefix: str | None = None,
+    ) -> str:
+        """Resolve the layer/model-specific carry speed with legacy fallback."""
+        prefix = parameter_prefix or cls._DEFAULT_TF_CARRY_PARAMETER_PREFIX
+        model = str(model_label or "").strip().lower()
+        try:
+            layer = int(box_layer) if box_layer is not None else 0
+        except (TypeError, ValueError):
+            layer = 0
+        if arm not in ("left", "right"):
+            raise MissionError(f"invalid TF waist-carry arm: {arm}")
+        if model in ("bigbox", "smallbox") and 1 <= layer <= 4:
+            return (
+                f"{prefix}_{arm}_movel_velocity_percent_"
+                f"{model}_layer{layer}"
+            )
+        return cls._tf_carry_parameter_name(
+            f"{arm}_movel_velocity_percent", prefix
+        )
+
+    @staticmethod
+    def _tf_body_home_carry_parameter_prefix(*, tf_mode: bool, drag_mode: bool):
+        """Select the carry namespace for the active TF action only."""
+        if not tf_mode:
+            return None
+        return (
+            "drag_box_tf_body_home_carry"
+            if drag_mode
+            else "grasp_box_tf_body_home_carry"
+        )
+
     def _translate_pose_in_box_frame(
         self,
         target: Pose,
@@ -415,7 +460,13 @@ class BoxCarryMixin:
             ),
         )
 
-    def _lookup_tf_carry_transform(self, target_frame: str, source_frame: str):
+    def _lookup_tf_carry_transform(
+        self,
+        target_frame: str,
+        source_frame: str,
+        *,
+        parameter_prefix: str | None = None,
+    ):
         """Read one latest transform used by the TF waist-carry controller."""
         target_frame = target_frame.strip().lstrip("/")
         source_frame = source_frame.strip().lstrip("/")
@@ -425,7 +476,11 @@ class BoxCarryMixin:
                 source_frame,
                 rclpy.time.Time(),
                 timeout=Duration(
-                    seconds=self._float("grasp_box_tf_body_home_carry_tf_timeout_sec")
+                    seconds=self._float(
+                        self._tf_carry_parameter_name(
+                            "tf_timeout_sec", parameter_prefix
+                        )
+                    )
                 ),
             )
         except TransformException as exc:
@@ -465,15 +520,19 @@ class BoxCarryMixin:
         *,
         blend_radius=None,
         trajectory_connect=0,
+        parameter_prefix: str | None = None,
     ):
         if blend_radius is None:
             blend_radius = self._integer(
-                "grasp_box_tf_body_home_carry_body_blend_radius"
+                self._tf_carry_parameter_name(
+                    "body_blend_radius", parameter_prefix
+                )
             )
         blend_radius = int(round(float(blend_radius)))
         if not 0 <= blend_radius <= 100:
             raise MissionError(
-                "grasp_box_tf_body_home_carry_body_blend_radius must be in [0,100]"
+                f"{self._tf_carry_parameter_name('body_blend_radius', parameter_prefix)} "
+                "must be in [0,100]"
             )
         trajectory_connect = int(trajectory_connect)
         if trajectory_connect not in (0, 1):
@@ -494,8 +553,10 @@ class BoxCarryMixin:
         request.data = json.dumps(payload, separators=(",", ":")) + "\r\n"
         return request
 
-    def _tf_carry_stop_body(self):
-        if not self._boolean("grasp_box_tf_body_home_carry_body_stop_enabled"):
+    def _tf_carry_stop_body(self, parameter_prefix: str | None = None):
+        if not self._boolean(
+            self._tf_carry_parameter_name("body_stop_enabled", parameter_prefix)
+        ):
             return
         try:
             if not self.body_command_client.service_is_ready():
@@ -507,7 +568,9 @@ class BoxCarryMixin:
                 "device": device,
                 "payload": {
                     "command": self._string(
-                        "grasp_box_tf_body_home_carry_body_stop_command"
+                        self._tf_carry_parameter_name(
+                            "body_stop_command", parameter_prefix
+                        )
                     ),
                     "device": device,
                 },
@@ -518,16 +581,28 @@ class BoxCarryMixin:
         except Exception as exc:  # noqa: BLE001
             self.get_logger().error(f"TF waist carry body stop failed: {exc}")
 
-    def _wait_for_tf_carry_world_targets(self, goal_handle, targets_by_arm):
+    def _wait_for_tf_carry_world_targets(
+        self,
+        goal_handle,
+        targets_by_arm,
+        *,
+        parameter_prefix: str | None = None,
+    ):
         """Verify actual configured TCP world TF against both rigid-grasp targets."""
-        timeout_sec = self._float("grasp_box_tf_body_home_carry_timeout_sec")
+        timeout_sec = self._float(
+            self._tf_carry_parameter_name("timeout_sec", parameter_prefix)
+        )
         position_limit = self._float(
-            "grasp_box_tf_body_home_carry_position_tolerance_m"
+            self._tf_carry_parameter_name("position_tolerance_m", parameter_prefix)
         )
         orientation_limit = self._float(
-            "grasp_box_tf_body_home_carry_orientation_tolerance_rad"
+            self._tf_carry_parameter_name(
+                "orientation_tolerance_rad", parameter_prefix
+            )
         )
-        required_stable = self._integer("grasp_box_tf_body_home_carry_stable_samples")
+        required_stable = self._integer(
+            self._tf_carry_parameter_name("stable_samples", parameter_prefix)
+        )
         base_frame = self._string("grasp_box_tf_freeze_frame").strip().lstrip("/")
         deadline = time.monotonic() + timeout_sec
         stable_samples = 0
@@ -540,7 +615,11 @@ class BoxCarryMixin:
             details = []
             for arm in ("left", "right"):
                 tcp_frame = self._string(f"{arm}_link8_frame").strip().lstrip("/")
-                actual = self._lookup_tf_carry_transform(base_frame, tcp_frame)
+                actual = self._lookup_tf_carry_transform(
+                    base_frame,
+                    tcp_frame,
+                    parameter_prefix=parameter_prefix,
+                )
                 target = targets_by_arm[arm]
                 position_error = self._endpoint_sync_pose_position_error(
                     actual[0], target[0]
@@ -572,6 +651,7 @@ class BoxCarryMixin:
         goal_handle,
         adapter,
         *,
+        parameter_prefix: str | None = None,
         segments,
         home_units,
         body_start,
@@ -587,6 +667,8 @@ class BoxCarryMixin:
         right_speed,
         body_velocity,
         timeout_sec,
+        arm_start_delay_sec,
+        arm_start_lead_sec,
     ) -> str:
         """Execute one connected waist/dual-arm trajectory without stops.
 
@@ -598,21 +680,32 @@ class BoxCarryMixin:
         """
         if segments < 1:
             raise MissionError(
-                "grasp_box_tf_body_home_carry_segments must be at least 1"
+                f"{self._tf_carry_parameter_name('segments', parameter_prefix)} "
+                "must be at least 1"
+            )
+        arm_motion_mode = self._string(
+            self._tf_carry_parameter_name("arm_motion_mode", parameter_prefix)
+        ).strip().lower()
+        if arm_motion_mode not in ("movel", "movej_p"):
+            raise MissionError(
+                f"{self._tf_carry_parameter_name('arm_motion_mode', parameter_prefix)} "
+                "must be 'movel' or 'movej_p'"
             )
         arm_blend_radius = self._integer(
-            "grasp_box_tf_body_home_carry_arm_blend_radius"
+            self._tf_carry_parameter_name("arm_blend_radius", parameter_prefix)
         )
         body_blend_radius = self._integer(
-            "grasp_box_tf_body_home_carry_body_blend_radius"
+            self._tf_carry_parameter_name("body_blend_radius", parameter_prefix)
         )
         if not 0 <= arm_blend_radius <= 100:
             raise MissionError(
-                "grasp_box_tf_body_home_carry_arm_blend_radius must be in [0,100]"
+                f"{self._tf_carry_parameter_name('arm_blend_radius', parameter_prefix)} "
+                "must be in [0,100]"
             )
         if not 0 <= body_blend_radius <= 100:
             raise MissionError(
-                "grasp_box_tf_body_home_carry_body_blend_radius must be in [0,100]"
+                f"{self._tf_carry_parameter_name('body_blend_radius', parameter_prefix)} "
+                "must be in [0,100]"
             )
 
         live_carrier = current_carrier
@@ -620,6 +713,7 @@ class BoxCarryMixin:
             arm: self._lookup_tf_carry_transform(
                 base_frame,
                 self._string(f"{arm}_arm_base_frame").strip().lstrip("/"),
+                parameter_prefix=parameter_prefix,
             )
             for arm in ("left", "right")
         }
@@ -715,6 +809,8 @@ class BoxCarryMixin:
             "queuing connected waist/dual-arm trajectory: "
             f"segments={segments}; arm_blend_radius={arm_blend_radius}; "
             f"body_blend_radius={body_blend_radius}; "
+            f"arm_motion_mode={arm_motion_mode}; "
+            f"start_order={'arms_then_body' if arm_start_lead_sec > 0.0 else 'body_then_arms'}; "
             "trajectory_connect=1 for intermediate points, 0 for final; "
             "intermediate_stop=false",
         )
@@ -734,6 +830,7 @@ class BoxCarryMixin:
                     body_velocity,
                     blend_radius=body_blend_radius,
                     trajectory_connect=1,
+                    parameter_prefix=parameter_prefix,
                 )
             )
             response = self._wait_future(
@@ -756,6 +853,22 @@ class BoxCarryMixin:
                     body_velocity,
                     blend_radius=0,
                     trajectory_connect=0,
+                    parameter_prefix=parameter_prefix,
+                )
+            )
+            if arm_start_delay_sec > 0.0:
+                time.sleep(arm_start_delay_sec)
+
+        def release_body_after_arms():
+            if arm_start_lead_sec > 0.0:
+                time.sleep(arm_start_lead_sec)
+            final_body_future["future"] = self.body_command_client.call_async(
+                self._tf_carry_body_request(
+                    body_targets[-1][0],
+                    body_velocity,
+                    blend_radius=0,
+                    trajectory_connect=0,
+                    parameter_prefix=parameter_prefix,
                 )
             )
 
@@ -765,10 +878,12 @@ class BoxCarryMixin:
         # endpoint.
         last_monitor_time = [0.0]
         position_limit = self._float(
-            "grasp_box_tf_body_home_carry_position_tolerance_m"
+            self._tf_carry_parameter_name("position_tolerance_m", parameter_prefix)
         )
         orientation_limit = self._float(
-            "grasp_box_tf_body_home_carry_orientation_tolerance_rad"
+            self._tf_carry_parameter_name(
+                "orientation_tolerance_rad", parameter_prefix
+            )
         )
 
         def monitor_connected_path():
@@ -781,6 +896,7 @@ class BoxCarryMixin:
                     arm: self._lookup_tf_carry_transform(
                         base_frame,
                         self._string(f"{arm}_link8_frame").strip().lstrip("/"),
+                        parameter_prefix=parameter_prefix,
                     )
                     for arm in ("left", "right")
                 }
@@ -819,9 +935,13 @@ class BoxCarryMixin:
                 blend_radius=arm_blend_radius,
                 cancel_requested=lambda: goal_handle.is_cancel_requested,
                 timeout_sec=timeout_sec,
-                before_start=release_body,
-                abort_callback=self._tf_carry_stop_body,
+                before_start=(None if arm_start_lead_sec > 0.0 else release_body),
+                after_start=(
+                    release_body_after_arms if arm_start_lead_sec > 0.0 else None
+                ),
+                abort_callback=lambda: self._tf_carry_stop_body(parameter_prefix),
                 progress_callback=monitor_connected_path,
+                motion_mode=arm_motion_mode,
             )
             if "future" not in final_body_future:
                 raise MissionError("TF waist-carry final body command was not released")
@@ -840,16 +960,21 @@ class BoxCarryMixin:
                 goal_handle,
                 final_angles,
                 sequence_after=body_sequence,
-                timeout_parameter="grasp_box_tf_body_home_carry_timeout_sec",
+                timeout_parameter=self._tf_carry_parameter_name(
+                    "timeout_sec", parameter_prefix
+                ),
             )
             last_world_targets = world_targets_by_segment[-1]
             verification = self._wait_for_tf_carry_world_targets(
-                goal_handle, last_world_targets
+                goal_handle,
+                last_world_targets,
+                parameter_prefix=parameter_prefix,
             )
             live_arm_base = {
                 arm: self._lookup_tf_carry_transform(
                     base_frame,
                     self._string(f"{arm}_arm_base_frame").strip().lstrip("/"),
+                    parameter_prefix=parameter_prefix,
                 )
                 for arm in ("left", "right")
             }
@@ -862,9 +987,15 @@ class BoxCarryMixin:
                 )
                 for arm in ("left", "right")
             }
-            if self._boolean("grasp_box_tf_body_home_carry_final_correction_enabled"):
+            if self._boolean(
+                self._tf_carry_parameter_name(
+                    "final_correction_enabled", parameter_prefix
+                )
+            ):
                 correction_speed = self._float(
-                    "grasp_box_tf_body_home_carry_final_correction_velocity_percent"
+                    self._tf_carry_parameter_name(
+                        "final_correction_velocity_percent", parameter_prefix
+                    )
                 )
                 adapter.execute_dual_movel_endpoint(
                     pose_to_sdk_target(correction_targets["left"]),
@@ -873,24 +1004,30 @@ class BoxCarryMixin:
                     correction_speed,
                     cancel_requested=lambda: goal_handle.is_cancel_requested,
                     timeout_sec=timeout_sec,
+                    motion_mode=arm_motion_mode,
                 )
                 verification = self._wait_for_tf_carry_world_targets(
-                    goal_handle, last_world_targets
+                    goal_handle,
+                    last_world_targets,
+                    parameter_prefix=parameter_prefix,
                 )
             self._last_tf_body_home_carry_arm_targets = correction_targets
             self._last_tf_body_home_carry_completed = True
             return (
                 "tf_body_home_carry=completed; mode=continuous; "
-                f"segments={segments}; home_joint_units={home_units}; "
+                f"segments={segments}; arm_motion_mode={arm_motion_mode}; "
+                f"start_order={'arms_then_body' if arm_start_lead_sec > 0.0 else 'body_then_arms'}; "
+                f"arm_start_lead_sec={arm_start_lead_sec:.3f}; "
+                f"home_joint_units={home_units}; "
                 f"{motion_result}; final_guard={verification}; "
                 "box_translation=follows_chest; box_world_orientation=fixed; "
                 "box_to_TCP=fixed; intermediate_stop=false"
             )
         except (RealManSdkCanceled, MissionCanceled):
-            self._tf_carry_stop_body()
+            self._tf_carry_stop_body(parameter_prefix)
             raise
         except (RealManSdkError, MissionError, ValueError) as exc:
-            self._tf_carry_stop_body()
+            self._tf_carry_stop_body(parameter_prefix)
             raise MissionError(f"TF waist home carry failed: {exc}") from exc
 
     def _place_box_test_body_request(
@@ -1403,8 +1540,17 @@ class BoxCarryMixin:
             final_pose["right"],
         )
 
-    def _execute_tf_body_home_carry(self, goal_handle, adapter, dry_run: bool) -> str:
-        """Return the waist home while carrying the box level with dual MoveL.
+    def _execute_tf_body_home_carry(
+        self,
+        goal_handle,
+        adapter,
+        dry_run: bool,
+        *,
+        parameter_prefix: str | None = None,
+        box_layer: int | None = None,
+        model_label: str | None = None,
+    ) -> str:
+        """Return the waist home while carrying the box level with dual SDK motion.
 
         Translation follows a point fixed in the common chest frame, while the
         box orientation in the chassis-fixed frame and both box->TCP rigid
@@ -1412,37 +1558,69 @@ class BoxCarryMixin:
         predicted from the configured URDF chain and re-anchored to live TF at
         every segment so model error cannot accumulate unchecked.
         """
-        if not self._boolean("grasp_box_tf_body_home_carry_enabled"):
+        parameter_prefix = (
+            parameter_prefix or self._DEFAULT_TF_CARRY_PARAMETER_PREFIX
+        )
+        if not self._boolean(
+            self._tf_carry_parameter_name("enabled", parameter_prefix)
+        ):
             return "tf_body_home_carry=disabled"
         if self._boolean("box_step2_waist_endpoint_sync_enabled"):
             raise MissionError(
-                "grasp_box_tf_body_home_carry_enabled and "
+                f"{self._tf_carry_parameter_name('enabled', parameter_prefix)} and "
                 "box_step2_waist_endpoint_sync_enabled are mutually exclusive"
             )
         if (
-            self._string("grasp_box_tf_body_home_carry_carrier_frame")
+            self._string(
+                self._tf_carry_parameter_name("carrier_frame", parameter_prefix)
+            )
             .strip()
             .lstrip("/")
             != "chest_Link"
         ):
             raise MissionError(
-                "grasp_box_tf_body_home_carry_carrier_frame must be 'chest_Link' "
+                f"{self._tf_carry_parameter_name('carrier_frame', parameter_prefix)} "
+                "must be 'chest_Link' "
                 "because future carrier TF is currently predicted by the waist URDF chain"
             )
-        segments = self._integer("grasp_box_tf_body_home_carry_segments")
+        segments = self._integer(
+            self._tf_carry_parameter_name("segments", parameter_prefix)
+        )
         home_units = [
             int(round(value))
-            for value in self._float_array("grasp_box_tf_body_home_carry_joint_units")
+            for value in self._float_array(
+                self._tf_carry_parameter_name("joint_units", parameter_prefix)
+            )
         ]
+        arm_motion_mode = self._string(
+            self._tf_carry_parameter_name("arm_motion_mode", parameter_prefix)
+        ).strip().lower()
+        if arm_motion_mode not in ("movel", "movej_p"):
+            raise MissionError(
+                f"{self._tf_carry_parameter_name('arm_motion_mode', parameter_prefix)} "
+                "must be 'movel' or 'movej_p'"
+            )
+        left_speed_parameter = self._tf_carry_layer_speed_parameter_name(
+            "left", box_layer, model_label, parameter_prefix
+        )
+        right_speed_parameter = self._tf_carry_layer_speed_parameter_name(
+            "right", box_layer, model_label, parameter_prefix
+        )
+        left_speed = self._float(left_speed_parameter)
+        right_speed = self._float(right_speed_parameter)
         if dry_run:
             self._last_tf_body_home_carry_completed = True
             self._last_tf_body_home_carry_arm_targets = None
             continuous = self._boolean(
-                "grasp_box_tf_body_home_carry_continuous_enabled"
+                self._tf_carry_parameter_name(
+                    "continuous_enabled", parameter_prefix
+                )
             )
             return (
                 "tf_body_home_carry=enabled; trigger=step2; "
                 f"segments={segments}; mode={'continuous' if continuous else 'segmented'}; "
+                f"arm_motion_mode={arm_motion_mode}; "
+                f"arm_movel_speed_percent=left:{left_speed:.1f},right:{right_speed:.1f}; "
                 f"home_joint_units={home_units}; "
                 "box_translation=follows_chest; box_world_orientation=fixed; "
                 "box_to_TCP=fixed; skipped in dry-run"
@@ -1467,15 +1645,22 @@ class BoxCarryMixin:
         ]
         base_frame = self._string("grasp_box_tf_freeze_frame").strip().lstrip("/")
         carrier_frame = (
-            self._string("grasp_box_tf_body_home_carry_carrier_frame")
+            self._string(
+                self._tf_carry_parameter_name("carrier_frame", parameter_prefix)
+            )
             .strip()
             .lstrip("/")
         )
-        current_carrier = self._lookup_tf_carry_transform(base_frame, carrier_frame)
+        current_carrier = self._lookup_tf_carry_transform(
+            base_frame,
+            carrier_frame,
+            parameter_prefix=parameter_prefix,
+        )
         actual_link = {
             arm: self._lookup_tf_carry_transform(
                 base_frame,
                 self._string(f"{arm}_link8_frame").strip().lstrip("/"),
+                parameter_prefix=parameter_prefix,
             )
             for arm in ("left", "right")
         }
@@ -1504,18 +1689,25 @@ class BoxCarryMixin:
 
         service_name = self._string("box_joint1_command_service_name")
         self._wait_for_service(self.body_command_client, service_name, goal_handle)
-        left_speed = self._float(
-            "grasp_box_tf_body_home_carry_left_movel_velocity_percent"
+        body_velocity = self._integer(
+            self._tf_carry_parameter_name("body_velocity", parameter_prefix)
         )
-        right_speed = self._float(
-            "grasp_box_tf_body_home_carry_right_movel_velocity_percent"
+        timeout_sec = self._float(
+            self._tf_carry_parameter_name("timeout_sec", parameter_prefix)
         )
-        body_velocity = self._integer("grasp_box_tf_body_home_carry_body_velocity")
-        timeout_sec = self._float("grasp_box_tf_body_home_carry_timeout_sec")
-        if self._boolean("grasp_box_tf_body_home_carry_continuous_enabled"):
+        arm_start_delay_sec = self._float(
+            self._tf_carry_parameter_name("arm_start_delay_sec", parameter_prefix)
+        )
+        arm_start_lead_sec = self._float(
+            self._tf_carry_parameter_name("arm_start_lead_sec", parameter_prefix)
+        )
+        if self._boolean(
+            self._tf_carry_parameter_name("continuous_enabled", parameter_prefix)
+        ):
             return self._execute_tf_body_home_carry_continuous(
                 goal_handle,
                 adapter,
+                parameter_prefix=parameter_prefix,
                 segments=segments,
                 home_units=home_units,
                 body_start=body_start,
@@ -1531,6 +1723,8 @@ class BoxCarryMixin:
                 right_speed=right_speed,
                 body_velocity=body_velocity,
                 timeout_sec=timeout_sec,
+                arm_start_delay_sec=arm_start_delay_sec,
+                arm_start_lead_sec=arm_start_lead_sec,
             )
         last_world_targets = None
 
@@ -1562,12 +1756,15 @@ class BoxCarryMixin:
                 )
                 current_angles = [float(value) for value in measured_body[:3]]
                 live_carrier = self._lookup_tf_carry_transform(
-                    base_frame, carrier_frame
+                    base_frame,
+                    carrier_frame,
+                    parameter_prefix=parameter_prefix,
                 )
                 live_arm_base = {
                     arm: self._lookup_tf_carry_transform(
                         base_frame,
                         self._string(f"{arm}_arm_base_frame").strip().lstrip("/"),
+                        parameter_prefix=parameter_prefix,
                     )
                     for arm in ("left", "right")
                 }
@@ -1616,13 +1813,32 @@ class BoxCarryMixin:
 
                 def release_body(units=target_units):
                     command_future["future"] = self.body_command_client.call_async(
-                        self._tf_carry_body_request(units, body_velocity)
+                        self._tf_carry_body_request(
+                            units,
+                            body_velocity,
+                            parameter_prefix=parameter_prefix,
+                        )
+                    )
+                    if arm_start_delay_sec > 0.0:
+                        time.sleep(arm_start_delay_sec)
+
+                def release_body_after_arms(units=target_units):
+                    if arm_start_lead_sec > 0.0:
+                        time.sleep(arm_start_lead_sec)
+                    command_future["future"] = self.body_command_client.call_async(
+                        self._tf_carry_body_request(
+                            units,
+                            body_velocity,
+                            parameter_prefix=parameter_prefix,
+                        )
                     )
 
                 self._publish_box_grasp_feedback(
                     goal_handle,
                     "TF_BODY_HOME_CARRY_SEGMENT",
-                    f"segment {segment_index}/{segments}: body MoveJ + dual-arm MoveL; "
+                    f"segment {segment_index}/{segments}: body MoveJ + "
+                    f"dual-arm {arm_motion_mode}; "
+                    f"start_order={'arms_then_body' if arm_start_lead_sec > 0.0 else 'body_then_arms'}; "
                     f"body_joint_units={target_units}; "
                     f"{self._dual_target_position_detail(arm_targets['left'], arm_targets['right'])}",
                 )
@@ -1633,8 +1849,14 @@ class BoxCarryMixin:
                     right_speed,
                     cancel_requested=lambda: goal_handle.is_cancel_requested,
                     timeout_sec=timeout_sec,
-                    before_start=release_body,
-                    abort_callback=self._tf_carry_stop_body,
+                    before_start=(
+                        None if arm_start_lead_sec > 0.0 else release_body
+                    ),
+                    after_start=(
+                        release_body_after_arms if arm_start_lead_sec > 0.0 else None
+                    ),
+                    abort_callback=lambda: self._tf_carry_stop_body(parameter_prefix),
+                    motion_mode=arm_motion_mode,
                 )
                 if "future" not in command_future:
                     raise MissionError("TF waist-carry body command was not released")
@@ -1652,10 +1874,14 @@ class BoxCarryMixin:
                     goal_handle,
                     target_angles,
                     sequence_after=current_body_sequence,
-                    timeout_parameter="grasp_box_tf_body_home_carry_timeout_sec",
+                    timeout_parameter=self._tf_carry_parameter_name(
+                        "timeout_sec", parameter_prefix
+                    ),
                 )
                 verification = self._wait_for_tf_carry_world_targets(
-                    goal_handle, world_targets
+                    goal_handle,
+                    world_targets,
+                    parameter_prefix=parameter_prefix,
                 )
                 body_sequence = self.latest_body_state_sequence
                 last_world_targets = world_targets
@@ -1668,6 +1894,7 @@ class BoxCarryMixin:
                 arm: self._lookup_tf_carry_transform(
                     base_frame,
                     self._string(f"{arm}_arm_base_frame").strip().lstrip("/"),
+                    parameter_prefix=parameter_prefix,
                 )
                 for arm in ("left", "right")
             }
@@ -1680,9 +1907,15 @@ class BoxCarryMixin:
                 )
                 for arm in ("left", "right")
             }
-            if self._boolean("grasp_box_tf_body_home_carry_final_correction_enabled"):
+            if self._boolean(
+                self._tf_carry_parameter_name(
+                    "final_correction_enabled", parameter_prefix
+                )
+            ):
                 correction_speed = self._float(
-                    "grasp_box_tf_body_home_carry_final_correction_velocity_percent"
+                    self._tf_carry_parameter_name(
+                        "final_correction_velocity_percent", parameter_prefix
+                    )
                 )
                 adapter.execute_dual_movel_endpoint(
                     pose_to_sdk_target(correction_targets["left"]),
@@ -1691,20 +1924,28 @@ class BoxCarryMixin:
                     correction_speed,
                     cancel_requested=lambda: goal_handle.is_cancel_requested,
                     timeout_sec=timeout_sec,
+                    motion_mode=arm_motion_mode,
                 )
-                self._wait_for_tf_carry_world_targets(goal_handle, last_world_targets)
+                self._wait_for_tf_carry_world_targets(
+                    goal_handle,
+                    last_world_targets,
+                    parameter_prefix=parameter_prefix,
+                )
             self._last_tf_body_home_carry_arm_targets = correction_targets
         except (RealManSdkCanceled, MissionCanceled):
-            self._tf_carry_stop_body()
+            self._tf_carry_stop_body(parameter_prefix)
             raise
         except (RealManSdkError, MissionError, ValueError) as exc:
-            self._tf_carry_stop_body()
+            self._tf_carry_stop_body(parameter_prefix)
             raise MissionError(f"TF waist home carry failed: {exc}") from exc
 
         self._last_tf_body_home_carry_completed = True
         return (
             "tf_body_home_carry=completed; "
-            f"segments={segments}; home_joint_units={home_units}; "
+            f"segments={segments}; arm_motion_mode={arm_motion_mode}; "
+            f"start_order={'arms_then_body' if arm_start_lead_sec > 0.0 else 'body_then_arms'}; "
+            f"arm_start_lead_sec={arm_start_lead_sec:.3f}; "
+            f"home_joint_units={home_units}; "
             "box_translation=follows_chest; box_world_orientation=fixed; "
             "box_to_TCP=fixed; live_TF_final_guard=confirmed"
         )

@@ -8,5 +8,5 @@ fragment_order:
 - grasp_tf.yaml
 - drag.yaml
 - placement.yaml
-parameter_count: 779
-semantic_sha256: 8d041452ea7a7a35054ad957109c600897d6612b6ca8351b2cb7663389b94701
+parameter_count: 898
+semantic_sha256: b8c02c212bae5643ae4d6e20eb8415ff62a7592f1a0769140f8b59b9d78b6ac9

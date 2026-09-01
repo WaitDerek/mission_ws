@@ -6,9 +6,9 @@ those streams and publishes a complete ``JointState`` stream for
 ``robot_state_publisher``. The cameras are attached with fixed extrinsics:
 
     base_footprint -> ... -> left_arm_8_Link
-                    -> left_arm_depth_cam_link -> ... -> optical frame
+                    -> left_camera_Link -> left_arm_depth_cam_link
                   and right_arm_8_Link
-                    -> right_arm_depth_cam_link -> ... -> optical frame
+                    -> right_camera_Link -> right_arm_depth_cam_link
 
 The camera drivers own the links below each ``*_depth_cam_link``. Keeping the
 mounts at the camera-link roots avoids creating a second parent for either
@@ -412,7 +412,7 @@ class RealbotsGlobalTf(Node):
                 )
 
     def _publish_camera_mount_tf(self) -> None:
-        """Attach both camera-driver roots to their URDF Link8 frames."""
+        """Attach both corrected camera-link roots to the URDF arm chains."""
 
         transforms = (
             (

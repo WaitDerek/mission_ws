@@ -156,6 +156,12 @@ class MissionController(
         self.latest_slave_arm_pose_times = {"left": 0.0, "right": 0.0}
         self.latest_slave_arm_pose_sequences = {"left": 0, "right": 0}
         self.latest_slave_arm_pose_frames = {"left": "", "right": ""}
+        # ArmSlaveData.wrench_stamped is the raw wrist force sensor signal.
+        # Keep it independent from pose/joint feedback so missing force data
+        # cannot invalidate an otherwise usable arm sample.
+        self.latest_slave_arm_wrenches = {"left": None, "right": None}
+        self.latest_slave_arm_wrench_times = {"left": 0.0, "right": 0.0}
+        self.latest_slave_arm_wrench_sequences = {"left": 0, "right": 0}
         self._last_grasp_box_tf_box_pose = None
         self._last_grasp_box_tf_box_to_link7_targets = None
         self._last_tf_body_home_carry_completed = False
@@ -513,6 +519,15 @@ class MissionController(
         require_tf: bool,
     ) -> GoalResponse:
         if require_tf and not self._tf_grasp_goal_prerequisites("TF DragBox"):
+            return GoalResponse.REJECT
+        if not require_tf and self._boolean(
+            "drag_box_tf_body_home_carry_enabled"
+        ):
+            self.get_logger().warning(
+                f"rejecting {mission_name} goal: "
+                "drag_box_tf_body_home_carry_enabled is only valid for "
+                "/execute_drag_box_grasp_tf"
+            )
             return GoalResponse.REJECT
         if not self._boolean("box_direct_movel_enabled"):
             self.get_logger().warning(

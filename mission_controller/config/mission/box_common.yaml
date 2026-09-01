@@ -13,8 +13,8 @@ mission_controller:
     - 0
     - 0
     box_body_home_timeout_sec: 40.0
-    box_body_home_velocity: 5
-    box_body_movej_velocity: 5
+    box_body_home_velocity: 12
+    box_body_movej_velocity: 12
     box_body_return_home_enabled: false
     box_camera_pose_axis_min_dot: 0.5
     box_chest_to_left_arm_base_rpy:
@@ -105,7 +105,7 @@ mission_controller:
     box_joint1_name: joint1
     box_joint1_position_tolerance_rad: 0.01
     box_joint1_stable_samples: 3
-    box_joint1_velocity: 5
+    box_joint1_velocity: 12
     box_joint1_velocity_tolerance_rad_sec: 0.01
     box_joint1_wait_timeout_sec: 80.0
     box_joint2_approach_angle_deg: 0.0
@@ -404,8 +404,10 @@ mission_controller:
     box_post_movel_step4_movej_trajectory_connect: 0
     box_post_movel_step4_movej_velocity: 10
     box_post_movel_step4_movej_velocity_tolerance_rad_sec: 0.01
-    box_post_movel_step_count: 4
-    box_post_movel_velocity_percent: 10.0
+    box_post_movel_step_count: 2
+    box_post_movel_velocity_percent: 12.0
+    # TF GraspBox and DragBox dual-arm SDK targets share one arm-base Z value.
+    box_tf_equalize_dual_target_z_enabled: true
     box_pre_detection_arm_movej_enabled: true
     box_pre_detection_right_movej_blend_radius: 0
     box_pre_detection_right_movej_command_units_per_degree: 1000.0
@@ -489,36 +491,36 @@ mission_controller:
     - 0
     - 0
     box_step2_waist_endpoint_sync_layer1_configured: false
-    box_step2_waist_endpoint_sync_layer1_forward_body_velocity: 5
-    box_step2_waist_endpoint_sync_layer1_forward_left_movel_velocity_percent: 10.0
-    box_step2_waist_endpoint_sync_layer1_forward_right_movel_velocity_percent: 10.0
-    box_step2_waist_endpoint_sync_layer1_reverse_body_velocity: 5
-    box_step2_waist_endpoint_sync_layer1_reverse_left_movel_velocity_percent: 10.0
-    box_step2_waist_endpoint_sync_layer1_reverse_right_movel_velocity_percent: 10.0
+    box_step2_waist_endpoint_sync_layer1_forward_body_velocity: 12
+    box_step2_waist_endpoint_sync_layer1_forward_left_movel_velocity_percent: 12.0
+    box_step2_waist_endpoint_sync_layer1_forward_right_movel_velocity_percent: 12.0
+    box_step2_waist_endpoint_sync_layer1_reverse_body_velocity: 12
+    box_step2_waist_endpoint_sync_layer1_reverse_left_movel_velocity_percent: 12.0
+    box_step2_waist_endpoint_sync_layer1_reverse_right_movel_velocity_percent: 12.0
     box_step2_waist_endpoint_sync_layer1_segments: 1
     box_step2_waist_endpoint_sync_layer2_configured: false
-    box_step2_waist_endpoint_sync_layer2_forward_body_velocity: 5
-    box_step2_waist_endpoint_sync_layer2_forward_left_movel_velocity_percent: 10.0
-    box_step2_waist_endpoint_sync_layer2_forward_right_movel_velocity_percent: 10.0
-    box_step2_waist_endpoint_sync_layer2_reverse_body_velocity: 5
-    box_step2_waist_endpoint_sync_layer2_reverse_left_movel_velocity_percent: 10.0
-    box_step2_waist_endpoint_sync_layer2_reverse_right_movel_velocity_percent: 10.0
+    box_step2_waist_endpoint_sync_layer2_forward_body_velocity: 12
+    box_step2_waist_endpoint_sync_layer2_forward_left_movel_velocity_percent: 12.0
+    box_step2_waist_endpoint_sync_layer2_forward_right_movel_velocity_percent: 12.0
+    box_step2_waist_endpoint_sync_layer2_reverse_body_velocity: 12
+    box_step2_waist_endpoint_sync_layer2_reverse_left_movel_velocity_percent: 12.0
+    box_step2_waist_endpoint_sync_layer2_reverse_right_movel_velocity_percent: 12.0
     box_step2_waist_endpoint_sync_layer2_segments: 1
     box_step2_waist_endpoint_sync_layer3_configured: false
-    box_step2_waist_endpoint_sync_layer3_forward_body_velocity: 5
-    box_step2_waist_endpoint_sync_layer3_forward_left_movel_velocity_percent: 10.0
-    box_step2_waist_endpoint_sync_layer3_forward_right_movel_velocity_percent: 10.0
-    box_step2_waist_endpoint_sync_layer3_reverse_body_velocity: 5
-    box_step2_waist_endpoint_sync_layer3_reverse_left_movel_velocity_percent: 10.0
-    box_step2_waist_endpoint_sync_layer3_reverse_right_movel_velocity_percent: 10.0
+    box_step2_waist_endpoint_sync_layer3_forward_body_velocity: 12
+    box_step2_waist_endpoint_sync_layer3_forward_left_movel_velocity_percent: 12.0
+    box_step2_waist_endpoint_sync_layer3_forward_right_movel_velocity_percent: 12.0
+    box_step2_waist_endpoint_sync_layer3_reverse_body_velocity: 12
+    box_step2_waist_endpoint_sync_layer3_reverse_left_movel_velocity_percent: 12.0
+    box_step2_waist_endpoint_sync_layer3_reverse_right_movel_velocity_percent: 12.0
     box_step2_waist_endpoint_sync_layer3_segments: 2
     box_step2_waist_endpoint_sync_layer4_configured: false
-    box_step2_waist_endpoint_sync_layer4_forward_body_velocity: 5
-    box_step2_waist_endpoint_sync_layer4_forward_left_movel_velocity_percent: 10.0
-    box_step2_waist_endpoint_sync_layer4_forward_right_movel_velocity_percent: 10.0
-    box_step2_waist_endpoint_sync_layer4_reverse_body_velocity: 5
-    box_step2_waist_endpoint_sync_layer4_reverse_left_movel_velocity_percent: 10.0
-    box_step2_waist_endpoint_sync_layer4_reverse_right_movel_velocity_percent: 10.0
+    box_step2_waist_endpoint_sync_layer4_forward_body_velocity: 12
+    box_step2_waist_endpoint_sync_layer4_forward_left_movel_velocity_percent: 12.0
+    box_step2_waist_endpoint_sync_layer4_forward_right_movel_velocity_percent: 12.0
+    box_step2_waist_endpoint_sync_layer4_reverse_body_velocity: 12
+    box_step2_waist_endpoint_sync_layer4_reverse_left_movel_velocity_percent: 12.0
+    box_step2_waist_endpoint_sync_layer4_reverse_right_movel_velocity_percent: 12.0
     box_step2_waist_endpoint_sync_layer4_segments: 1
     box_step2_waist_endpoint_sync_skip_final_body_home: true
     box_step2_waist_endpoint_sync_stable_samples: 3

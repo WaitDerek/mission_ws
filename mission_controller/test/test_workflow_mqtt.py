@@ -68,6 +68,7 @@ def test_navigation_publishes_pos_json_and_waits_for_matching_result():
     client = _MqttClient()
     gateway = MqttNavigationGateway(
         host="localhost",
+        robot_id="6",
         point_poses={"1": NavigationPoint(1.2, 3.4, 0.5)},
         client=client,
         connect_timeout_sec=0.5,
@@ -98,7 +99,7 @@ def test_navigation_publishes_pos_json_and_waits_for_matching_result():
         SimpleNamespace(
             topic="mission/navigation/result",
             retain=False,
-            payload=b"2",
+            payload=b'{"robot_id":"7","success":true,"message":"arrived"}',
         ),
     )
     time.sleep(0.05)
@@ -109,7 +110,7 @@ def test_navigation_publishes_pos_json_and_waits_for_matching_result():
         SimpleNamespace(
             topic="mission/navigation/result",
             retain=False,
-            payload=b'{"id":1,"success":true,"message":"arrived"}',
+            payload=b'{"robot_id":"6","success":true,"message":"arrived"}',
         ),
     )
     thread.join(timeout=1.0)
@@ -137,14 +138,22 @@ def test_mqtt_start_requires_robot_id_and_start_true():
         )
 
 
-def test_navigation_result_accepts_realbot_plain_or_json_protocol():
-    assert MqttNavigationGateway._decode_result(b"1") == (
-        "1",
+def test_navigation_result_requires_robot_id_json_protocol():
+    assert MqttNavigationGateway._decode_result(
+        b'{"robot_id":"6","success":true,"message":"arrived"}'
+    ) == (
+        "6",
         True,
-        "platform reported arrival",
+        "arrived",
     )
+    with pytest.raises(ValueError, match="JSON object"):
+        MqttNavigationGateway._decode_result(b"6")
     with pytest.raises(ValueError, match="success must be boolean"):
-        MqttNavigationGateway._decode_result(b'{"id":1}')
+        MqttNavigationGateway._decode_result(b'{"robot_id":"6"}')
+    with pytest.raises(ValueError, match="robot_id"):
+        MqttNavigationGateway._decode_result(
+            b'{"id":1,"success":true}'
+        )
 
 
 def test_mqtt_start_bridge_dispatches_and_publishes_json_status():

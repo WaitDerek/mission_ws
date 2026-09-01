@@ -88,7 +88,7 @@ class WorkflowNode(WorkflowMqttTriggerMixin, Node):
                 ("connector_point_id", "1"),
                 ("badge_point_id", "2"),
                 ("assembly_point_id", "3"),
-                ("robot_id", "g1d"),
+                ("robot_id", "6"),
                 ("navigation_adapter", "mqtt"),
                 ("mqtt_host", "127.0.0.1"),
                 ("mqtt_port", 1883),
@@ -171,6 +171,7 @@ class WorkflowNode(WorkflowMqttTriggerMixin, Node):
     def _create_navigation_gateway(self):
         return MqttNavigationGateway(
             host=self._string("mqtt_host"),
+            robot_id=self._string("robot_id"),
             port=self._integer("mqtt_port"),
             request_topic=self._string("mqtt_request_topic"),
             result_topic=self._string("mqtt_result_topic"),

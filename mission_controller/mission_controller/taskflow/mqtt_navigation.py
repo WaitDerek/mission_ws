@@ -89,6 +89,7 @@ class MqttNavigationGateway:
         self,
         *,
         host: str,
+        robot_id: str = "6",
         port: int = 1883,
         request_topic: str = "mission/navigation/request",
         result_topic: str = "mission/navigation/result",
@@ -102,6 +103,7 @@ class MqttNavigationGateway:
         client: Any | None = None,
     ) -> None:
         self._host = str(host).strip()
+        self._robot_id = str(robot_id).strip()
         self._port = int(port)
         self._request_topic = str(request_topic).strip()
         self._result_topic = str(result_topic).strip()
@@ -145,6 +147,8 @@ class MqttNavigationGateway:
     def _validate_configuration(self) -> None:
         if not self._host:
             raise ValueError("mqtt_host must not be empty")
+        if not self._robot_id:
+            raise ValueError("robot_id must not be empty")
         if not 1 <= self._port <= 65535:
             raise ValueError("mqtt_port must be in [1, 65535]")
         if not self._request_topic or not self._result_topic:
@@ -213,20 +217,27 @@ class MqttNavigationGateway:
         if not text:
             raise ValueError("navigation result payload is empty")
         if not text.startswith("{"):
-            return text, True, "platform reported arrival"
+            raise ValueError("navigation result payload must be a JSON object")
         try:
             result = json.loads(text)
         except json.JSONDecodeError as exc:
             raise ValueError("navigation result is invalid JSON") from exc
         if not isinstance(result, dict):
             raise ValueError("navigation result JSON must be an object")
-        point_id = str(result.get("id", result.get("point_id", ""))).strip()
+        raw_robot_id = result.get("robot_id")
         success = result.get("success")
-        if not point_id:
-            raise ValueError("navigation result JSON is missing id")
+        if isinstance(raw_robot_id, bool) or not isinstance(
+            raw_robot_id, (str, int)
+        ):
+            raise ValueError(
+                "navigation result JSON robot_id must be a string or integer"
+            )
+        robot_id = str(raw_robot_id).strip()
+        if not robot_id:
+            raise ValueError("navigation result JSON is missing robot_id")
         if not isinstance(success, bool):
             raise ValueError("navigation result JSON success must be boolean")
-        return point_id, success, str(result.get("message", "")).strip()
+        return robot_id, success, str(result.get("message", "")).strip()
 
     def _on_message(self, _client, _userdata, message) -> None:
         if str(getattr(message, "topic", "")) != self._result_topic:
@@ -234,14 +245,15 @@ class MqttNavigationGateway:
         if bool(getattr(message, "retain", False)):
             return
         try:
-            point_id, success, detail = self._decode_result(message.payload)
+            robot_id, success, detail = self._decode_result(message.payload)
         except (AttributeError, TypeError, ValueError):
             return
         with self._state_lock:
             if (
                 self._cancel_requested.is_set()
                 or self._response_ready.is_set()
-                or point_id != self._pending_point_id
+                or not self._pending_point_id
+                or robot_id != self._robot_id
             ):
                 return
             self._response = NavigationResult(
@@ -249,9 +261,9 @@ class MqttNavigationGateway:
                 "succeeded" if success else "failed",
                 detail
                 or (
-                    f"platform reached point {point_id}"
+                    f"platform reported navigation success for robot {robot_id}"
                     if success
-                    else f"platform failed to reach point {point_id}"
+                    else f"platform reported navigation failure for robot {robot_id}"
                 ),
             )
             self._response_ready.set()

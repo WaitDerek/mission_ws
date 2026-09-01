@@ -8,7 +8,7 @@ execute_workflow:
     badge_point_id: "2"
     assembly_point_id: "3"
     # The platform start message must carry this value in `robot_id`.
-    robot_id: g1d
+    robot_id: "6"
 
     # Four logical navigation points. The standard workflow uses 1, 2, and 3;
     # point 4 remains reserved. Configure measured map coordinates before use.
@@ -25,7 +25,7 @@ execute_workflow:
     mqtt_navigation_frame_id: map
     mqtt_navigation_points_json: "{}"
 
-    # Platform MQTT {"robot_id":"g1d","start":true,"request_id":"..."} starts one run.
+    # Platform MQTT {"robot_id":"6","start":true,"request_id":"..."} starts one run.
     mqtt_start_enabled: true
     mqtt_start_topic: mission/workflow/start
     mqtt_status_topic: mission/workflow/status

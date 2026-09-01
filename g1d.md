@@ -295,7 +295,7 @@ Assembly 流程：
 平台启动消息，Topic `mission/workflow/start`：
 
 ```json
-{"robot_id":"g1d","start":true,"request_id":"platform-001"}
+{"robot_id":"6","start":true,"request_id":"platform-001"}
 ```
 
 `robot_id` 必须与 `taskflow.yaml` 中配置的机器人 ID 一致。
@@ -310,13 +310,12 @@ Mission 状态 Topic：`mission/workflow/status`。导航请求 Topic：
 平台导航结果 Topic：`mission/navigation/result`：
 
 ```json
-{"id":1,"success":true,"message":"arrived"}
+{"robot_id":"6","success":true,"message":"arrived"}
 ```
 
-导航协议与 RealBot 分支一致：`id` 是点位编号，平台也可以直接返回纯文本点位 ID，
-例如 `1`；JSON 回执可通过 `success=false` 明确报告失败。点位不匹配、遗留消息、
-失败回执或超时都不会放行下一步；ROS 子 Action 同样必须以 `SUCCEEDED` 结束且返回
-`success=true`。
+导航请求中的 `id` 是点位编号；导航结果通过 `robot_id` 匹配当前机器人，并使用
+`success=false` 明确报告失败。其他机器人回执、遗留消息、失败回执或超时都不会
+放行下一步；ROS 子 Action 同样必须以 `SUCCEEDED` 结束且返回 `success=true`。
 
 实际点位坐标填写在 `mission_controller/config/taskflow.yaml` 的
 `mqtt_navigation_points_json`。1～4 任一点未配置或 `paho-mqtt` 不可用时，

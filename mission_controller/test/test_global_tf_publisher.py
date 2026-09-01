@@ -1,6 +1,8 @@
 import math
 from pathlib import Path
 
+import yaml
+
 from mission_runtime.global_tf_kinematics import (
     RigidTransform,
     UrdfKinematics,
@@ -37,6 +39,113 @@ def test_realbots_urdf_contains_the_requested_camera_chain():
         assert math.isclose(
             recovered.translation[2], transform.translation[2], abs_tol=1.0e-9
         )
+
+
+def test_left_camera_children_apply_local_optical_roll_correction():
+    source_root = Path(__file__).resolve().parents[2]
+    urdf = source_root / "realbots2" / "urdf" / "realbots29.urdf"
+    model = UrdfKinematics(str(urdf))
+
+    correction = math.radians(-5.0)
+    expected = (math.sin(correction / 2.0), 0.0, 0.0, math.cos(correction / 2.0))
+    for joint_name in (
+        "left_binocular_right_camera_joint",
+        "left_speckle_camera_joint",
+        "left_rgb_camera_Link",
+        "left_binocular_left_camera_joint",
+    ):
+        actual = model.joints[joint_name].origin.rotation
+        assert math.isclose(
+            abs(sum(a * b for a, b in zip(actual, expected))),
+            1.0,
+            abs_tol=1.0e-9,
+        )
+
+
+def test_left_depth_camera_mount_moves_back_1cm_z_and_09cm_y():
+    source_root = Path(__file__).resolve().parents[2]
+    urdf = source_root / "realbots2" / "urdf" / "realbots29.urdf"
+    model = UrdfKinematics(str(urdf))
+    rgb_origin = model.joints["left_rgb_camera_Link"].origin.translation
+
+    config = yaml.safe_load(
+        (source_root / "mission_controller" / "config" / "global_tf.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    parameters = config["realbots_global_tf"]["ros__parameters"]
+    configured = tuple(
+        float(value)
+        for value in parameters["camera_mount_xyz"]
+    )
+    quaternion = tuple(
+        float(value) for value in parameters["camera_mount_quaternion_xyzw"]
+    )
+    norm = math.sqrt(sum(value * value for value in quaternion))
+    x, y, z, w = (value / norm for value in quaternion)
+    y_axis = (
+        2.0 * (x * y - z * w),
+        1.0 - 2.0 * (x * x + z * z),
+        2.0 * (y * z + x * w),
+    )
+    z_axis = (
+        2.0 * (x * z + y * w),
+        2.0 * (y * z - x * w),
+        1.0 - 2.0 * (x * x + y * y),
+    )
+    expected = tuple(
+        rgb_origin[index] - 0.01 * z_axis[index] - 0.009 * y_axis[index]
+        for index in range(3)
+    )
+
+    for actual, target in zip(configured, expected):
+        assert math.isclose(actual, target, abs_tol=1.0e-12)
+
+
+def test_left_depth_camera_axes_apply_requested_local_remap():
+    source_root = Path(__file__).resolve().parents[2]
+    config = yaml.safe_load(
+        (source_root / "mission_controller" / "config" / "global_tf.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    configured = tuple(
+        float(value)
+        for value in config["realbots_global_tf"]["ros__parameters"][
+            "camera_mount_quaternion_xyzw"
+        ]
+    )
+    old_mount = (0.500617260, 0.499457371, 0.499528938, -0.500395377)
+    correction = math.radians(-5.0)
+    roll_correction = (
+        math.sin(correction / 2.0),
+        0.0,
+        0.0,
+        math.cos(correction / 2.0),
+    )
+    axis_remap = (0.0, math.sin(math.pi / 4.0), 0.0, math.cos(math.pi / 4.0))
+
+    def multiply(lhs, rhs):
+        lx, ly, lz, lw = lhs
+        rx, ry, rz, rw = rhs
+        return (
+            lw * rx + lx * rw + ly * rz - lz * ry,
+            lw * ry - lx * rz + ly * rw + lz * rx,
+            lw * rz + lx * ry - ly * rx + lz * rw,
+            lw * rw - lx * rx - ly * ry - lz * rz,
+        )
+
+    expected = multiply(multiply(roll_correction, old_mount), axis_remap)
+    configured_norm = math.sqrt(sum(value * value for value in configured))
+    expected_norm = math.sqrt(sum(value * value for value in expected))
+    configured = tuple(value / configured_norm for value in configured)
+    expected = tuple(value / expected_norm for value in expected)
+
+    assert math.isclose(
+        abs(sum(a * b for a, b in zip(configured, expected))),
+        1.0,
+        abs_tol=1.0e-9,
+    )
 
 
 def test_urdf_joint_names_match_hardware_feedback_mapping():

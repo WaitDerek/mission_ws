@@ -2724,7 +2724,7 @@
     type="fixed">
     <origin
       xyz="-0.0459054299802165 0 -0.000100000000000156"
-      rpy="0 0 0" />
+      rpy="-0.087266462599716 0 0" />
     <parent
       link="left_camera_Link" />
     <child
@@ -2754,7 +2754,7 @@
     type="fixed">
     <origin
       xyz="0.00159547181944711 0 -0.000100000000000156"
-      rpy="0 0 0" />
+      rpy="-0.087266462599716 0 0" />
     <parent
       link="left_camera_Link" />
     <child
@@ -2784,7 +2784,7 @@
     type="fixed">
     <origin
       xyz="0.0253455085535028 0 -0.000100000000000211"
-      rpy="0 0 0" />
+      rpy="-0.087266462599716 0 0" />
     <parent
       link="left_camera_Link" />
     <child
@@ -2814,7 +2814,7 @@
     type="fixed">
     <origin
       xyz="0.0490945700197835 0 -0.000100000000000211"
-      rpy="0 0 0" />
+      rpy="-0.087266462599716 0 0" />
     <parent
       link="left_camera_Link" />
     <child

@@ -18,14 +18,20 @@ realbots_global_tf:
     # to put its color optical frame on the URDF left-eye origin.
     camera_mount_parent_link: left_camera_Link
     camera_mount_child_frame: left_arm_depth_cam_link
-    camera_mount_xyz: [0.049094570020, 0.0, -0.000100000000]
+    # Restore the URDF left_rgb_camera_Link origin, then move 1.0 cm backward
+    # along the corrected depth frame's local -Z and another 0.9 cm along -Y.
+    camera_mount_xyz: [0.016325263935158, -0.000868828307099, -0.010043858627213]
     # The driver publishes the optical frame below left_arm_depth_cam_link.
     # Requested corrected axes (expressed in the currently published optical
     # frame): X_correct=-Z_current, Y_correct=-X_current, Z_correct=Y_current.
     # This is C=[[0,-1,0],[0,0,1],[-1,0,0]], q_xyzw=[-0.5,0.5,0.5,0.5].
     # C is conjugated through the driver's link->optical transform and folded
     # into this upstream mount, so the optical frame keeps one TF parent.
-    camera_mount_quaternion_xyzw: [0.500617260, 0.499457371, 0.499528938, -0.500395377]
+    # Prepend a local -5-degree roll so left_camera_Link remains at its
+    # original 25-degree mechanical mount while downstream camera frames use
+    # a 20-degree optical-frame alignment. Then remap the resulting local
+    # axes as X_new=-Z_current, Y_new=Y_current, Z_new=X_current.
+    camera_mount_quaternion_xyzw: [0.031607850, 0.030185435, 0.706565983, -0.706296181]
 
     # The right camera uses the same URDF assembly chain and left-RGB origin.
     # Relative to the currently observed optical frame, the requested

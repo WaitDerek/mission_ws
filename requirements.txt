@@ -1,0 +1,14 @@
+# Verified with Conda changan (Python 3.8), Ubuntu 20.04 ARM64, ROS 2 Foxy.
+# Activate changan, then run: python -m pip install -r requirements.txt
+# Build-time Python dependencies, not a complete robot runtime environment.
+# ROS 2 Foxy, colcon and ROS message packages must be installed separately.
+# empy provides `import em`; Foxy requires the EmPy 3 API (not em or EmPy 4).
+empy==3.3.4
+catkin-pkg==1.0.0
+lark-parser==0.12.0
+numpy==1.24.4
+PyYAML==6.0.2
+docutils==0.20.1
+pyparsing==3.1.4
+python-dateutil==2.9.0.post0
+six==1.17.0

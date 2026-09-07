@@ -1,0 +1,48 @@
+"""Start manipulation actions and the MQTT-driven workflow."""
+
+from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
+
+
+def generate_launch_description() -> LaunchDescription:
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "config_file",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("mission_manager"), "config", "mission.yaml"]
+                ),
+            ),
+            DeclareLaunchArgument(
+                "handeye_file",
+                default_value="handeye_result_12.yaml",
+                description="Hand-eye YAML filename relative to the mission config directory.",
+            ),
+            DeclareLaunchArgument(
+                "taskflow_config_file",
+                default_value=PathJoinSubstitution(
+                    [FindPackageShare("mission_manager"), "config", "taskflow.yaml"]
+                ),
+            ),
+            Node(
+                package="mission_manager",
+                executable="mission_manager",
+                name="mission_manager",
+                output="screen",
+                parameters=[
+                    LaunchConfiguration("config_file"),
+                    {"handeye_file": LaunchConfiguration("handeye_file")},
+                ],
+            ),
+            Node(
+                package="mission_manager",
+                executable="execute_workflow",
+                name="execute_workflow",
+                output="screen",
+                parameters=[LaunchConfiguration("taskflow_config_file")],
+            ),
+        ]
+    )

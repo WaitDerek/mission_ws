@@ -25,7 +25,7 @@ source src/setup_all.zsh
 
 ```bash
 cd mission_ws
-colcon build --base-paths src/mission_interfaces src/mission_controller \
+colcon build --base-paths src/mission_manager_interfaces src/mission_manager \
   --merge-install --symlink-install \
   --cmake-args "-DCMAKE_BUILD_TYPE=Release" \
   -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
@@ -35,13 +35,13 @@ source install/setup.zsh
 Mission 提供七个任务 Action 端点：
 
 ```text
-/execute_grasp  mission_interfaces/action/ExecuteGrasp
-/run_grip      mission_interfaces/action/ExecuteGrip
-/run_peel      mission_interfaces/action/ExecutePeel
-/execute_grip   mission_interfaces/action/ExecuteGrip
-/execute_peel   mission_interfaces/action/ExecutePeel
-/execute_assembly mission_interfaces/action/ExecuteAssembly
-/execute_workflow mission_interfaces/action/ExecuteWorkflow
+/execute_grasp  mission_manager_interfaces/action/ExecuteGrasp
+/run_grip      mission_manager_interfaces/action/ExecuteGrip
+/run_peel      mission_manager_interfaces/action/ExecutePeel
+/execute_grip   mission_manager_interfaces/action/ExecuteGrip
+/execute_peel   mission_manager_interfaces/action/ExecutePeel
+/execute_assembly mission_manager_interfaces/action/ExecuteAssembly
+/execute_workflow mission_manager_interfaces/action/ExecuteWorkflow
 ```
 
 ## 3. 启动 dual-arm 和 mission
@@ -56,7 +56,7 @@ cd mission_ws
 source src/setup_all.zsh
 source install/setup.zsh
 
-ros2 launch mission_controller mission_system.launch.py \
+ros2 launch mission_manager mission_system.launch.py \
   simulation:=true \
   hardware:=false
 ```
@@ -79,7 +79,7 @@ cd mission_ws
 source src/setup_all.zsh
 source install/setup.zsh
 
-ros2 launch mission_controller mission_system.launch.py \
+ros2 launch mission_manager mission_system.launch.py \
   simulation:=false \
   hardware:=true \
   robot_ip:=enP8p1s0
@@ -141,7 +141,7 @@ ros2 topic echo /pinocchio_g1d/right_ee_pose --once
 ```bash
 ros2 action send_goal --feedback \
   /execute_grasp \
-  mission_interfaces/action/ExecuteGrasp \
+  mission_manager_interfaces/action/ExecuteGrasp \
   "{request_id: 'g1d_badge_test',
     target_label: 0,
     arm: 'left',
@@ -166,28 +166,28 @@ G1-D 固定使用左臂和 `badge` 模型。`target_label`、`arm`、`publish_po
 继电器新回执和有效力接触，并处理子 Action 超时/取消及失败后的吸盘清理。
 
 连接件使用相同抓取步骤，但几何配置独立受
-`mission_controller/config/connector_grip.json` 的 `calibrated` 开关保护；
+`mission_manager/config/connector_grip.json` 的 `calibrated` 开关保护；
 完成连接件抓取偏移标定前，`target_type: connector` 会失败关闭。
 
 ```bash
 ros2 action send_goal --feedback \
   /run_grip \
-  mission_interfaces/action/ExecuteGrip \
+  mission_manager_interfaces/action/ExecuteGrip \
   "{request_id: 'run_grip_test', target_type: 'badge'}"
 
 ros2 action send_goal --feedback \
   /run_peel \
-  mission_interfaces/action/ExecutePeel \
+  mission_manager_interfaces/action/ExecutePeel \
   "{request_id: 'run_peel_test'}"
 
 ros2 action send_goal --feedback \
   /execute_grip \
-  mission_interfaces/action/ExecuteGrip \
+  mission_manager_interfaces/action/ExecuteGrip \
   "{request_id: 'grip_test', target_type: 'badge'}"
 
 ros2 action send_goal --feedback \
   /execute_peel \
-  mission_interfaces/action/ExecutePeel \
+  mission_manager_interfaces/action/ExecutePeel \
   "{request_id: 'peel_test'}"
 ```
 
@@ -258,7 +258,7 @@ Peel 实际顺序：
 ```bash
 ros2 action send_goal --feedback \
   /execute_assembly \
-  mission_interfaces/action/ExecuteAssembly \
+  mission_manager_interfaces/action/ExecuteAssembly \
   "{request_id: 'assembly_test', target_type: 'connector'}"
 ```
 
@@ -276,7 +276,7 @@ Assembly 流程：
 -> 关闭左吸盘释放连接件或车标
 ```
 
-`mission_controller/config/assembly.json` 默认 `calibrated: false`。必须完成
+`mission_manager/config/assembly.json` 默认 `calibrated: false`。必须完成
 前保 patch、`task_T_tool` 和力阈值实机标定后才能改为 `true`。
 
 ## 9. MQTT 任务流
@@ -317,7 +317,7 @@ Mission 状态 Topic：`mission/workflow/status`。导航请求 Topic：
 `success=false` 明确报告失败。其他机器人回执、遗留消息、失败回执或超时都不会
 放行下一步；ROS 子 Action 同样必须以 `SUCCEEDED` 结束且返回 `success=true`。
 
-实际点位坐标填写在 `mission_controller/config/taskflow.yaml` 的
+实际点位坐标填写在 `mission_manager/config/taskflow.yaml` 的
 `mqtt_navigation_points_json`。1～4 任一点未配置或 `paho-mqtt` 不可用时，
 workflow 节点拒绝启动，不发布零位导航。
 
@@ -326,7 +326,7 @@ workflow 节点拒绝启动，不发布零位导航。
 ```bash
 ros2 action send_goal --feedback \
   /execute_workflow \
-  mission_interfaces/action/ExecuteWorkflow \
+  mission_manager_interfaces/action/ExecuteWorkflow \
   "{start: true}"
 ```
 
@@ -356,13 +356,13 @@ ros2 action send_goal --feedback \
 手眼外参默认从以下文件读取：
 
 ```text
-mission_controller/config/handeye_result_12.yaml
+mission_manager/config/handeye_result_12.yaml
 ```
 
 也可以传入同一 config 目录下的其他文件名：
 
 ```bash
-ros2 launch mission_controller mission_system.launch.py \
+ros2 launch mission_manager mission_system.launch.py \
   handeye_file:=handeye_result_12.yaml
 ```
 
@@ -398,7 +398,7 @@ ros2 launch mission_controller mission_system.launch.py \
 
 ### hand-eye YAML 读取失败
 
-确认文件位于 `mission_controller/config`，且包含：
+确认文件位于 `mission_manager/config`，且包含：
 
 ```yaml
 ee_to_camera:

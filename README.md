@@ -7,7 +7,7 @@ cd /home/dekc/april/changan/mission_ws
 source src/setup_all.zsh
 
 colcon build \
-  --base-paths src/mission_interfaces src/mission_controller \
+  --base-paths src/mission_manager_interfaces src/mission_manager \
   --merge-install \
   --symlink-install
 
@@ -24,7 +24,7 @@ cd /home/dekc/april/changan/mission_ws
 source src/setup_all.zsh
 source install/setup.zsh
 
-ros2 launch mission_controller mission_system.launch.py \
+ros2 launch mission_manager mission_system.launch.py \
   simulation:=false \
   hardware:=true \
   robot_ip:=enP8p1s0 \
@@ -35,7 +35,7 @@ ros2 launch mission_controller mission_system.launch.py \
 仿真：
 
 ```bash
-ros2 launch mission_controller mission_system.launch.py \
+ros2 launch mission_manager mission_system.launch.py \
   simulation:=true \
   hardware:=false \
   taskflow_config_file:=/absolute/path/to/taskflow.yaml
@@ -44,7 +44,7 @@ ros2 launch mission_controller mission_system.launch.py \
 Dual Arm 已经启动时，只启动 Mission：
 
 ```bash
-ros2 launch mission_controller mission.launch.py \
+ros2 launch mission_manager mission.launch.py \
   taskflow_config_file:=/absolute/path/to/taskflow.yaml
 ```
 
@@ -60,7 +60,7 @@ ros2 action list -t | grep -E \
 ```bash
 ros2 action send_goal --feedback \
   /execute_grasp \
-  mission_interfaces/action/ExecuteGrasp \
+  mission_manager_interfaces/action/ExecuteGrasp \
   "{request_id: 'grasp_test',
     target_label: 0,
     arm: 'left',
@@ -74,7 +74,7 @@ ros2 action send_goal --feedback \
 ```bash
 ros2 action send_goal --feedback \
   /run_grip \
-  mission_interfaces/action/ExecuteGrip \
+  mission_manager_interfaces/action/ExecuteGrip \
   "{request_id: 'run_grip_test', target_type: 'badge'}"
 ```
 
@@ -83,7 +83,7 @@ ros2 action send_goal --feedback \
 ```bash
 ros2 action send_goal --feedback \
   /run_peel \
-  mission_interfaces/action/ExecutePeel \
+  mission_manager_interfaces/action/ExecutePeel \
   "{request_id: 'run_peel_test'}"
 ```
 
@@ -92,7 +92,7 @@ ros2 action send_goal --feedback \
 ```bash
 ros2 action send_goal --feedback \
   /execute_grip \
-  mission_interfaces/action/ExecuteGrip \
+  mission_manager_interfaces/action/ExecuteGrip \
   "{request_id: 'execute_grip_test', target_type: 'badge'}"
 ```
 
@@ -101,7 +101,7 @@ ros2 action send_goal --feedback \
 ```bash
 ros2 action send_goal --feedback \
   /execute_peel \
-  mission_interfaces/action/ExecutePeel \
+  mission_manager_interfaces/action/ExecutePeel \
   "{request_id: 'execute_peel_test'}"
 ```
 
@@ -110,7 +110,7 @@ ros2 action send_goal --feedback \
 ```bash
 ros2 action send_goal --feedback \
   /execute_assembly \
-  mission_interfaces/action/ExecuteAssembly \
+  mission_manager_interfaces/action/ExecuteAssembly \
   "{request_id: 'execute_assembly_test', target_type: 'connector'}"
 ```
 
@@ -119,6 +119,6 @@ ros2 action send_goal --feedback \
 ```bash
 ros2 action send_goal --feedback \
   /execute_workflow \
-  mission_interfaces/action/ExecuteWorkflow \
+  mission_manager_interfaces/action/ExecuteWorkflow \
   "{start: true}"
 ```

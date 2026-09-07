@@ -80,12 +80,56 @@ class TestMqttWorkflowStartBridge(unittest.TestCase):
 
         client.emit(
             json.dumps(
-                {"robot_id": "6", "start": True, "request_id": "platform-7"}
+                {"robot_id": "realman-001", "start": True, "request_id": "platform-7"}
             )
         )
 
         self.assertEqual(requests[0].request_id, "platform-7")
-        self.assertEqual(requests[0].robot_id, "6")
+        self.assertEqual(requests[0].robot_id, "realman-001")
+        self.assertEqual(requests[0].workflow, "full")
+        bridge.close()
+
+    def test_observation_navigation_start_fields_are_parsed(self):
+        client = _FakeClient()
+        requests = []
+        bridge = _bridge(client, requests)
+
+        client.emit(
+            json.dumps(
+                {
+                    "robot_id": "realman-001",
+                    "start": True,
+                    "request_id": "vision-nav-1",
+                    "workflow": "observation_navigation",
+                    "observation_point_id": 3,
+                }
+            )
+        )
+
+        self.assertEqual(len(requests), 1)
+        self.assertEqual(requests[0].workflow, "observation_navigation")
+        self.assertEqual(requests[0].observation_point_id, 3)
+        bridge.close()
+
+    def test_observation_navigation_rejects_invalid_point(self):
+        client = _FakeClient()
+        requests = []
+        bridge = _bridge(client, requests)
+
+        client.emit(
+            json.dumps(
+                {
+                    "robot_id": "realman-001",
+                    "start": True,
+                    "workflow": "observation_navigation",
+                    "observation_point_id": 5,
+                }
+            )
+        )
+
+        self.assertEqual(requests, [])
+        status = json.loads(client.published[-1][1])
+        self.assertIn("must be in [1,4]", status["message"])
         bridge.close()
 
     def test_json_start_requires_robot_id(self):

@@ -57,6 +57,8 @@ class ParameterValidationMixin:
             "camera_detection_arm",
             "grasp_box_tf_force_clamp_mode",
             "drag_box_tf_force_clamp_mode",
+            "grasp_box_tf_post_movel_sdk_motion_mode",
+            "drag_box_tf_post_movel_sdk_motion_mode",
         ):
             if not self._string(name):
                 raise ValueError(f"parameter '{name}' must not be empty")
@@ -84,6 +86,16 @@ class ParameterValidationMixin:
                 "parameter 'box_post_movel_step4_motion_mode' must be "
                 "'movel', 'movej_p', or 'movej'"
             )
+
+        for name in (
+            "grasp_box_tf_post_movel_sdk_motion_mode",
+            "drag_box_tf_post_movel_sdk_motion_mode",
+        ):
+            post_movel_mode = self._string(name).strip().lower()
+            if post_movel_mode not in ("movel", "movel_offset"):
+                raise ValueError(
+                    f"parameter '{name}' must be 'movel' or 'movel_offset'"
+                )
 
         left_join_mode = self._string("drag_box_left_join_mode").strip().lower()
         if left_join_mode not in ("immediate", "after_drag3"):
@@ -287,8 +299,15 @@ class ParameterValidationMixin:
             ("drag_box_tf_body_home_carry_joint_units", 4),
             ("place_box_test_body_joint_units", 4),
             ("place_box_test_start_body_joint_units", 4),
+            ("place_box_test_post_release_body_home_joint_units", 4),
+            ("place_box_test_post_release_arm_home_left_joint_units", 7),
+            ("place_box_test_post_release_arm_home_right_joint_units", 7),
             ("place_box_test_left_target_pose_arm_base", 7),
             ("place_box_test_right_target_pose_arm_base", 7),
+            ("place_box_test_left_target_pose_arm_base_smallbox", 7),
+            ("place_box_test_right_target_pose_arm_base_smallbox", 7),
+            ("place_box_test_left_target_pose_arm_base_bigbox", 7),
+            ("place_box_test_right_target_pose_arm_base_bigbox", 7),
         ):
             values = self._float_array(name)
             if len(values) != expected_length:
@@ -309,6 +328,10 @@ class ParameterValidationMixin:
             "joint123_layer4_right_target_correction_pose_box",
             "place_box_test_left_target_pose_arm_base",
             "place_box_test_right_target_pose_arm_base",
+            "place_box_test_left_target_pose_arm_base_smallbox",
+            "place_box_test_right_target_pose_arm_base_smallbox",
+            "place_box_test_left_target_pose_arm_base_bigbox",
+            "place_box_test_right_target_pose_arm_base_bigbox",
         ):
             values = self._float_array(name)
             quaternion_norm = math.sqrt(sum(value * value for value in values[3:]))
@@ -484,6 +507,7 @@ class ParameterValidationMixin:
             "grasp_box_tf_body_home_carry_left_movel_velocity_percent",
             "grasp_box_tf_body_home_carry_right_movel_velocity_percent",
             "grasp_box_tf_body_home_carry_final_correction_velocity_percent",
+            "grasp_box_tf_force_clamp_movel_velocity_percent",
             "drag_box_tf_body_home_carry_timeout_sec",
             "drag_box_tf_body_home_carry_tf_timeout_sec",
             "drag_box_tf_body_home_carry_position_tolerance_m",
@@ -492,6 +516,12 @@ class ParameterValidationMixin:
             "drag_box_tf_body_home_carry_left_movel_velocity_percent",
             "drag_box_tf_body_home_carry_right_movel_velocity_percent",
             "drag_box_tf_body_home_carry_final_correction_velocity_percent",
+            "drag_box_tf_post_carry_arm_base_z_lift_distance_m",
+            "drag_box_tf_post_carry_arm_base_z_lift_distance_m_bigbox_layer3",
+            "drag_box_tf_post_carry_arm_base_z_lift_distance_m_bigbox_layer4",
+            "drag_box_tf_post_carry_arm_base_z_lift_velocity_percent",
+            "drag_box_tf_post_carry_arm_base_z_lift_timeout_sec",
+            "drag_box_tf_force_clamp_movel_velocity_percent",
             "place_box_test_left_movel_velocity_percent",
             "place_box_test_right_movel_velocity_percent",
             "place_box_test_final_correction_velocity_percent",
@@ -501,6 +531,29 @@ class ParameterValidationMixin:
             "place_box_test_orientation_tolerance_rad",
             "place_box_test_target_consistency_position_tolerance_m",
             "place_box_test_target_consistency_orientation_tolerance_rad",
+            "place_box_test_force_unload_baseline_duration_sec",
+            "place_box_test_force_unload_baseline_timeout_sec",
+            "place_box_test_force_unload_sensor_max_age_sec",
+            "place_box_test_force_unload_threshold_left_counts",
+            "place_box_test_force_unload_threshold_right_counts",
+            "place_box_test_force_unload_required_duration_sec",
+            "place_box_test_post_support_z_equalization_velocity_percent",
+            "place_box_test_post_support_z_equalization_max_correction_m",
+            "place_box_test_post_support_z_equalization_min_high_arm_downward_m",
+            "place_box_test_post_support_z_equalization_tolerance_m",
+            "place_box_test_post_support_z_equalization_timeout_sec",
+            "place_box_test_post_release_arm_joint2_angle_deg",
+            "place_box_test_post_release_arm_movej_velocity_percent",
+            "place_box_test_post_release_arm_movej_position_tolerance_rad",
+            "place_box_test_post_release_arm_movej_velocity_tolerance_rad_sec",
+            "place_box_test_post_release_arm_movej_feedback_max_age_sec",
+            "place_box_test_post_release_arm_movej_timeout_sec",
+            "place_box_test_post_release_arm_home_command_units_per_degree",
+            "place_box_test_post_release_arm_home_velocity_percent",
+            "place_box_test_post_release_arm_home_position_tolerance_rad",
+            "place_box_test_post_release_arm_home_velocity_tolerance_rad_sec",
+            "place_box_test_post_release_arm_home_feedback_max_age_sec",
+            "place_box_test_post_release_arm_home_timeout_sec",
         )
         for name in positive_parameters:
             if not math.isfinite(self._float(name)) or self._float(name) <= 0.0:
@@ -514,12 +567,18 @@ class ParameterValidationMixin:
             "grasp_box_tf_body_home_carry_left_movel_velocity_percent",
             "grasp_box_tf_body_home_carry_right_movel_velocity_percent",
             "grasp_box_tf_body_home_carry_final_correction_velocity_percent",
+            "grasp_box_tf_force_clamp_movel_velocity_percent",
             "drag_box_tf_body_home_carry_left_movel_velocity_percent",
             "drag_box_tf_body_home_carry_right_movel_velocity_percent",
             "drag_box_tf_body_home_carry_final_correction_velocity_percent",
+            "drag_box_tf_post_carry_arm_base_z_lift_velocity_percent",
+            "drag_box_tf_force_clamp_movel_velocity_percent",
             "place_box_test_left_movel_velocity_percent",
             "place_box_test_right_movel_velocity_percent",
             "place_box_test_final_correction_velocity_percent",
+            "place_box_test_post_support_z_equalization_velocity_percent",
+            "place_box_test_post_release_arm_movej_velocity_percent",
+            "place_box_test_post_release_arm_home_velocity_percent",
         ):
             if self._float(name) > 100.0:
                 raise ValueError(f"{name} must be in (0, 100]")
@@ -745,8 +804,11 @@ class ParameterValidationMixin:
                 raise ValueError(f"{prefix}_filter_samples must be positive")
             if self._integer(f"{prefix}_max_correction_count") < 0:
                 raise ValueError(f"{prefix}_max_correction_count must be nonnegative")
-        if self._string("place_box_test_box_type").strip().lower() != "smallbox":
-            raise ValueError("place_box_test_box_type must be 'smallbox'")
+        if self._string("place_box_test_box_type").strip().lower() not in (
+            "smallbox",
+            "bigbox",
+        ):
+            raise ValueError("place_box_test_box_type must be 'smallbox' or 'bigbox'")
         if self._integer("place_box_test_segments") <= 0:
             raise ValueError("place_box_test_segments must be positive")
         if not 1 <= self._integer("place_box_test_body_velocity") <= 100:
@@ -759,6 +821,39 @@ class ParameterValidationMixin:
                 raise ValueError(f"{name} must be in [0, 100]")
         if self._integer("place_box_test_stable_samples") <= 0:
             raise ValueError("place_box_test_stable_samples must be positive")
+        if self._integer("place_box_test_force_unload_baseline_min_samples") <= 0:
+            raise ValueError(
+                "place_box_test_force_unload_baseline_min_samples must be positive"
+            )
+        if self._integer("place_box_test_force_unload_filter_samples") <= 0:
+            raise ValueError(
+                "place_box_test_force_unload_filter_samples must be positive"
+            )
+        for arm in ("left", "right"):
+            sign = self._float(f"place_box_test_force_unload_sign_{arm}")
+            if not math.isfinite(sign) or abs(sign) <= 1e-12:
+                raise ValueError(
+                    f"place_box_test_force_unload_sign_{arm} must be finite and nonzero"
+                )
+        if self._string("place_box_test_arm_motion_mode").strip().lower() not in (
+            "movel",
+            "movel_offset",
+        ):
+            raise ValueError(
+                "place_box_test_arm_motion_mode must be 'movel' or 'movel_offset'"
+            )
+        if self._integer("place_box_test_arm_offset_frame_type") not in (0, 1):
+            raise ValueError(
+                "place_box_test_arm_offset_frame_type must be 0 (work) or 1 (tool)"
+            )
+        if self._integer("place_box_test_post_release_arm_movej_stable_samples") <= 0:
+            raise ValueError(
+                "place_box_test_post_release_arm_movej_stable_samples must be positive"
+            )
+        if self._integer("place_box_test_post_release_arm_home_stable_samples") <= 0:
+            raise ValueError(
+                "place_box_test_post_release_arm_home_stable_samples must be positive"
+            )
         if self._boolean("box_step2_waist_endpoint_sync_enabled"):
             for prefix in (
                 "grasp_box_tf_body_home_carry",
@@ -841,6 +936,11 @@ class ParameterValidationMixin:
                     raise ValueError(
                         f"{name} must be finite and in [1, 100]"
                     )
+                continue
+            if "body_home_carry_body_velocity_" in name:
+                speed = self._integer(name)
+                if not 1 <= speed <= 100:
+                    raise ValueError(f"{name} must be in [1, 100]")
                 continue
             expected_length = (
                 7

@@ -256,12 +256,31 @@ class BoxForceClampMixin:
 
         if not targets:
             return current_poses
+        tf_prefix = (
+            "drag_box_tf" if prefix.startswith("drag_box_tf") else "grasp_box_tf"
+        )
+        motion_mode = self._string(
+            f"{tf_prefix}_post_movel_sdk_motion_mode"
+        ).strip().lower()
+        if motion_mode not in ("movel", "movel_offset"):
+            raise MissionError(
+                f"{tf_prefix}_post_movel_sdk_motion_mode must be "
+                "'movel' or 'movel_offset'"
+            )
+
+        def sdk_target(arm: str):
+            if motion_mode == "movel_offset":
+                return self._work_frame_offset_between_poses(
+                    current_poses[arm], targets[arm]
+                )
+            return pose_to_sdk_target(targets[arm])
+
         try:
             if len(targets) == 2:
                 motion_result = adapter.execute_dual(
-                    pose_to_sdk_target(targets["left"]),
-                    pose_to_sdk_target(targets["right"]),
-                    "movel",
+                    sdk_target("left"),
+                    sdk_target("right"),
+                    motion_mode,
                     speed,
                     blocking,
                     cancel_requested=lambda: goal_handle.is_cancel_requested,
@@ -269,13 +288,14 @@ class BoxForceClampMixin:
                     progress_callback=self._force_clamp_progress_callback(
                         session, tuple(current_poses)
                     ),
+                    offset_frame_type=0,
                 )
             else:
                 arm = next(iter(targets))
                 motion_result = adapter.execute_single(
                     arm,
-                    pose_to_sdk_target(targets[arm]),
-                    "movel",
+                    sdk_target(arm),
+                    motion_mode,
                     speed,
                     blocking,
                     cancel_requested=lambda: goal_handle.is_cancel_requested,
@@ -283,11 +303,14 @@ class BoxForceClampMixin:
                     progress_callback=self._force_clamp_progress_callback(
                         session, tuple(current_poses)
                     ),
+                    offset_frame_type=0,
                 )
         except RealManSdkCanceled as exc:
             raise MissionCanceled(str(exc)) from exc
         except (RealManSdkError, ValueError, MissionError) as exc:
-            raise MissionError(f"{prefix} clamp MoveL failed: {exc}") from exc
+            raise MissionError(
+                f"{prefix} clamp {motion_mode} failed: {exc}"
+            ) from exc
         for arm in targets:
             session["travelled_m"][arm] += distance if len(targets) == 1 else math.sqrt(
                 sum(
@@ -319,7 +342,9 @@ class BoxForceClampMixin:
             if all_fresh:
                 return updated
             time.sleep(0.01)
-        raise MissionError(f"{prefix} did not receive fresh Link7 pose after clamp MoveL")
+        raise MissionError(
+            f"{prefix} did not receive fresh Link7 pose after clamp {motion_mode}"
+        )
 
     def _force_clamp_wait_hold(
         self, goal_handle, session: dict, arms: Sequence[str], start_time: float

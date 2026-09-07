@@ -16,6 +16,7 @@ class ObservationTask:
     layer: int
     box_type: str
     order_index: int
+    grasp_mode: str = "direct_grasp"
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,9 @@ class NavigationRequest:
     workflow_id: str
     step_id: str
     point_id: str
+    # Optional direct map pose [x, y, yaw].  When present, a navigation
+    # gateway must use it instead of looking up point_id in its point map.
+    pos: tuple[float, float, float] | None = None
 
 
 @dataclass(frozen=True)

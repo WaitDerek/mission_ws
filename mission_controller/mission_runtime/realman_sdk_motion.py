@@ -23,10 +23,18 @@ class RealManSdkMotionMixin:
         cancel_requested: Optional[Callable[[], bool]] = None,
         timeout_sec: float = 120.0,
         progress_callback: Optional[Callable[[], object]] = None,
+        *,
+        offset_frame_type: int = 0,
     ) -> str:
         mode = str(motion_mode).strip().lower()
-        if mode not in ("movel", "movej_p"):
+        if mode not in ("movel", "movel_offset", "movej_p"):
             raise RealManSdkError(f"unsupported RealMan motion mode: {mode}")
+        frame_type = int(offset_frame_type)
+        if mode == "movel_offset" and frame_type not in (0, 1):
+            raise RealManSdkError(
+                "SDK MoveL-offset frame_type must be 0 (work) or 1 (tool), "
+                f"got {frame_type}"
+            )
         if not blocking:
             raise RealManSdkError(
                 "direct Python SDK requires blocking=true so Action success "
@@ -61,6 +69,10 @@ class RealManSdkMotionMixin:
                         return
                     if mode == "movel":
                         return_code = robot.rm_movel(list(target), speed, 0, 0, 1)
+                    elif mode == "movel_offset":
+                        return_code = robot.rm_movel_offset(
+                            list(target), speed, 0, 0, frame_type, 1
+                        )
                     else:
                         return_code = robot.rm_movej_p(list(target), speed, 0, 0, 1)
                     results[name] = int(return_code)
@@ -173,13 +185,21 @@ class RealManSdkMotionMixin:
         cancel_requested: Optional[Callable[[], bool]] = None,
         timeout_sec: float = 120.0,
         progress_callback: Optional[Callable[[], object]] = None,
+        *,
+        offset_frame_type: int = 0,
     ) -> str:
         """Execute a blocking Cartesian motion on exactly one arm."""
         mode = str(motion_mode).strip().lower()
         if arm not in ("left", "right"):
             raise RealManSdkError(f"invalid RealMan arm: {arm}")
-        if mode not in ("movel", "movej_p"):
+        if mode not in ("movel", "movel_offset", "movej_p"):
             raise RealManSdkError(f"unsupported RealMan motion mode: {mode}")
+        frame_type = int(offset_frame_type)
+        if mode == "movel_offset" and frame_type not in (0, 1):
+            raise RealManSdkError(
+                "SDK MoveL-offset frame_type must be 0 (work) or 1 (tool), "
+                f"got {frame_type}"
+            )
         if not blocking:
             raise RealManSdkError(
                 "direct Python SDK requires blocking=true so Action success "
@@ -209,6 +229,10 @@ class RealManSdkMotionMixin:
                         return
                     if mode == "movel":
                         return_code = robot.rm_movel(list(target), speed, 0, 0, 1)
+                    elif mode == "movel_offset":
+                        return_code = robot.rm_movel_offset(
+                            list(target), speed, 0, 0, frame_type, 1
+                        )
                     else:
                         return_code = robot.rm_movej_p(list(target), speed, 0, 0, 1)
                     result[arm] = int(return_code)
@@ -259,6 +283,134 @@ class RealManSdkMotionMixin:
                 )
             return (
                 f"direct Python SDK {arm} {mode} completed: return_code={result[arm]}"
+            )
+
+    def execute_dual_movej(
+        self,
+        left_joint_degrees: Sequence[float],
+        right_joint_degrees: Sequence[float],
+        speed_percent: float,
+        blend_radius: int = 0,
+        trajectory_connect: int = 0,
+        cancel_requested: Optional[Callable[[], bool]] = None,
+        timeout_sec: float = 120.0,
+    ) -> str:
+        """Execute synchronized blocking joint-space MoveJ on both SDK arms."""
+        targets = {
+            "left": [float(value) for value in left_joint_degrees],
+            "right": [float(value) for value in right_joint_degrees],
+        }
+        if any(
+            len(values) != 7 or not all(math.isfinite(value) for value in values)
+            for values in targets.values()
+        ):
+            raise RealManSdkError(
+                "SDK dual MoveJ targets must contain seven finite angles in degrees"
+            )
+        speed = int(round(float(speed_percent)))
+        blend = int(round(float(blend_radius)))
+        connect = int(round(float(trajectory_connect)))
+        if not 1 <= speed <= 100:
+            raise RealManSdkError(f"SDK speed must be in [1, 100], got {speed}")
+        if not 0 <= blend <= 100:
+            raise RealManSdkError(
+                f"SDK MoveJ blend radius must be in [0, 100], got {blend}"
+            )
+        if connect not in (0, 1):
+            raise RealManSdkError(
+                f"SDK MoveJ trajectory_connect must be 0 or 1, got {connect}"
+            )
+        if timeout_sec <= 0.0 or not math.isfinite(float(timeout_sec)):
+            raise RealManSdkError("SDK motion timeout must be finite and positive")
+
+        with self._motion_lock:
+            self._connect()
+            robots = dict(zip(("left", "right"), self._robots()))
+            if any(robot is None for robot in robots.values()):
+                raise RealManSdkError(
+                    "dual-arm MoveJ requires both SDK connections"
+                )
+            self._stop_event.clear()
+            barrier = threading.Barrier(3)
+            failure_event = threading.Event()
+            results: dict[str, int] = {}
+            errors: dict[str, str] = {}
+
+            def move_one(arm: str) -> None:
+                try:
+                    barrier.wait(timeout=5.0)
+                    if self._stop_event.is_set():
+                        return
+                    code = int(
+                        robots[arm].rm_movej(
+                            targets[arm], speed, blend, connect, 1
+                        )
+                    )
+                    results[arm] = code
+                    if code != 0:
+                        errors[arm] = f"return_code={code}"
+                        failure_event.set()
+                except Exception as exc:  # noqa: BLE001
+                    errors[arm] = str(exc)
+                    failure_event.set()
+
+            threads = [
+                threading.Thread(
+                    target=move_one,
+                    args=(arm,),
+                    name=f"realman-{arm}-dual-movej",
+                )
+                for arm in ("left", "right")
+            ]
+            self._motion_active = True
+            for thread in threads:
+                thread.start()
+            motion_error = None
+            try:
+                try:
+                    barrier.wait(timeout=5.0)
+                except Exception as exc:  # noqa: BLE001
+                    self.stop_all()
+                    motion_error = RealManSdkError(
+                        f"dual-arm MoveJ start synchronization failed: {exc}"
+                    )
+                deadline = time.monotonic() + float(timeout_sec)
+                while motion_error is None and any(
+                    thread.is_alive() for thread in threads
+                ):
+                    if cancel_requested is not None and cancel_requested():
+                        self.stop_all()
+                        motion_error = RealManSdkCanceled(
+                            "mission canceled during dual-arm SDK MoveJ"
+                        )
+                        break
+                    if failure_event.is_set():
+                        self.stop_all()
+                    if time.monotonic() >= deadline:
+                        self.stop_all()
+                        motion_error = RealManSdkError(
+                            f"dual-arm MoveJ timed out after {timeout_sec:.1f}s"
+                        )
+                        break
+                    time.sleep(0.02)
+                for thread in threads:
+                    thread.join(timeout=5.0)
+            finally:
+                self._motion_active = False
+            if motion_error is not None:
+                raise motion_error
+            if errors or any(results.get(arm, -1) != 0 for arm in ("left", "right")):
+                raise RealManSdkError(
+                    "direct dual-arm MoveJ failed: "
+                    + "; ".join(
+                        f"{arm}={errors.get(arm, f'return_code={results.get(arm, -1)}')}"
+                        for arm in ("left", "right")
+                    )
+                )
+            return (
+                "direct Python SDK dual-arm movej completed: "
+                f"left_return_code={results['left']}, "
+                f"right_return_code={results['right']}"
             )
 
     def execute_single_movej(

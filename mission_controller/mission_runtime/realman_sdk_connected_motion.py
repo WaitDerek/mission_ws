@@ -28,8 +28,9 @@ class RealManSdkConnectedMotionMixin:
         after_start: Optional[Callable[[], object]] = None,
         *,
         motion_mode: str = "movel",
+        offset_frame_type: int = 0,
     ) -> str:
-        """Queue a connected dual-arm MoveL or MoveJ_P path.
+        """Queue a connected dual-arm MoveL, MoveL-offset, or MoveJ_P path.
 
         RealMan's ``trajectory_connect=1`` queues an intermediate trajectory
         without executing it.  The final point is submitted with
@@ -41,10 +42,22 @@ class RealManSdkConnectedMotionMixin:
         intentionally does not wait at intermediate waypoints.
         ``motion_mode`` selects the SDK command for every waypoint.  The
         default remains MoveL for backwards compatibility.
+
+        A progress callback may return ``False`` to request a coordinated,
+        successful early stop.  This is used by force-controlled placement:
+        both arms and the optional external body motion are stopped as soon as
+        the table takes the load, without converting that expected stop into
+        an SDK failure.
         """
         mode = str(motion_mode).strip().lower()
-        if mode not in ("movel", "movej_p"):
+        if mode not in ("movel", "movel_offset", "movej_p"):
             raise RealManSdkError(f"unsupported RealMan motion mode: {mode}")
+        frame_type = int(offset_frame_type)
+        if mode == "movel_offset" and frame_type not in (0, 1):
+            raise RealManSdkError(
+                "SDK MoveL-offset frame_type must be 0 (work) or 1 (tool), "
+                f"got {frame_type}"
+            )
         left = [list(target) for target in left_targets]
         right = [list(target) for target in right_targets]
         if not left or len(left) != len(right):
@@ -113,6 +126,17 @@ class RealManSdkConnectedMotionMixin:
                                 left[point_index], left_speed, radius, 1, 1
                             )
                         )
+                    elif mode == "movel_offset":
+                        left_code = int(
+                            left_robot.rm_movel_offset(
+                                left[point_index],
+                                left_speed,
+                                radius,
+                                1,
+                                frame_type,
+                                1,
+                            )
+                        )
                     else:
                         left_code = int(
                             left_robot.rm_movej_p(
@@ -128,6 +152,17 @@ class RealManSdkConnectedMotionMixin:
                         right_code = int(
                             right_robot.rm_movel(
                                 right[point_index], right_speed, radius, 1, 1
+                            )
+                        )
+                    elif mode == "movel_offset":
+                        right_code = int(
+                            right_robot.rm_movel_offset(
+                                right[point_index],
+                                right_speed,
+                                radius,
+                                1,
+                                frame_type,
+                                1,
                             )
                         )
                     else:
@@ -158,6 +193,12 @@ class RealManSdkConnectedMotionMixin:
                             return
                         if mode == "movel":
                             code = int(robot.rm_movel(list(target), speed, 0, 0, 1))
+                        elif mode == "movel_offset":
+                            code = int(
+                                robot.rm_movel_offset(
+                                    list(target), speed, 0, 0, frame_type, 1
+                                )
+                            )
                         else:
                             code = int(robot.rm_movej_p(list(target), speed, 0, 0, 1))
                         results[name] = code
@@ -184,6 +225,7 @@ class RealManSdkConnectedMotionMixin:
                     thread.start()
 
                 motion_error = None
+                progress_stop_requested = False
                 try:
                     barrier.wait(timeout=5.0)
                     if before_start is not None:
@@ -220,7 +262,11 @@ class RealManSdkConnectedMotionMixin:
                         break
                     if progress_callback is not None:
                         try:
-                            progress_callback()
+                            keep_moving = progress_callback()
+                            if keep_moving is False:
+                                progress_stop_requested = True
+                                stop_after_failure()
+                                break
                         except Exception as exc:  # noqa: BLE001
                             stop_after_failure()
                             motion_error = RealManSdkError(
@@ -253,6 +299,15 @@ class RealManSdkConnectedMotionMixin:
 
                 if motion_error is not None:
                     raise motion_error
+                if progress_stop_requested:
+                    return (
+                        f"direct Python SDK connected dual-arm {mode} stopped "
+                        "successfully by progress callback: "
+                        f"waypoints={len(left)}, left_speed={left_speed}, "
+                        f"right_speed={right_speed}, blend_radius={radius}, "
+                        "trajectory_connect=1..1,0; "
+                        "stopped_by_progress_callback=true"
+                    )
                 if errors or set(results) != {"left", "right"}:
                     stop_after_failure()
                     raise RealManSdkError(

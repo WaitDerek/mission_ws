@@ -33,7 +33,7 @@ class TfLayerProfilesMixin:
         drag_left_detection = {
             "bigbox": [
                 [-172278, 7319, 20124, 51808, -17856, -23263, -70442],
-                [-161722, 5480, 933, 104186, 5631, -2342, -2903],
+                [-34406, 164214, -172158, 103200, 468, -19272, -60846],
                 [18442, 3544, 2870, -104500, -2568, 5250, -24076],
                 [-19238, 3482, 215, -91196, -2634, 5268, -78519],
             ],
@@ -203,6 +203,18 @@ class TfLayerProfilesMixin:
                                 12.0,
                             ),
                         ]
+                    )
+                    # The waist MoveJ speed is independently tunable for
+                    # every action, box model, and layer.  Layer 1 is
+                    # intentionally slower for initial commissioning; the
+                    # remaining defaults preserve the existing action-wide
+                    # speeds (GraspBox 12, DragBox 20).
+                    parameters.append(
+                        (
+                            f"{action_prefix}_body_home_carry_body_velocity_"
+                            f"{model}_layer{layer}",
+                            3 if layer == 1 else (12 if action_prefix == "grasp_box_tf" else 20),
+                        )
                     )
                     for arm in ("left", "right"):
                         for step in range(1, 6):

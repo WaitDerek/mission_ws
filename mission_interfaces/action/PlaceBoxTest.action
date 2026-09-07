@@ -1,5 +1,6 @@
-# Execute the current small-box placement test while preserving a rigid grasp.
+# Execute the current box placement test while preserving a rigid grasp.
 string request_id
+string box_type
 bool release_after_place
 bool dry_run
 

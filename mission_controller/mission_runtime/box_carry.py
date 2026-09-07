@@ -1,6 +1,8 @@
 import json
 import math
+import statistics
 from copy import deepcopy
+from collections import deque
 import time
 
 import rclpy
@@ -29,6 +31,7 @@ from .realman_sdk_adapter import (
     RealManSdkCanceled,
     RealManSdkError,
     pose_to_sdk_target,
+    quaternion_to_rpy,
 )
 
 
@@ -72,6 +75,29 @@ class BoxCarryMixin:
         return cls._tf_carry_parameter_name(
             f"{arm}_movel_velocity_percent", prefix
         )
+
+    @classmethod
+    def _tf_carry_body_velocity_parameter_name(
+        cls,
+        box_layer: int | None,
+        model_label: str | None,
+        parameter_prefix: str | None = None,
+    ) -> str:
+        """Resolve the model/layer-specific waist MoveJ speed.
+
+        Keep the legacy action-wide body velocity as a fallback for callers
+        that do not provide a valid box model/layer.  TF grasp and TF drag
+        profiles otherwise get an independent body speed for every layer.
+        """
+        prefix = parameter_prefix or cls._DEFAULT_TF_CARRY_PARAMETER_PREFIX
+        model = str(model_label or "").strip().lower()
+        try:
+            layer = int(box_layer) if box_layer is not None else 0
+        except (TypeError, ValueError):
+            layer = 0
+        if model in ("bigbox", "smallbox") and 1 <= layer <= 4:
+            return f"{prefix}_body_velocity_{model}_layer{layer}"
+        return cls._tf_carry_parameter_name("body_velocity", prefix)
 
     @staticmethod
     def _tf_body_home_carry_parameter_prefix(*, tf_mode: bool, drag_mode: bool):
@@ -1125,8 +1151,381 @@ class BoxCarryMixin:
             f"{latest_detail}, timeout_sec={timeout_sec:.1f}"
         )
 
-    def _execute_place_box_test_motion(self, goal_handle, adapter, dry_run: bool):
-        """Move the waist and both TCPs to the taught small-box place pose.
+    @staticmethod
+    def _place_box_test_fz_unload_metric(
+        current_fz: float,
+        baseline_fz: float,
+        force_sign: float,
+    ) -> float:
+        """Return the table-support signal from force-Z only.
+
+        With the current wrists, a carried box makes Fz more negative.  When
+        the table takes the load Fz moves back toward zero, so the calibrated
+        default sign is +1.  Fx is intentionally not part of the placement
+        release decision; Joint2=60 deg removes the lateral clamp afterwards.
+        """
+        return float(force_sign) * (float(current_fz) - float(baseline_fz))
+
+    def _place_box_test_fz_snapshot(self, arm: str):
+        with self.joint_state_lock:
+            wrench = getattr(self, "latest_slave_arm_wrenches", {}).get(arm)
+            sequence = getattr(
+                self, "latest_slave_arm_wrench_sequences", {}
+            ).get(arm, 0)
+            stamp = getattr(self, "latest_slave_arm_wrench_times", {}).get(
+                arm, 0.0
+            )
+        age = time.monotonic() - stamp if stamp > 0.0 else math.inf
+        if wrench is None or len(wrench) < 3:
+            return None, sequence, age
+        fz = float(wrench[2])
+        if not math.isfinite(fz):
+            return None, sequence, age
+        return fz, sequence, age
+
+    def _collect_place_box_test_fz_baseline(self, goal_handle):
+        """Capture a fresh, loaded-box Fz baseline for both wrists."""
+        duration = self._float("place_box_test_force_unload_baseline_duration_sec")
+        minimum = self._integer("place_box_test_force_unload_baseline_min_samples")
+        timeout = self._float("place_box_test_force_unload_baseline_timeout_sec")
+        max_age = self._float("place_box_test_force_unload_sensor_max_age_sec")
+        samples = {"left": [], "right": []}
+        sequences = {"left": -1, "right": -1}
+        started_at = time.monotonic()
+        deadline = started_at + timeout
+        latest_detail = "no fresh Fz samples"
+        while time.monotonic() < deadline:
+            self._check_canceled(
+                goal_handle, "while collecting place_box_test force-Z baseline"
+            )
+            for arm in ("left", "right"):
+                fz, sequence, age = self._place_box_test_fz_snapshot(arm)
+                if fz is None or age > max_age or sequence <= sequences[arm]:
+                    latest_detail = (
+                        f"{arm}=missing/stale Fz, sequence={sequence}, age={age:.3f}s"
+                    )
+                    continue
+                samples[arm].append(fz)
+                sequences[arm] = sequence
+            if (
+                time.monotonic() - started_at >= duration
+                and all(len(samples[arm]) >= minimum for arm in ("left", "right"))
+            ):
+                baselines = {
+                    arm: float(statistics.median(samples[arm]))
+                    for arm in ("left", "right")
+                }
+                return baselines, sequences
+            time.sleep(0.01)
+        raise MissionError(
+            "place_box_test force-Z baseline collection timed out: "
+            f"left_samples={len(samples['left'])}, "
+            f"right_samples={len(samples['right'])}; {latest_detail}; "
+            f"timeout_sec={timeout:.1f}"
+        )
+
+    def _new_place_box_test_fz_unload_monitor(
+        self,
+        baselines,
+        baseline_sequences,
+    ) -> dict:
+        filter_samples = self._integer("place_box_test_force_unload_filter_samples")
+        return {
+            "baselines": dict(baselines),
+            "sequences": dict(baseline_sequences),
+            "windows": {
+                arm: deque(maxlen=filter_samples) for arm in ("left", "right")
+            },
+            "confirmed_since": None,
+            "confirmed": False,
+            "detail": "force_z_table_support=pending",
+            "latest_metrics": {"left": 0.0, "right": 0.0},
+            "latest_fz": dict(baselines),
+        }
+
+    def _update_place_box_test_fz_unload_monitor(self, monitor: dict) -> bool:
+        """Update the in-motion Fz monitor and report bilateral support."""
+        max_age = self._float("place_box_test_force_unload_sensor_max_age_sec")
+        required_duration = self._float(
+            "place_box_test_force_unload_required_duration_sec"
+        )
+        thresholds = {
+            arm: self._float(
+                f"place_box_test_force_unload_threshold_{arm}_counts"
+            )
+            for arm in ("left", "right")
+        }
+        signs = {
+            arm: self._float(f"place_box_test_force_unload_sign_{arm}")
+            for arm in ("left", "right")
+        }
+        fresh = True
+        for arm in ("left", "right"):
+            fz, sequence, age = self._place_box_test_fz_snapshot(arm)
+            if fz is None or age > max_age:
+                fresh = False
+                continue
+            if sequence > monitor["sequences"][arm]:
+                monitor["windows"][arm].append(fz)
+                monitor["sequences"][arm] = sequence
+            if not monitor["windows"][arm]:
+                fresh = False
+                continue
+            monitor["latest_fz"][arm] = float(
+                statistics.median(monitor["windows"][arm])
+            )
+            monitor["latest_metrics"][arm] = (
+                self._place_box_test_fz_unload_metric(
+                    monitor["latest_fz"][arm],
+                    monitor["baselines"][arm],
+                    signs[arm],
+                )
+            )
+        supported = fresh and all(
+            monitor["latest_metrics"][arm] >= thresholds[arm]
+            for arm in ("left", "right")
+        )
+        if not supported:
+            monitor["confirmed_since"] = None
+            return False
+        monitor["confirmed_since"] = monitor["confirmed_since"] or time.monotonic()
+        if time.monotonic() - monitor["confirmed_since"] < required_duration:
+            return False
+        monitor["confirmed"] = True
+        monitor["detail"] = (
+            "force_z_table_support=confirmed_in_motion; "
+            f"left_baseline_Fz={monitor['baselines']['left']:.1f},"
+            f"left_Fz={monitor['latest_fz']['left']:.1f},"
+            f"left_unload={monitor['latest_metrics']['left']:.1f}; "
+            f"right_baseline_Fz={monitor['baselines']['right']:.1f},"
+            f"right_Fz={monitor['latest_fz']['right']:.1f},"
+            f"right_unload={monitor['latest_metrics']['right']:.1f}; "
+            f"stable_sec={required_duration:.2f}; force_x=ignored"
+        )
+        return True
+
+    def _reset_place_box_test_fz_unload_monitor(self, monitor: dict) -> None:
+        """Require fresh bilateral Fz support after a corrective motion."""
+        filter_samples = self._integer("place_box_test_force_unload_filter_samples")
+        monitor["windows"] = {
+            arm: deque(maxlen=filter_samples) for arm in ("left", "right")
+        }
+        monitor["confirmed_since"] = None
+        monitor["confirmed"] = False
+        monitor["detail"] = "force_z_table_support=reconfirming_after_z_equalization"
+        for arm in ("left", "right"):
+            _fz, sequence, _age = self._place_box_test_fz_snapshot(arm)
+            monitor["sequences"][arm] = sequence
+
+    def _execute_place_box_test_post_support_z_equalization(
+        self,
+        goal_handle,
+        adapter,
+        base_frame: str,
+        force_monitor: dict,
+    ):
+        """Equalize physical Link7 heights after table support is detected.
+
+        Z is compared and corrected in ``base_frame`` (normally base_link),
+        never in the two rotated arm-base frames.  Each arm keeps its current
+        world X/Y and orientation.  World Z starts from the arithmetic mean,
+        then is lowered as needed so the initially higher arm descends by at
+        least the configured safety distance before Joint2 opens outward.
+        """
+        live_arm_base = {
+            arm: self._lookup_tf_carry_transform(
+                base_frame,
+                self._string(f"{arm}_arm_base_frame").strip().lstrip("/"),
+            )
+            for arm in ("left", "right")
+        }
+        actual_link = {
+            arm: self._lookup_tf_carry_transform(
+                base_frame,
+                self._string(f"{arm}_link8_frame").strip().lstrip("/"),
+            )
+            for arm in ("left", "right")
+        }
+        left_z = float(actual_link["left"][0][2])
+        right_z = float(actual_link["right"][0][2])
+        average_z = 0.5 * (left_z + right_z)
+        highest_z = max(left_z, right_z)
+        minimum_high_arm_downward = self._float(
+            "place_box_test_post_support_z_equalization_min_high_arm_downward_m"
+        )
+        target_z = min(average_z, highest_z - minimum_high_arm_downward)
+        corrections = {
+            "left": target_z - left_z,
+            "right": target_z - right_z,
+        }
+        max_correction = self._float(
+            "place_box_test_post_support_z_equalization_max_correction_m"
+        )
+        if any(abs(value) > max_correction for value in corrections.values()):
+            raise MissionError(
+                "place_box_test post-support Link7 Z equalization exceeds the "
+                f"safety limit: left_delta={corrections['left']:.4f}m, "
+                f"right_delta={corrections['right']:.4f}m, "
+                f"max_correction_m={max_correction:.4f}"
+            )
+
+        world_targets = {}
+        local_target_poses = {}
+        for arm in ("left", "right"):
+            position, orientation = actual_link[arm]
+            world_targets[arm] = (
+                (float(position[0]), float(position[1]), target_z),
+                BoxSupportMixin._normalize_quaternion(orientation),
+            )
+            local_target = BoxSupportMixin._compose_transform(
+                BoxSupportMixin._inverse_transform(live_arm_base[arm]),
+                world_targets[arm],
+            )
+            local_target_poses[arm] = self._endpoint_sync_transform_to_pose(
+                local_target
+            )
+
+        detail = (
+            f"common_frame={base_frame}; "
+            "reference=average_with_min_high_arm_downward; "
+            f"left_z={left_z:.4f}m; right_z={right_z:.4f}m; "
+            f"average_z={average_z:.4f}m; "
+            f"min_high_arm_downward={minimum_high_arm_downward:.4f}m; "
+            f"target_z={target_z:.4f}m; "
+            f"left_delta={corrections['left']:.4f}m; "
+            f"right_delta={corrections['right']:.4f}m"
+        )
+        timeout = self._float(
+            "place_box_test_post_support_z_equalization_timeout_sec"
+        )
+        tolerance = self._float(
+            "place_box_test_post_support_z_equalization_tolerance_m"
+        )
+        if max(abs(value) for value in corrections.values()) <= tolerance:
+            motion_detail = (
+                "post_support_z_equalization_motion=skipped_already_equal"
+            )
+            self._publish_place_box_test_feedback(
+                goal_handle,
+                "POST_SUPPORT_LINK7_Z_ALREADY_EQUAL",
+                detail + f"; z_tolerance={tolerance:.4f}m; no arm motion required",
+            )
+        else:
+            self._publish_place_box_test_feedback(
+                goal_handle,
+                "EQUALIZING_POST_SUPPORT_LINK7_Z",
+                detail + "; executing low-speed dual-arm SDK MoveL",
+            )
+            speed = self._float(
+                "place_box_test_post_support_z_equalization_velocity_percent"
+            )
+            adapter.execute_dual_movel_endpoint(
+                pose_to_sdk_target(local_target_poses["left"]),
+                pose_to_sdk_target(local_target_poses["right"]),
+                speed,
+                speed,
+                cancel_requested=lambda: goal_handle.is_cancel_requested,
+                timeout_sec=timeout,
+                motion_mode="movel",
+            )
+            required_stable = self._integer("place_box_test_stable_samples")
+            deadline = time.monotonic() + timeout
+            stable_samples = 0
+            latest_error = math.inf
+            while time.monotonic() < deadline:
+                self._check_canceled(
+                    goal_handle, "while verifying post-support Link7 Z equalization"
+                )
+                actual_link = {
+                    arm: self._lookup_tf_carry_transform(
+                        base_frame,
+                        self._string(f"{arm}_link8_frame").strip().lstrip("/"),
+                    )
+                    for arm in ("left", "right")
+                }
+                latest_error = abs(
+                    float(actual_link["left"][0][2])
+                    - float(actual_link["right"][0][2])
+                )
+                stable_samples = (
+                    stable_samples + 1 if latest_error <= tolerance else 0
+                )
+                if stable_samples >= required_stable:
+                    break
+                time.sleep(0.02)
+            else:
+                raise MissionError(
+                    "place_box_test post-support Link7 Z equalization was not "
+                    f"reached: z_error={latest_error:.4f}m, "
+                    f"tolerance={tolerance:.4f}m, timeout_sec={timeout:.1f}"
+                )
+            motion_detail = "post_support_z_equalization_motion=completed"
+
+        self._reset_place_box_test_fz_unload_monitor(force_monitor)
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            self._check_canceled(
+                goal_handle, "while reconfirming table support after Z equalization"
+            )
+            if self._update_place_box_test_fz_unload_monitor(force_monitor):
+                break
+            time.sleep(0.02)
+        else:
+            raise MissionError(
+                "place_box_test lost bilateral force-Z table support after Link7 "
+                f"Z equalization, timeout_sec={timeout:.1f}"
+            )
+
+        live_arm_base = {
+            arm: self._lookup_tf_carry_transform(
+                base_frame,
+                self._string(f"{arm}_arm_base_frame").strip().lstrip("/"),
+            )
+            for arm in ("left", "right")
+        }
+        actual_link = {
+            arm: self._lookup_tf_carry_transform(
+                base_frame,
+                self._string(f"{arm}_link8_frame").strip().lstrip("/"),
+            )
+            for arm in ("left", "right")
+        }
+        final_error = abs(
+            float(actual_link["left"][0][2])
+            - float(actual_link["right"][0][2])
+        )
+        result_detail = (
+            f"post_support_z_equalization=completed; {detail}; "
+            f"{motion_detail}; final_z_error={final_error:.4f}m; "
+            f"{force_monitor['detail']}"
+        )
+        self._publish_place_box_test_feedback(
+            goal_handle,
+            "POST_SUPPORT_LINK7_Z_EQUALIZED",
+            result_detail,
+        )
+        return live_arm_base, actual_link, result_detail
+
+    @staticmethod
+    def _place_box_test_work_frame_offset(start_transform, target_transform):
+        """Return the 6D work-frame offset from one Link7 pose to another."""
+        start_position, start_orientation = start_transform
+        target_position, target_orientation = target_transform
+        rotation_offset = BoxSupportMixin._normalize_quaternion(
+            quaternion_multiply(
+                target_orientation,
+                BoxSupportMixin._quaternion_conjugate(start_orientation),
+            )
+        )
+        return [
+            float(target_position[index]) - float(start_position[index])
+            for index in range(3)
+        ] + quaternion_to_rpy(rotation_offset)
+
+    def _execute_place_box_test_motion(
+        self, goal_handle, adapter, requested_box_type: str, dry_run: bool
+    ):
+        """Move the waist and both TCPs to the selected box-type place pose.
 
         A single virtual box pose is interpolated from the transported pose to
         the taught placement pose.  Both Link7 targets are derived from that
@@ -1141,6 +1540,14 @@ class BoxCarryMixin:
         if adapter is None and not dry_run:
             raise MissionError(
                 "place_box_test requires direct_motion_backend=python_sdk"
+            )
+
+        box_type = str(requested_box_type or self._string("place_box_test_box_type"))
+        box_type = box_type.strip().lower()
+        if box_type not in ("smallbox", "bigbox"):
+            raise MissionError(
+                "place_box_test box_type must be 'smallbox' or 'bigbox', "
+                f"got {requested_box_type!r}"
             )
 
         body_start, body_velocities, body_sequence = self._wait_for_fresh_body_feedback(
@@ -1250,7 +1657,9 @@ class BoxCarryMixin:
 
         configured_target = {
             arm: self._endpoint_sync_pose_values_to_transform(
-                self._float_array(f"place_box_test_{arm}_target_pose_arm_base")
+                self._float_array(
+                    f"place_box_test_{arm}_target_pose_arm_base_{box_type}"
+                )
             )
             for arm in ("left", "right")
         }
@@ -1290,6 +1699,7 @@ class BoxCarryMixin:
 
         segments = self._integer("place_box_test_segments")
         arm_targets = {"left": [], "right": []}
+        arm_target_transforms = {"left": [], "right": []}
         world_targets_by_segment = []
         body_targets = []
         start_units = [
@@ -1344,11 +1754,34 @@ class BoxCarryMixin:
                     BoxSupportMixin._inverse_transform(waypoint_arm_base),
                     world_targets[arm],
                 )
+                arm_target_transforms[arm].append(local_target)
                 arm_targets[arm].append(
                     pose_to_sdk_target(
                         self._endpoint_sync_transform_to_pose(local_target)
                     )
                 )
+
+        arm_motion_mode = self._string("place_box_test_arm_motion_mode").strip().lower()
+        if arm_motion_mode == "movel_offset":
+            initial_local_link = {
+                arm: BoxSupportMixin._compose_transform(
+                    BoxSupportMixin._inverse_transform(live_arm_base[arm]),
+                    actual_link[arm],
+                )
+                for arm in ("left", "right")
+            }
+            # rm_movel_offset connected waypoints are incremental: each
+            # offset starts at the previous queued endpoint.
+            for arm in ("left", "right"):
+                previous = initial_local_link[arm]
+                arm_targets[arm] = []
+                for local_target in arm_target_transforms[arm]:
+                    arm_targets[arm].append(
+                        self._place_box_test_work_frame_offset(
+                            previous, local_target
+                        )
+                    )
+                    previous = local_target
 
         final_pose = {
             arm: self._endpoint_sync_transform_to_pose(
@@ -1360,7 +1793,7 @@ class BoxCarryMixin:
             for arm in ("left", "right")
         }
         planning_detail = (
-            f"smallbox placement path prepared: segments={segments}; "
+            f"{box_type} placement path prepared: segments={segments}; "
             f"body_target_units={target_units}; "
             f"left_target=[{final_pose['left'].position.x:.3f},"
             f"{final_pose['left'].position.y:.3f},"
@@ -1368,6 +1801,7 @@ class BoxCarryMixin:
             f"right_target=[{final_pose['right'].position.x:.3f},"
             f"{final_pose['right'].position.y:.3f},"
             f"{final_pose['right'].position.z:.3f}]; "
+            f"arm_motion_mode={arm_motion_mode}; "
             "box_pose=single_rigid_interpolation"
         )
         self._publish_place_box_test_feedback(
@@ -1378,6 +1812,32 @@ class BoxCarryMixin:
                 f"{planning_detail}; skipped in dry-run",
                 final_pose["left"],
                 final_pose["right"],
+            )
+
+        force_unload_enabled = self._boolean(
+            "place_box_test_force_unload_enabled"
+        )
+        force_baselines = None
+        force_baseline_sequences = None
+        force_monitor = None
+        if force_unload_enabled:
+            self._publish_place_box_test_feedback(
+                goal_handle,
+                "CAPTURING_LOADED_FZ_BASELINE",
+                "capturing fresh bilateral force-Z baselines while the box is held; "
+                "force-X is not used for placement release",
+            )
+            force_baselines, force_baseline_sequences = (
+                self._collect_place_box_test_fz_baseline(goal_handle)
+            )
+            self._publish_place_box_test_feedback(
+                goal_handle,
+                "LOADED_FZ_BASELINE_READY",
+                f"left_Fz0={force_baselines['left']:.1f}, "
+                f"right_Fz0={force_baselines['right']:.1f}",
+            )
+            force_monitor = self._new_place_box_test_fz_unload_monitor(
+                force_baselines, force_baseline_sequences
             )
 
         service_name = self._string("box_joint1_command_service_name")
@@ -1415,11 +1875,25 @@ class BoxCarryMixin:
             )
 
         last_monitor_time = [0.0]
+        support_feedback_published = [False]
 
         def monitor_rigid_grasp():
+            if force_monitor is not None:
+                if self._update_place_box_test_fz_unload_monitor(force_monitor):
+                    if not support_feedback_published[0]:
+                        support_feedback_published[0] = True
+                        self._publish_place_box_test_feedback(
+                            goal_handle,
+                            "TABLE_SUPPORT_CONFIRMED_IN_MOTION",
+                            force_monitor["detail"]
+                            + "; stopping waist and both arms before release",
+                        )
+                    # A False return requests a coordinated *successful* stop
+                    # from the SDK adapter and its body abort callback.
+                    return False
             now = time.monotonic()
             if now - last_monitor_time[0] < 0.1:
-                return
+                return True
             last_monitor_time[0] = now
             try:
                 actual = {
@@ -1430,7 +1904,7 @@ class BoxCarryMixin:
                     for arm in ("left", "right")
                 }
             except MissionError:
-                return
+                return True
             inferred = {
                 arm: BoxSupportMixin._compose_transform(
                     actual[arm],
@@ -1454,11 +1928,12 @@ class BoxCarryMixin:
                     "place_box_test rigid-grasp orientation disagreement: "
                     f"{orientation_error:.4f}rad"
                 )
+            return True
 
         self._publish_place_box_test_feedback(
             goal_handle,
             "MOVING_TO_PLACE_POSE",
-            "starting connected waist MoveJ and dual-arm SDK MoveL; "
+            f"starting connected waist MoveJ and dual-arm SDK {arm_motion_mode}; "
             "intermediate trajectory_connect=1, final=0",
         )
         try:
@@ -1473,6 +1948,10 @@ class BoxCarryMixin:
                 before_start=release_body,
                 abort_callback=self._place_box_test_stop_body,
                 progress_callback=monitor_rigid_grasp,
+                motion_mode=arm_motion_mode,
+                offset_frame_type=self._integer(
+                    "place_box_test_arm_offset_frame_type"
+                ),
             )
             if "future" not in final_body_future:
                 raise MissionError(
@@ -1488,13 +1967,69 @@ class BoxCarryMixin:
             self._parse_string_command_response(
                 response, "place_box_test final waist MoveJ"
             )
-            self._wait_for_body_joints_target(
-                goal_handle,
-                body_targets[-1][1],
-                sequence_after=body_sequence,
-                timeout_parameter="place_box_test_timeout_sec",
-            )
-            if self._boolean("place_box_test_final_correction_enabled"):
+            force_stopped = bool(force_monitor and force_monitor["confirmed"])
+            if force_unload_enabled and not force_stopped:
+                raise MissionError(
+                    "place_box_test reached the geometric endpoint without "
+                    "bilateral force-Z table-support confirmation; Joint2 "
+                    "release was not executed"
+                )
+            if force_stopped:
+                self._place_box_test_stop_body()
+                live_final_arm_base = {
+                    arm: self._lookup_tf_carry_transform(
+                        base_frame,
+                        self._string(f"{arm}_arm_base_frame").strip().lstrip("/"),
+                    )
+                    for arm in ("left", "right")
+                }
+                actual_final_link = {
+                    arm: self._lookup_tf_carry_transform(
+                        base_frame,
+                        self._string(f"{arm}_link8_frame").strip().lstrip("/"),
+                    )
+                    for arm in ("left", "right")
+                }
+                z_equalization_detail = "post_support_z_equalization=disabled"
+                if self._boolean(
+                    "place_box_test_post_support_z_equalization_enabled"
+                ):
+                    (
+                        live_final_arm_base,
+                        actual_final_link,
+                        z_equalization_detail,
+                    ) = self._execute_place_box_test_post_support_z_equalization(
+                        goal_handle,
+                        adapter,
+                        base_frame,
+                        force_monitor,
+                    )
+                final_pose = {
+                    arm: self._endpoint_sync_transform_to_pose(
+                        BoxSupportMixin._compose_transform(
+                            BoxSupportMixin._inverse_transform(
+                                live_final_arm_base[arm]
+                            ),
+                            actual_final_link[arm],
+                        )
+                    )
+                    for arm in ("left", "right")
+                }
+                verification = "geometric_final_guard=skipped_after_force_stop"
+                force_verification = (
+                    f"{force_monitor['detail']}; {z_equalization_detail}"
+                )
+            else:
+                self._wait_for_body_joints_target(
+                    goal_handle,
+                    body_targets[-1][1],
+                    sequence_after=body_sequence,
+                    timeout_parameter="place_box_test_timeout_sec",
+                )
+            if (
+                not force_stopped
+                and self._boolean("place_box_test_final_correction_enabled")
+            ):
                 live_final_arm_base = {
                     arm: self._lookup_tf_carry_transform(
                         base_frame,
@@ -1516,17 +2051,68 @@ class BoxCarryMixin:
                 correction_speed = self._float(
                     "place_box_test_final_correction_velocity_percent"
                 )
-                adapter.execute_dual_movel_endpoint(
-                    pose_to_sdk_target(final_pose["left"]),
-                    pose_to_sdk_target(final_pose["right"]),
-                    correction_speed,
-                    correction_speed,
-                    cancel_requested=lambda: goal_handle.is_cancel_requested,
-                    timeout_sec=self._float("place_box_test_timeout_sec"),
+                if arm_motion_mode == "movel_offset":
+                    actual_final_link = {
+                        arm: self._lookup_tf_carry_transform(
+                            base_frame,
+                            self._string(f"{arm}_link8_frame").strip().lstrip("/"),
+                        )
+                        for arm in ("left", "right")
+                    }
+                    correction_offsets = {}
+                    for arm in ("left", "right"):
+                        actual_local = BoxSupportMixin._compose_transform(
+                            BoxSupportMixin._inverse_transform(
+                                live_final_arm_base[arm]
+                            ),
+                            actual_final_link[arm],
+                        )
+                        target_local = (
+                            (
+                                float(final_pose[arm].position.x),
+                                float(final_pose[arm].position.y),
+                                float(final_pose[arm].position.z),
+                            ),
+                            BoxSupportMixin._normalize_quaternion(
+                                (
+                                    float(final_pose[arm].orientation.x),
+                                    float(final_pose[arm].orientation.y),
+                                    float(final_pose[arm].orientation.z),
+                                    float(final_pose[arm].orientation.w),
+                                )
+                            ),
+                        )
+                        correction_offsets[arm] = (
+                            self._place_box_test_work_frame_offset(
+                                actual_local, target_local
+                            )
+                        )
+                    adapter.execute_dual(
+                        correction_offsets["left"],
+                        correction_offsets["right"],
+                        "movel_offset",
+                        correction_speed,
+                        True,
+                        cancel_requested=lambda: goal_handle.is_cancel_requested,
+                        timeout_sec=self._float("place_box_test_timeout_sec"),
+                        offset_frame_type=self._integer(
+                            "place_box_test_arm_offset_frame_type"
+                        ),
+                    )
+                else:
+                    adapter.execute_dual_movel_endpoint(
+                        pose_to_sdk_target(final_pose["left"]),
+                        pose_to_sdk_target(final_pose["right"]),
+                        correction_speed,
+                        correction_speed,
+                        cancel_requested=lambda: goal_handle.is_cancel_requested,
+                        timeout_sec=self._float("place_box_test_timeout_sec"),
+                    )
+            if not force_stopped:
+                verification = self._wait_for_place_box_test_world_targets(
+                    goal_handle, world_targets_by_segment[-1]
                 )
-            verification = self._wait_for_place_box_test_world_targets(
-                goal_handle, world_targets_by_segment[-1]
-            )
+                force_verification = "force_z_table_support=disabled"
         except (RealManSdkCanceled, MissionCanceled):
             self._place_box_test_stop_body()
             raise
@@ -1535,10 +2121,233 @@ class BoxCarryMixin:
             raise MissionError(f"place_box_test motion failed: {exc}") from exc
 
         return (
-            f"{planning_detail}; {motion_result}; final_guard={verification}",
+            f"{planning_detail}; {motion_result}; final_guard={verification}; "
+            f"{force_verification}",
             final_pose["left"],
             final_pose["right"],
         )
+
+    def _execute_place_box_test_post_release(self, goal_handle, adapter, dry_run: bool):
+        """Release, move Joint2 to 60 deg, return waist, then home arms."""
+        arm_enabled = self._boolean(
+            "place_box_test_post_release_arm_movej_enabled"
+        )
+        body_enabled = self._boolean(
+            "place_box_test_post_release_body_home_enabled"
+        )
+        arm_home_enabled = self._boolean(
+            "place_box_test_post_release_arm_home_enabled"
+        )
+        if not arm_enabled and not body_enabled and not arm_home_enabled:
+            return "post-release arm/body motion disabled"
+
+        joint2_deg = self._float(
+            "place_box_test_post_release_arm_joint2_angle_deg"
+        )
+        home_units = [
+            int(round(value))
+            for value in self._float_array(
+                "place_box_test_post_release_body_home_joint_units"
+            )
+        ]
+        if dry_run:
+            return (
+                "post-release motion skipped in dry-run: "
+                f"arm_joint2_target_deg={joint2_deg:.3f}; "
+                f"body_home_joint_units={home_units}"
+            )
+        if adapter is None:
+            raise MissionError(
+                "place_box_test post-release arm MoveJ requires "
+                "direct_motion_backend=python_sdk"
+            )
+
+        details = []
+        if arm_enabled:
+            max_age = self._float(
+                "place_box_test_post_release_arm_movej_feedback_max_age_sec"
+            )
+            with self.joint_state_lock:
+                positions = {
+                    arm: list(self.latest_slave_arm_positions.get(arm, []))
+                    for arm in ("left", "right")
+                }
+                state_times = dict(self.latest_slave_arm_state_times)
+                sequence_before = dict(self.latest_slave_arm_state_sequences)
+            now = time.monotonic()
+            for arm in ("left", "right"):
+                if (
+                    len(positions[arm]) < 7
+                    or not all(
+                        value is not None and math.isfinite(float(value))
+                        for value in positions[arm][:7]
+                    )
+                ):
+                    raise MissionError(
+                        f"place_box_test post-release {arm} feedback does not "
+                        "contain seven finite joints"
+                    )
+                age = now - state_times.get(arm, 0.0)
+                if age > max_age:
+                    raise MissionError(
+                        f"place_box_test post-release {arm} feedback is stale: "
+                        f"age={age:.3f}s, limit={max_age:.3f}s"
+                    )
+            target_rad = {
+                arm: [float(value) for value in positions[arm][:7]]
+                for arm in ("left", "right")
+            }
+            for arm in ("left", "right"):
+                target_rad[arm][1] = math.radians(joint2_deg)
+            target_deg = {
+                arm: [math.degrees(value) for value in target_rad[arm]]
+                for arm in ("left", "right")
+            }
+            self._publish_place_box_test_feedback(
+                goal_handle,
+                "POST_RELEASE_ARM_MOVEJ",
+                "moving both arm Joint2 axes to "
+                f"{joint2_deg:.3f} deg while preserving Joints1,3-7",
+            )
+            movej_result = adapter.execute_dual_movej(
+                target_deg["left"],
+                target_deg["right"],
+                self._float(
+                    "place_box_test_post_release_arm_movej_velocity_percent"
+                ),
+                cancel_requested=lambda: goal_handle.is_cancel_requested,
+                timeout_sec=self._float(
+                    "place_box_test_post_release_arm_movej_timeout_sec"
+                ),
+            )
+            self._wait_for_post_arm_joint_targets(
+                goal_handle,
+                target_rad["left"],
+                target_rad["right"],
+                sequence_before,
+                parameter_prefix="place_box_test_post_release_arm_movej",
+                description="place_box_test post-release dual-arm MoveJ",
+            )
+            details.append(
+                f"arm_joint2_target_deg={joint2_deg:.3f}; {movej_result}"
+            )
+
+        if body_enabled:
+            _, _, body_sequence = self._wait_for_fresh_body_feedback(goal_handle)
+            units_per_degree = self._float_array(
+                "box_body_command_units_per_degree"
+            )
+            home_angles = [
+                math.radians(float(home_units[index]) / units_per_degree[index])
+                for index in range(4)
+            ]
+            self._publish_place_box_test_feedback(
+                goal_handle,
+                "POST_RELEASE_BODY_HOME",
+                f"returning body joints to {home_units} at velocity "
+                f"{self._integer('place_box_test_body_velocity')}",
+            )
+            service_name = self._string("box_joint1_command_service_name")
+            self._wait_for_service(
+                self.body_command_client, service_name, goal_handle
+            )
+            future = self.body_command_client.call_async(
+                self._place_box_test_body_request(
+                    home_units,
+                    trajectory_connect=0,
+                    blend_radius=0,
+                )
+            )
+            response = self._wait_future(
+                future,
+                goal_handle,
+                "starting place_box_test post-release body home MoveJ",
+                self._float("dependency_wait_timeout_sec"),
+                cancel_local_future=False,
+            )
+            self._parse_string_command_response(
+                response, "place_box_test post-release body home MoveJ"
+            )
+            self._wait_for_body_joints_target(
+                goal_handle,
+                home_angles,
+                sequence_after=body_sequence,
+                timeout_parameter="place_box_test_timeout_sec",
+            )
+            details.append(f"body_home_joint_units={home_units}")
+
+        if arm_home_enabled:
+            units_per_degree = self._float(
+                "place_box_test_post_release_arm_home_command_units_per_degree"
+            )
+            left_units = [
+                int(round(value))
+                for value in self._float_array(
+                    "place_box_test_post_release_arm_home_left_joint_units"
+                )
+            ]
+            right_units = [
+                int(round(value))
+                for value in self._float_array(
+                    "place_box_test_post_release_arm_home_right_joint_units"
+                )
+            ]
+            if len(left_units) != 7 or len(right_units) != 7:
+                raise MissionError(
+                    "place_box_test post-release arm home targets must contain seven joints"
+                )
+            if not math.isfinite(units_per_degree) or units_per_degree <= 0.0:
+                raise MissionError(
+                    "place_box_test post-release arm home units-per-degree must be positive"
+                )
+            target_rad = {
+                "left": [
+                    math.radians(float(value) / units_per_degree)
+                    for value in left_units
+                ],
+                "right": [
+                    math.radians(float(value) / units_per_degree)
+                    for value in right_units
+                ],
+            }
+            target_deg = {
+                arm: [math.degrees(value) for value in target_rad[arm]]
+                for arm in ("left", "right")
+            }
+            with self.joint_state_lock:
+                sequence_before = dict(self.latest_slave_arm_state_sequences)
+            self._publish_place_box_test_feedback(
+                goal_handle,
+                "POST_RELEASE_ARM_HOME",
+                "returning both arms to configured full-home MoveJ targets "
+                f"left={left_units}, right={right_units}",
+            )
+            movej_result = adapter.execute_dual_movej(
+                target_deg["left"],
+                target_deg["right"],
+                self._float(
+                    "place_box_test_post_release_arm_home_velocity_percent"
+                ),
+                cancel_requested=lambda: goal_handle.is_cancel_requested,
+                timeout_sec=self._float(
+                    "place_box_test_post_release_arm_home_timeout_sec"
+                ),
+            )
+            self._wait_for_post_arm_joint_targets(
+                goal_handle,
+                target_rad["left"],
+                target_rad["right"],
+                sequence_before,
+                parameter_prefix="place_box_test_post_release_arm_home",
+                description="place_box_test post-release full arm home MoveJ",
+            )
+            details.append(f"arm_home={movej_result}")
+            # A released box must never leave stale rigid grasp state that a
+            # later placement could accidentally reuse.
+            self._last_grasp_box_tf_box_to_link7_targets = None
+            self._last_grasp_box_tf_box_pose = None
+
+        return "; ".join(details)
 
     def _execute_tf_body_home_carry(
         self,
@@ -1689,9 +2498,10 @@ class BoxCarryMixin:
 
         service_name = self._string("box_joint1_command_service_name")
         self._wait_for_service(self.body_command_client, service_name, goal_handle)
-        body_velocity = self._integer(
-            self._tf_carry_parameter_name("body_velocity", parameter_prefix)
+        body_velocity_parameter = self._tf_carry_body_velocity_parameter_name(
+            box_layer, model_label, parameter_prefix
         )
+        body_velocity = self._integer(body_velocity_parameter)
         timeout_sec = self._float(
             self._tf_carry_parameter_name("timeout_sec", parameter_prefix)
         )

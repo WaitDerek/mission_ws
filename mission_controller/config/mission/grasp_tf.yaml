@@ -3,6 +3,10 @@ mission_controller:
   ros__parameters:
     grasp_box_tf_detection_arm: right
     grasp_box_tf_action_name: /grasp_box_tf
+    # SDK primitive for TF Step1..Step4 Cartesian translations. The configured
+    # deltas remain in the FoundationPose box frame and are converted to the
+    # arm work frame before rm_movel_offset is called.
+    grasp_box_tf_post_movel_sdk_motion_mode: movel_offset
     grasp_box_tf_body_home_carry_body_blend_radius: 0
     grasp_box_tf_body_home_carry_body_stop_command: stop
     grasp_box_tf_body_home_carry_body_stop_enabled: true
@@ -40,6 +44,15 @@ mission_controller:
     grasp_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer3: 12.0
     grasp_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer4: 12.0
     grasp_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer4: 12.0
+    # Layer/model-specific waist MoveJ speeds; layer 1 is deliberately slow.
+    grasp_box_tf_body_home_carry_body_velocity_bigbox_layer1: 3
+    grasp_box_tf_body_home_carry_body_velocity_bigbox_layer2: 12
+    grasp_box_tf_body_home_carry_body_velocity_bigbox_layer3: 12
+    grasp_box_tf_body_home_carry_body_velocity_bigbox_layer4: 12
+    grasp_box_tf_body_home_carry_body_velocity_smallbox_layer1: 3
+    grasp_box_tf_body_home_carry_body_velocity_smallbox_layer2: 12
+    grasp_box_tf_body_home_carry_body_velocity_smallbox_layer3: 12
+    grasp_box_tf_body_home_carry_body_velocity_smallbox_layer4: 12
     grasp_box_tf_body_home_carry_arm_start_delay_sec: 0.0
     grasp_box_tf_body_home_carry_arm_start_lead_sec: 0.0
     grasp_box_tf_body_home_carry_segments: 6
@@ -58,16 +71,16 @@ mission_controller:
     grasp_box_tf_force_clamp_clamped_threshold_right_counts: 8000.0
     grasp_box_tf_force_clamp_hold_threshold_left_counts: 7000.0
     grasp_box_tf_force_clamp_hold_threshold_right_counts: 7000.0
-    grasp_box_tf_force_clamp_emergency_threshold_left_counts: 15000.0
-    grasp_box_tf_force_clamp_emergency_threshold_right_counts: 15000.0
+    grasp_box_tf_force_clamp_emergency_threshold_left_counts: 50000.0
+    grasp_box_tf_force_clamp_emergency_threshold_right_counts: 50000.0
     grasp_box_tf_force_clamp_force_sign_left: -1.0
     grasp_box_tf_force_clamp_force_sign_right: -1.0
     grasp_box_tf_force_clamp_arm_velocity_tolerance_rad_sec: 0.02
     grasp_box_tf_force_clamp_search_step_m: 0.0015
     grasp_box_tf_force_clamp_fine_step_m: 0.0005
-    grasp_box_tf_force_clamp_max_distance_left_m: 0.10
-    grasp_box_tf_force_clamp_max_distance_right_m: 0.10
-    grasp_box_tf_force_clamp_movel_velocity_percent: 12.0
+    grasp_box_tf_force_clamp_max_distance_left_m: 0.20
+    grasp_box_tf_force_clamp_max_distance_right_m: 0.20
+    grasp_box_tf_force_clamp_movel_velocity_percent: 5.0
     grasp_box_tf_force_clamp_motion_timeout_sec: 15.0
     # Overall deadline for the complete Step1 force-search/hold sequence.
     grasp_box_tf_force_clamp_timeout_sec: 60.0
@@ -616,8 +629,8 @@ mission_controller:
     - 10183
     - -45681
     grasp_box_tf_box_layer_joint1_approach_angle_deg_smallbox_layer4: -89.0
-    grasp_box_tf_box_layer_joint2_approach_angle_deg_smallbox_layer4: -110.0
-    grasp_box_tf_box_layer_joint3_approach_angle_deg_smallbox_layer4: -65.0
+    grasp_box_tf_box_layer_joint2_approach_angle_deg_smallbox_layer4: -149.0
+    grasp_box_tf_box_layer_joint3_approach_angle_deg_smallbox_layer4: -89.0
     grasp_box_tf_direct_movel_left_offset_xyz_smallbox_layer4:
     - 0.0
     - 0.0

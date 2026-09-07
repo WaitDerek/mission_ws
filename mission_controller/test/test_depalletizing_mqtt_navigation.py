@@ -21,11 +21,12 @@ class _PublishInfo:
 
 
 class _FakeClient:
-    def __init__(self, *, connect=True):
+    def __init__(self, *, connect=True, connect_result=0):
         self.on_connect = None
         self.on_disconnect = None
         self.on_message = None
         self.connect_on_start = connect
+        self.connect_result = connect_result
         self.published = []
         self.subscriptions = []
         self.disconnected = False
@@ -33,7 +34,7 @@ class _FakeClient:
 
     def connect_async(self, host, port, keepalive):
         self.connection = (host, port, keepalive)
-        return 0
+        return self.connect_result
 
     def loop_start(self):
         if self.connect_on_start:
@@ -85,12 +86,12 @@ def _gateway(client, **overrides):
     return MqttNavigationGateway(**values)
 
 
-def _navigate_in_thread(gateway, point_id):
+def _navigate_in_thread(gateway, point_id, pos=None):
     results = []
     thread = threading.Thread(
         target=lambda: results.append(
             gateway.navigate(
-                NavigationRequest("workflow", "step", point_id),
+                NavigationRequest("workflow", "step", point_id, pos=pos),
                 lambda: False,
             )
         )
@@ -100,6 +101,14 @@ def _navigate_in_thread(gateway, point_id):
 
 
 class TestMqttNavigationGateway(unittest.TestCase):
+    def test_paho_async_connect_none_is_accepted(self):
+        client = _FakeClient(connect_result=None)
+        gateway = _gateway(client)
+
+        self.assertEqual(client.connection, ("broker", 1883, 60))
+        self.assertTrue(client.subscriptions)
+        gateway.close()
+
     def test_navigation_request_and_platform_result_protocol(self):
         client = _FakeClient()
         gateway = _gateway(client)
@@ -108,7 +117,7 @@ class TestMqttNavigationGateway(unittest.TestCase):
 
         client.emit(
             json.dumps(
-                {"robot_id": "6", "success": True, "message": "arrived"}
+                {"robot_id": "realman-001", "success": True, "message": "arrived"}
             )
         )
         thread.join(timeout=1.0)
@@ -120,13 +129,43 @@ class TestMqttNavigationGateway(unittest.TestCase):
             [
                 (
                     "mission/navigation/request",
-                    '{"robot_id":"6","point_id":5,"frame_id":"map","x":5.0,"y":-5.0,"yaw":0.5}',
+                    '{"robot_id":"realman-001","point_id":5,"frame_id":"map","pos":[5.0,-5.0,0.5]}',
                     1,
                     False,
                 )
             ],
         )
         self.assertEqual(client.subscriptions, [("mission/navigation/result", 1)])
+        gateway.close()
+
+    def test_custom_pos_bypasses_point_lookup(self):
+        client = _FakeClient()
+        gateway = _gateway(client, point_poses={})
+        thread, results = _navigate_in_thread(
+            gateway, "1", pos=(1.2, 3.4, 1.57)
+        )
+        self._wait_for_publish(client)
+
+        client.emit(
+            json.dumps(
+                {"robot_id": "realman-001", "success": True, "message": "arrived"}
+            )
+        )
+        thread.join(timeout=1.0)
+
+        self.assertFalse(thread.is_alive())
+        self.assertTrue(results[0].success)
+        self.assertEqual(
+            client.published,
+            [
+                (
+                    "mission/navigation/request",
+                    '{"robot_id":"realman-001","point_id":1,"frame_id":"map","pos":[1.2,3.4,1.57]}',
+                    1,
+                    False,
+                )
+            ],
+        )
         gateway.close()
 
     def test_json_failure_is_returned_to_workflow(self):
@@ -138,7 +177,7 @@ class TestMqttNavigationGateway(unittest.TestCase):
         client.emit(
             json.dumps(
                 {
-                    "robot_id": "6",
+                    "robot_id": "realman-001",
                     "success": False,
                     "message": "blocked",
                 }
@@ -173,7 +212,7 @@ class TestMqttNavigationGateway(unittest.TestCase):
 
         client.emit(json.dumps({"robot_id": "7", "success": True}))
         client.emit(
-            json.dumps({"robot_id": "6", "success": True}),
+            json.dumps({"robot_id": "realman-001", "success": True}),
             retain=True,
         )
         thread.join(timeout=1.0)

@@ -34,46 +34,98 @@ class ParameterDeclarationsMixin:
                     "release_mission_lease_service_name",
                     "/mission/release_workflow_lease",
                 ),
-                # Small-box placement test taught at body joint1=-15 deg.
+                # Small-box placement test taught at body joint1/2/3=-20 deg.
                 # The action requires a preceding /grasp_box_tf goal in the
                 # same controller process so the rigid box->Link7 transforms
                 # remain available after mobile-base transport.
                 ("place_box_test_enabled", True),
                 ("place_box_test_box_type", "smallbox"),
                 ("place_box_test_start_body_joint_units", [0, 0, 0, 0]),
-                ("place_box_test_body_joint_units", [-15000, 0, 0, 0]),
+                ("place_box_test_body_joint_units", [-40000, -60000, -40000, 0]),
                 (
                     "place_box_test_left_target_pose_arm_base",
                     [
-                        -0.446381,
-                        0.569104,
-                        -0.128351,
-                        -0.395,
-                        -0.461,
-                        -0.577,
-                        0.545,
+                        -0.323464,
+                        0.551264,
+                        -0.096540,
+                        -0.377,
+                        -0.411,
+                        -0.603,
+                        0.569,
                     ],
                 ),
                 (
                     "place_box_test_right_target_pose_arm_base",
                     [
-                        -0.260070,
-                        -0.611426,
-                        -0.094985,
-                        0.463,
-                        -0.444,
-                        0.566,
-                        0.516,
+                        -0.364445,
+                        -0.537010,
+                        -0.085777,
+                        0.379,
+                        -0.393,
+                        0.573,
+                        0.610,
+                    ],
+                ),
+                # Explicit per-box-type placement targets. The legacy
+                # unsuffixed targets above remain small-box aliases.
+                (
+                    "place_box_test_left_target_pose_arm_base_smallbox",
+                    [
+                        -0.323464,
+                        0.551264,
+                        -0.096540,
+                        -0.377,
+                        -0.411,
+                        -0.603,
+                        0.569,
+                    ],
+                ),
+                (
+                    "place_box_test_right_target_pose_arm_base_smallbox",
+                    [
+                        -0.364445,
+                        -0.537010,
+                        -0.085777,
+                        0.379,
+                        -0.393,
+                        0.573,
+                        0.610,
+                    ],
+                ),
+                (
+                    "place_box_test_left_target_pose_arm_base_bigbox",
+                    [
+                        -0.387499,
+                        0.568216,
+                        0.014259,
+                        -0.413,
+                        -0.426,
+                        -0.575,
+                        0.562,
+                    ],
+                ),
+                (
+                    "place_box_test_right_target_pose_arm_base_bigbox",
+                    [
+                        -0.327162,
+                        -0.578776,
+                        0.012840,
+                        0.416,
+                        -0.402,
+                        0.612,
+                        0.537,
                     ],
                 ),
                 ("place_box_test_segments", 6),
                 ("place_box_test_body_velocity", 12),
                 ("place_box_test_body_blend_radius", 5),
                 ("place_box_test_arm_blend_radius", 5),
-                ("place_box_test_left_movel_velocity_percent", 12.0),
-                ("place_box_test_right_movel_velocity_percent", 12.0),
+                ("place_box_test_left_movel_velocity_percent", 10.0),
+                ("place_box_test_right_movel_velocity_percent", 10.0),
+                ("place_box_test_arm_motion_mode", "movel"),
+                ("place_box_test_arm_offset_frame_type", 0),
                 ("place_box_test_final_correction_enabled", True),
-                ("place_box_test_final_correction_velocity_percent", 12.0),
+                ("place_box_test_final_correction_velocity_percent", 5.0),
                 ("place_box_test_timeout_sec", 180.0),
                 ("place_box_test_start_body_tolerance_rad", 0.035),
                 ("place_box_test_position_tolerance_m", 0.015),
@@ -81,7 +133,7 @@ class ParameterDeclarationsMixin:
                 ("place_box_test_stable_samples", 3),
                 (
                     "place_box_test_target_consistency_position_tolerance_m",
-                    0.05,
+                    0.15,
                 ),
                 (
                     "place_box_test_target_consistency_orientation_tolerance_rad",
@@ -89,6 +141,88 @@ class ParameterDeclarationsMixin:
                 ),
                 ("place_box_test_body_stop_enabled", True),
                 ("place_box_test_body_stop_command", "stop"),
+                # Placement release interlock.  Capture the carried-box Fz
+                # baseline before motion and require both wrists to unload as
+                # the table takes the weight.  Fx is deliberately ignored.
+                ("place_box_test_force_unload_enabled", False),
+                ("place_box_test_force_unload_baseline_duration_sec", 0.5),
+                ("place_box_test_force_unload_baseline_min_samples", 20),
+                ("place_box_test_force_unload_baseline_timeout_sec", 3.0),
+                ("place_box_test_force_unload_filter_samples", 15),
+                ("place_box_test_force_unload_sensor_max_age_sec", 0.2),
+                ("place_box_test_force_unload_threshold_left_counts", 7000.0),
+                ("place_box_test_force_unload_threshold_right_counts", 7000.0),
+                ("place_box_test_force_unload_sign_left", 1.0),
+                ("place_box_test_force_unload_sign_right", 1.0),
+                ("place_box_test_force_unload_required_duration_sec", 0.2),
+                # Once table support is detected, equalize the physical
+                # Link7 heights in the common base_link frame before opening
+                # the grippers and moving Joint2 outward.
+                ("place_box_test_post_support_z_equalization_enabled", True),
+                (
+                    "place_box_test_post_support_z_equalization_velocity_percent",
+                    5.0,
+                ),
+                (
+                    "place_box_test_post_support_z_equalization_max_correction_m",
+                    0.05,
+                ),
+                (
+                    "place_box_test_post_support_z_equalization_min_high_arm_downward_m",
+                    0.02,
+                ),
+                (
+                    "place_box_test_post_support_z_equalization_tolerance_m",
+                    0.005,
+                ),
+                (
+                    "place_box_test_post_support_z_equalization_timeout_sec",
+                    30.0,
+                ),
+                ("place_box_test_post_release_arm_movej_enabled", True),
+                ("place_box_test_post_release_arm_joint2_angle_deg", 60.0),
+                ("place_box_test_post_release_arm_movej_velocity_percent", 12.0),
+                ("place_box_test_post_release_arm_movej_position_tolerance_rad", 0.035),
+                (
+                    "place_box_test_post_release_arm_movej_velocity_tolerance_rad_sec",
+                    0.035,
+                ),
+                ("place_box_test_post_release_arm_movej_feedback_max_age_sec", 1.0),
+                ("place_box_test_post_release_arm_movej_timeout_sec", 180.0),
+                ("place_box_test_post_release_arm_movej_stable_samples", 3),
+                ("place_box_test_post_release_body_home_enabled", True),
+                ("place_box_test_post_release_body_home_joint_units", [0, 0, 0, 0]),
+                ("place_box_test_post_release_arm_home_enabled", True),
+                (
+                    "place_box_test_post_release_arm_home_left_joint_units",
+                    [0, 0, 0, 0, 0, 0, 0],
+                ),
+                (
+                    "place_box_test_post_release_arm_home_right_joint_units",
+                    [0, 0, 0, 0, 0, 0, 0],
+                ),
+                (
+                    "place_box_test_post_release_arm_home_command_units_per_degree",
+                    1000.0,
+                ),
+                (
+                    "place_box_test_post_release_arm_home_velocity_percent",
+                    12.0,
+                ),
+                (
+                    "place_box_test_post_release_arm_home_position_tolerance_rad",
+                    0.035,
+                ),
+                (
+                    "place_box_test_post_release_arm_home_velocity_tolerance_rad_sec",
+                    0.035,
+                ),
+                (
+                    "place_box_test_post_release_arm_home_feedback_max_age_sec",
+                    1.0,
+                ),
+                ("place_box_test_post_release_arm_home_timeout_sec", 180.0),
+                ("place_box_test_post_release_arm_home_stable_samples", 3),
                 ("adaptive_box_action_enabled", True),
                 ("adaptive_freeze_frame", "base_link"),
                 ("adaptive_require_detection_timestamp", True),
@@ -194,6 +328,24 @@ class ParameterDeclarationsMixin:
                 ),
                 ("drag_box_tf_body_home_carry_body_stop_enabled", True),
                 ("drag_box_tf_body_home_carry_body_stop_command", "stop"),
+                # After DragBox TF finishes the synchronized waist-home carry,
+                # optionally lift both TCPs along each arm-base frame's +Z.
+                ("drag_box_tf_post_carry_arm_base_z_lift_enabled_bigbox", True),
+                ("drag_box_tf_post_carry_arm_base_z_lift_enabled_smallbox", False),
+                ("drag_box_tf_post_carry_arm_base_z_lift_distance_m", 0.03),
+                (
+                    "drag_box_tf_post_carry_arm_base_z_lift_distance_m_bigbox_layer3",
+                    0.05,
+                ),
+                (
+                    "drag_box_tf_post_carry_arm_base_z_lift_distance_m_bigbox_layer4",
+                    0.05,
+                ),
+                (
+                    "drag_box_tf_post_carry_arm_base_z_lift_velocity_percent",
+                    12.0,
+                ),
+                ("drag_box_tf_post_carry_arm_base_z_lift_timeout_sec", 60.0),
                 # Optional force-limited Step1 clamping.  The signal is the
                 # per-task baseline-subtracted raw wrench force-X count; all
                 # thresholds are counts, not Newtons.  Disabled is the safe
@@ -209,16 +361,16 @@ class ParameterDeclarationsMixin:
                 ("grasp_box_tf_force_clamp_clamped_threshold_right_counts", 8000.0),
                 ("grasp_box_tf_force_clamp_hold_threshold_left_counts", 7000.0),
                 ("grasp_box_tf_force_clamp_hold_threshold_right_counts", 7000.0),
-                ("grasp_box_tf_force_clamp_emergency_threshold_left_counts", 15000.0),
-                ("grasp_box_tf_force_clamp_emergency_threshold_right_counts", 15000.0),
+                ("grasp_box_tf_force_clamp_emergency_threshold_left_counts", 50000.0),
+                ("grasp_box_tf_force_clamp_emergency_threshold_right_counts", 50000.0),
                 ("grasp_box_tf_force_clamp_force_sign_left", -1.0),
                 ("grasp_box_tf_force_clamp_force_sign_right", -1.0),
                 ("grasp_box_tf_force_clamp_arm_velocity_tolerance_rad_sec", 0.02),
                 ("grasp_box_tf_force_clamp_search_step_m", 0.0015),
                 ("grasp_box_tf_force_clamp_fine_step_m", 0.0005),
-                ("grasp_box_tf_force_clamp_max_distance_left_m", 0.03),
-                ("grasp_box_tf_force_clamp_max_distance_right_m", 0.03),
-                ("grasp_box_tf_force_clamp_movel_velocity_percent", 12.0),
+                ("grasp_box_tf_force_clamp_max_distance_left_m", 0.20),
+                ("grasp_box_tf_force_clamp_max_distance_right_m", 0.20),
+                ("grasp_box_tf_force_clamp_movel_velocity_percent", 5.0),
                 ("grasp_box_tf_force_clamp_motion_timeout_sec", 15.0),
                 ("grasp_box_tf_force_clamp_timeout_sec", 60.0),
                 ("grasp_box_tf_force_clamp_sensor_max_age_sec", 0.2),
@@ -239,16 +391,16 @@ class ParameterDeclarationsMixin:
                 ("drag_box_tf_force_clamp_clamped_threshold_right_counts", 8000.0),
                 ("drag_box_tf_force_clamp_hold_threshold_left_counts", 7000.0),
                 ("drag_box_tf_force_clamp_hold_threshold_right_counts", 7000.0),
-                ("drag_box_tf_force_clamp_emergency_threshold_left_counts", 15000.0),
-                ("drag_box_tf_force_clamp_emergency_threshold_right_counts", 15000.0),
+                ("drag_box_tf_force_clamp_emergency_threshold_left_counts", 50000.0),
+                ("drag_box_tf_force_clamp_emergency_threshold_right_counts", 50000.0),
                 ("drag_box_tf_force_clamp_force_sign_left", -1.0),
                 ("drag_box_tf_force_clamp_force_sign_right", -1.0),
                 ("drag_box_tf_force_clamp_arm_velocity_tolerance_rad_sec", 0.02),
                 ("drag_box_tf_force_clamp_search_step_m", 0.0015),
                 ("drag_box_tf_force_clamp_fine_step_m", 0.0005),
-                ("drag_box_tf_force_clamp_max_distance_left_m", 0.03),
-                ("drag_box_tf_force_clamp_max_distance_right_m", 0.03),
-                ("drag_box_tf_force_clamp_movel_velocity_percent", 12.0),
+                ("drag_box_tf_force_clamp_max_distance_left_m", 0.20),
+                ("drag_box_tf_force_clamp_max_distance_right_m", 0.20),
+                ("drag_box_tf_force_clamp_movel_velocity_percent", 5.0),
                 ("drag_box_tf_force_clamp_motion_timeout_sec", 15.0),
                 ("drag_box_tf_force_clamp_timeout_sec", 60.0),
                 ("drag_box_tf_force_clamp_sensor_max_age_sec", 0.2),
@@ -404,6 +556,12 @@ class ParameterDeclarationsMixin:
                 ("direct_movel_blocking", True),
                 ("box_post_movel_enabled", False),
                 ("box_post_movel_velocity_percent", 12.0),
+                # TF Step/Drag Cartesian translations may use either the
+                # absolute rm_movel primitive or the relative
+                # rm_movel_offset primitive.  Offset commands are converted
+                # from the FoundationPose box frame into each arm work frame.
+                ("grasp_box_tf_post_movel_sdk_motion_mode", "movel_offset"),
+                ("drag_box_tf_post_movel_sdk_motion_mode", "movel_offset"),
                 # For TF GraspBox/DragBox dual-arm Cartesian commands, force
                 # both arm-base target poses to use the same numeric Z value.
                 ("box_tf_equalize_dual_target_z_enabled", True),

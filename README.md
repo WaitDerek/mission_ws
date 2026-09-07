@@ -1,6 +1,6 @@
 # Changan mission workspace
 
-这个工作区提供八个 RealBot Mission Action：
+这个工作区提供十二个 RealBot Mission Action：
 
 - `/execute_adaptive_box_grasp` (`mission_interfaces/action/ExecuteAdaptiveBoxGrasp`)
 - `/execute_box_grasp` (`mission_interfaces/action/ExecuteBoxGrasp`)
@@ -10,6 +10,10 @@
 - `/execute_box_place` (`mission_interfaces/action/ExecuteBoxPlace`)
 - `/place_box_test` (`mission_interfaces/action/PlaceBoxTest`)
 - `/execute_workflow` (`mission_interfaces/action/ExecuteWorkflow`)
+- `/execute_observation_navigation` (`mission_interfaces/action/ExecuteObservationNavigation`)
+- `/navigate_to_point` (`mission_interfaces/action/NavigateToPoint`)
+- `/execute_fixed_box_workflow` (`mission_interfaces/action/ExecuteFixedBoxWorkflow`)
+- `/execute_smallbox_workflow` (`mission_interfaces/action/ExecuteFixedBoxWorkflow`)
 
 关节名称与 `dual_arm_ws` 的 `realbot` profile 保持一致：
 
@@ -83,7 +87,89 @@ ros2 action send_goal --feedback \
   /execute_workflow \
   mission_interfaces/action/ExecuteWorkflow \
   "{start: true}"
+
+ros2 action send_goal --feedback \
+  /execute_observation_navigation \
+  mission_interfaces/action/ExecuteObservationNavigation \
+  "{request_id: vision-nav-001, start: true, observation_point_id: 1}"
+
+ros2 action send_goal --feedback \
+  /navigate_to_point \
+  mission_interfaces/action/NavigateToPoint \
+  "{request_id: nav-point-001, start: true, point_id: 1, use_custom_pos: false, pos: [], dry_run: false}"
+
+ros2 action send_goal --feedback \
+  /execute_fixed_box_workflow \
+  mission_interfaces/action/ExecuteFixedBoxWorkflow \
+  "{request_id: fixed-eight-001, start: true, start_item_index: 1, stop_after_item_index: 0, dry_run: false, use_global_observation: false}"
+
+ros2 action send_goal --feedback \
+  /execute_smallbox_workflow \
+  mission_interfaces/action/ExecuteFixedBoxWorkflow \
+  "{request_id: smallbox-four-001, start: true, start_item_index: 1, stop_after_item_index: 0, dry_run: false, use_global_observation: false}"
 ```
+
+`start` 必须为 `true`。`/navigate_to_point` 设置 `use_custom_pos: true` 时直接使用
+`pos: [x, y, yaw]`，否则按 `point_id` 从 `mqtt_navigation_points_json` 查找。
+
+## 固定拆垛任务流
+
+`/execute_fixed_box_workflow` 严格串行执行“导航取料点 -> 抓取 -> 导航放置点 ->
+`/place_box_test`”，一个箱子完成后才会开始下一个。默认八箱顺序为：
+
+```text
+1  drag bigbox layer 1
+2  drag bigbox layer 2
+3  direct smallbox layer 1
+4  drag bigbox layer 3
+5  direct smallbox layer 2
+6  drag bigbox layer 4
+7  direct smallbox layer 3
+8  direct smallbox layer 4
+```
+
+`start_item_index` 为 1-based 起始箱号，`stop_after_item_index: 0` 表示执行到最后一箱，
+可用于从失败项目断点继续。例如从第 4 箱继续：
+
+```zsh
+ros2 action send_goal --feedback \
+  /execute_fixed_box_workflow \
+  mission_interfaces/action/ExecuteFixedBoxWorkflow \
+  "{request_id: fixed-resume-4, start: true, start_item_index: 4, stop_after_item_index: 0, dry_run: false, use_global_observation: false}"
+```
+
+`/execute_smallbox_workflow` 使用相同的 Action 接口，但只执行 smallbox 第 1～4 层。
+`use_global_observation: true` 时会先导航到全局观测点、移动左臂观测姿态、调用
+`/depalletizing/observe`，再按 Vision 返回的 `order_*` 与 `order_grasp_modes`
+动态决定每个箱子的抓取方式；为 `false` 时使用上面的固定八箱顺序。
+
+每个子动作失败都会终止当前 Workflow，并在 Result 的 `message` 中保留具体子 Action
+错误；不会自动重试已经开始的机械运动。取消 Workflow 时会同时取消当前导航或子 Action。
+
+## 导航与全局观测测试任务流
+
+`/execute_observation_navigation` 是不执行抓取和放置的严格串行测试流：
+
+```text
+MQTT/ROS Action 启动
+  -> MQTT 导航到 observation_point_id（1～4）
+  -> 等待平台返回 success=true
+  -> 调用 /depalletizing/observe
+  -> 等待 ROS 状态 SUCCEEDED、result.success=true、plan_valid=true
+  -> 使用 order_stack_indices[0] 映射首个操作点
+  -> MQTT 导航到该操作点并等待 success=true
+  -> 返回任务流成功
+```
+
+该 Action 只验证“全局观测点 -> Vision -> 首个操作点”的链路，不执行抓取和放置。
+要执行完整动态拆垛，应使用 `/execute_fixed_box_workflow` 并设置
+`use_global_observation: true`。
+
+任何步骤失败都会立即终止，不会启动后续步骤。任务流不会调用任何抓取 Action，
+因此不会再调用单料箱 FoundationPose；但 `/depalletizing/observe` 本身仍会为顶部候选
+调用 FoundationPose，这是生成全局观测计划所必需的。Vision 的
+`stage/progress/completed_top_boxes/current_stack_id` Feedback 会转发到本任务流的
+Action/MQTT feedback 中。
 
 ## 自动拆垛任务流
 
@@ -124,9 +210,11 @@ ID、层数、左右列和 size 规划任务。1 有有效计划时继续 3；1 
 平台通过 MQTT 启动完整任务流：
 
 - `execute_workflow` 节点启动后订阅 `mission/workflow/start`。
-- 推荐发布 `{"robot_id":"6","start":true,"request_id":"platform-001"}`；
-  只有 `robot_id="6"` 才会调用任务流 Action。JSON 启动消息不再使用 `id`
+- 推荐发布 `{"robot_id":"realman-001","start":true,"request_id":"platform-001"}`；
+  只有 `robot_id="realman-001"` 才会调用任务流 Action。JSON 启动消息不再使用 `id`
   字段，缺少 `robot_id` 会被拒绝；纯文本启动消息同样会被拒绝。
+- 若要启动导航与全局观测测试流，增加
+  `"workflow":"observation_navigation"` 和 `"observation_point_id":1`。
 - Mission 收到后通过 ROS ActionClient 调用现有
   `/execute_workflow`，因此仍经过原有 goal 校验、Mission lease、取消和
   严格串行状态机。
@@ -139,7 +227,7 @@ ID、层数、左右列和 size 规划任务。1 有有效计划时继续 3；1 
 示例启动消息：
 
 ```json
-{"robot_id":"6","start":true,"request_id":"platform-001"}
+{"robot_id":"realman-001","start":true,"request_id":"platform-001"}
 ```
 
 ROS 节点本身仍需先通过 `mission.launch.py` 或 `mission_system.launch.py` 启动；MQTT
@@ -148,9 +236,9 @@ ROS 节点本身仍需先通过 `mission.launch.py` 或 `mission_system.launch.p
 任务流内部需要导航时：
 
 - Mission 向 `mission/navigation/request` 发布点位及地图位姿，例如
-  `{"robot_id":"6","point_id":5,"frame_id":"map","x":1.2,"y":3.4,"yaw":1.57}`。
+  `{"robot_id":"realman-001","point_id":5,"frame_id":"map","pos":[1.2,3.4,1.57]}`。
 - 平台到点后向 `mission/navigation/result` 返回
-  `{"robot_id":"6","success":true,"message":"arrived"}`。将 `success` 设为
+  `{"robot_id":"realman-001","success":true,"message":"arrived"}`。将 `success` 设为
   `false` 可让任务流在当前导航步骤失败并停止；纯文本以及包含 `id` 或
   `point_id` 的旧回执会被拒绝。
 - 任务流同一时刻只等待一个导航结果，忽略其他机器人和 retained 旧消息；默认 QoS 1、
@@ -159,7 +247,8 @@ ROS 节点本身仍需先通过 `mission.launch.py` 或 `mission_system.launch.p
 Broker、Topic、QoS 和超时均可在
 `mission_controller/config/mission/taskflow.yaml` 修改。若需要禁用平台导航，设置
 `navigation_adapter: disabled`，任务流会在导航步骤明确失败，不会模拟到点成功。
-点位坐标通过同文件中的 `mqtt_navigation_points_json` 配置，格式如下：
+点位坐标通过同文件中的 `mqtt_navigation_points_json` 配置。配置文件内部仍以
+`x/y/yaw` 命名，发送到平台时统一编码为 `pos: [x, y, yaw]`：
 
 ```json
 {"1":{"x":1.0,"y":2.0,"yaw":0.0},"5":{"x":3.0,"y":4.0,"yaw":1.57}}
@@ -180,7 +269,7 @@ mosquitto_sub -h 127.0.0.1 -t mission/navigation/result -v
 ```zsh
 mosquitto_pub -h 127.0.0.1 \
   -t mission/navigation/result \
-  -m '{"robot_id":"6","success":true,"message":"arrived"}'
+  -m '{"robot_id":"realman-001","success":true,"message":"arrived"}'
 ```
 
 任务流采用内部 Mission lease，防止平台在自动任务中间直接插入旧 Action。
@@ -192,6 +281,17 @@ TTL、自动恢复或 crash resume。
 
 Mission 参数已按职责拆到 `mission_controller/config/mission/`。launch 按固定顺序
 加载这些片段，最后再加载 `config_file`，所以原有调用者覆盖优先级保持不变。
+
+## 本次改动摘要
+
+- 增加 `/navigate_to_point`，支持按 `point_id` 导航或通过 `use_custom_pos` 直接发送
+  自定义 `[x, y, yaw]`，并统一使用 `realman-001` 作为 MQTT `robot_id`。
+- 增加 `/execute_observation_navigation`，用于验证全局观测和导航回路。
+- 增加固定八箱与四小箱 Workflow，复用导航、抓取和 `/place_box_test` 子 Action，支持
+  全局观测排序、断点起始和取消联动。
+- 抓取 TF 流程支持按层配置腰部/双臂协同速度、`movel_offset` 和夹紧力控参数；放置
+  流程支持大小料箱独立目标 Pose、双臂高度对齐、释放后 Joint2/腰部/双臂复位。
+- 新增对应 Action 接口、MQTT 适配器、任务状态机和单元测试。
 
 `/execute_adaptive_box_grasp` 的任务流是：
 

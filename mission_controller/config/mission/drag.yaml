@@ -2,11 +2,23 @@
 mission_controller:
   ros__parameters:
     drag_box_tf_detection_arm: left
+    # SDK primitive for TF Step/Drag Cartesian translations. The configured
+    # box-frame deltas are converted to each arm work frame first.
+    drag_box_tf_post_movel_sdk_motion_mode: movel_offset
     drag_box_tf_post_detection_left_movej_enabled: true
     drag_box_tf_body_home_carry_body_blend_radius: 0
     drag_box_tf_body_home_carry_body_stop_command: stop
     drag_box_tf_body_home_carry_body_stop_enabled: true
-    drag_box_tf_body_home_carry_body_velocity: 12
+    # After the waist-home carry, lift both DragBox TCPs by 3 cm along each
+    # arm-base frame's +Z axis. This is enabled only for bigbox.
+    drag_box_tf_post_carry_arm_base_z_lift_enabled_bigbox: true
+    drag_box_tf_post_carry_arm_base_z_lift_enabled_smallbox: false
+    drag_box_tf_post_carry_arm_base_z_lift_distance_m: 0.03
+    drag_box_tf_post_carry_arm_base_z_lift_distance_m_bigbox_layer3: 0.05
+    drag_box_tf_post_carry_arm_base_z_lift_distance_m_bigbox_layer4: 0.05
+    drag_box_tf_post_carry_arm_base_z_lift_velocity_percent: 12.0
+    drag_box_tf_post_carry_arm_base_z_lift_timeout_sec: 60.0
+    drag_box_tf_body_home_carry_body_velocity: 20
     drag_box_tf_body_home_carry_carrier_frame: chest_Link
     drag_box_tf_body_home_carry_enabled: true
     drag_box_tf_body_home_carry_continuous_enabled: true
@@ -40,6 +52,15 @@ mission_controller:
     drag_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer3: 12.0
     drag_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer4: 12.0
     drag_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer4: 12.0
+    # Layer/model-specific waist MoveJ speeds; layer 1 is deliberately slow.
+    drag_box_tf_body_home_carry_body_velocity_bigbox_layer1: 3
+    drag_box_tf_body_home_carry_body_velocity_bigbox_layer2: 20
+    drag_box_tf_body_home_carry_body_velocity_bigbox_layer3: 20
+    drag_box_tf_body_home_carry_body_velocity_bigbox_layer4: 20
+    drag_box_tf_body_home_carry_body_velocity_smallbox_layer1: 3
+    drag_box_tf_body_home_carry_body_velocity_smallbox_layer2: 20
+    drag_box_tf_body_home_carry_body_velocity_smallbox_layer3: 20
+    drag_box_tf_body_home_carry_body_velocity_smallbox_layer4: 20
     drag_box_tf_body_home_carry_arm_start_delay_sec: 0.0
     drag_box_tf_body_home_carry_arm_start_lead_sec: 0.0
     drag_box_tf_body_home_carry_segments: 6
@@ -58,16 +79,16 @@ mission_controller:
     drag_box_tf_force_clamp_clamped_threshold_right_counts: 8000.0
     drag_box_tf_force_clamp_hold_threshold_left_counts: 7000.0
     drag_box_tf_force_clamp_hold_threshold_right_counts: 7000.0
-    drag_box_tf_force_clamp_emergency_threshold_left_counts: 15000.0
-    drag_box_tf_force_clamp_emergency_threshold_right_counts: 15000.0
+    drag_box_tf_force_clamp_emergency_threshold_left_counts: 50000.0
+    drag_box_tf_force_clamp_emergency_threshold_right_counts: 50000.0
     drag_box_tf_force_clamp_force_sign_left: -1.0
     drag_box_tf_force_clamp_force_sign_right: -1.0
     drag_box_tf_force_clamp_arm_velocity_tolerance_rad_sec: 0.02
     drag_box_tf_force_clamp_search_step_m: 0.0015
     drag_box_tf_force_clamp_fine_step_m: 0.0005
-    drag_box_tf_force_clamp_max_distance_left_m: 0.10
-    drag_box_tf_force_clamp_max_distance_right_m: 0.10
-    drag_box_tf_force_clamp_movel_velocity_percent: 12.0
+    drag_box_tf_force_clamp_max_distance_left_m: 0.20
+    drag_box_tf_force_clamp_max_distance_right_m: 0.20
+    drag_box_tf_force_clamp_movel_velocity_percent: 5.0
     drag_box_tf_force_clamp_motion_timeout_sec: 15.0
     # Overall deadline for the complete Step1 force-search/hold sequence.
     drag_box_tf_force_clamp_timeout_sec: 60.0
@@ -123,13 +144,13 @@ mission_controller:
     execute_drag_box_grasp_action_name: /execute_drag_box_grasp
     execute_drag_box_grasp_tf_action_name: /execute_drag_box_grasp_tf
     drag_box_tf_box_layer_pre_detection_left_movej_joint_units_bigbox_layer1:
-    - -172278
-    - 7319
-    - 20124
-    - 51808
-    - -17856
-    - -23263
-    - -70442
+    - -19393
+    - 168934
+    - -6892
+    - -93313
+    - -167401
+    - 5885
+    - -48341
     drag_box_tf_box_layer_pre_detection_right_movej_joint_units_bigbox_layer1:
     - 144725
     - -5335
@@ -230,13 +251,13 @@ mission_controller:
     - 0.0
     - 0.0
     drag_box_tf_box_layer_pre_detection_left_movej_joint_units_bigbox_layer2:
-    - -161722
-    - 5480
-    - 933
-    - 104186
-    - 5631
-    - -2342
-    - -2903
+    - -34406
+    - 164214
+    - -172158
+    - 103200
+    - 468
+    - -19272
+    - -60846
     drag_box_tf_box_layer_pre_detection_right_movej_joint_units_bigbox_layer2:
     - 170647
     - 3018
@@ -352,9 +373,9 @@ mission_controller:
     - 14032
     - -14558
     - -23838
-    drag_box_tf_box_layer_joint1_approach_angle_deg_bigbox_layer3: -70.0
-    drag_box_tf_box_layer_joint2_approach_angle_deg_bigbox_layer3: -120.0
-    drag_box_tf_box_layer_joint3_approach_angle_deg_bigbox_layer3: -60.0
+    drag_box_tf_box_layer_joint1_approach_angle_deg_bigbox_layer3: -60.0
+    drag_box_tf_box_layer_joint2_approach_angle_deg_bigbox_layer3: -115.0
+    drag_box_tf_box_layer_joint3_approach_angle_deg_bigbox_layer3: -70.0
     drag_box_tf_direct_movel_left_offset_xyz_bigbox_layer3:
     - 0.0
     - 0.0
@@ -444,13 +465,13 @@ mission_controller:
     - 0.0
     - 0.0
     drag_box_tf_box_layer_pre_detection_left_movej_joint_units_bigbox_layer4:
-    - -19238
-    - 3482
-    - 215
-    - -91196
-    - -2634
-    - 5268
-    - -78519
+    - 14142
+    - 1819
+    - -655
+    - -45877
+    - -2638
+    - -751
+    - 20348
     drag_box_tf_box_layer_pre_detection_right_movej_joint_units_bigbox_layer4:
     - 21382
     - -4978
@@ -461,7 +482,7 @@ mission_controller:
     - -32636
     drag_box_tf_box_layer_joint1_approach_angle_deg_bigbox_layer4: -89.0
     drag_box_tf_box_layer_joint2_approach_angle_deg_bigbox_layer4: -149.0
-    drag_box_tf_box_layer_joint3_approach_angle_deg_bigbox_layer4: -85.0
+    drag_box_tf_box_layer_joint3_approach_angle_deg_bigbox_layer4: -80.0
     drag_box_tf_direct_movel_left_offset_xyz_bigbox_layer4:
     - 0.0
     - 0.0
@@ -971,13 +992,13 @@ mission_controller:
     - 5999
     - -4935
     drag_box_tf_box_layer_post_detection_left_movej_joint_units_bigbox_layer4:
-    - -171982
-    - -204
-    - 93820
-    - 89651
-    - 4401
-    - 5999
-    - -4935
+    - -161930
+    - 7304
+    - 2738
+    - 85105
+    - 8116
+    - 977
+    - 2500
     drag_box_tf_box_layer_post_detection_left_movej_joint_units_smallbox_layer1:
     - -171982
     - -204

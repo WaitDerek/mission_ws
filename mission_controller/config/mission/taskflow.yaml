@@ -1,10 +1,44 @@
 execute_workflow:
   ros__parameters:
     workflow_action_name: /execute_workflow
+    observation_navigation_action_name: /execute_observation_navigation
+    navigate_to_point_action_name: /navigate_to_point
     global_observation_action_name: /depalletizing/observe
     grasp_box_tf_action_name: /grasp_box_tf
     execute_drag_box_grasp_tf_action_name: /execute_drag_box_grasp_tf
     execute_box_place_action_name: /execute_box_place
+    place_box_test_action_name: /place_box_test
+    fixed_workflow_action_name: /execute_fixed_box_workflow
+    fixed_workflow_enabled: true
+    # Optional Vision-driven ordering for /execute_fixed_box_workflow.
+    # false preserves the deterministic eight-item sequence.
+    fixed_workflow_global_observation_point_id: 4
+    fixed_workflow_global_observation_pos: [-0.17, -0.59, 1.12]
+    fixed_workflow_global_observation_left_joints:
+      [0.9552012463239765, 0.20020671849626956, -0.023596851486963336,
+       -1.6503309808082782, -0.23349014733180137, 0.05307546255314755,
+       0.9764593566132677]
+    fixed_workflow_global_observation_left_home_joints: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    fixed_workflow_arm_joints_action_name: /move_arm_j
+    fixed_workflow_arm_joints_duration: 0.0
+    fixed_workflow_arm_joints_speed_percent: 10.0
+    fixed_workflow_arm_joints_timeout_sec: 120.0
+    fixed_workflow_arm_joints_sdk_root: /rm_nvme/recordings/code/RM_API2/Demo/RMDemo_Python/RMDemo_SimpleProcess
+    fixed_workflow_arm_joints_sdk_left_ip: 192.168.127.18
+    fixed_workflow_arm_joints_sdk_right_ip: 192.168.127.19
+    fixed_workflow_arm_joints_sdk_port: 8080
+    fixed_workflow_arm_joints_sdk_connect_level: 3
+    smallbox_workflow_action_name: /execute_smallbox_workflow
+    smallbox_workflow_enabled: true
+    fixed_workflow_target_label: 0
+    fixed_workflow_place_point_id: 2
+    fixed_workflow_place_pos: [-0.81, -0.77, -1.89]
+    fixed_workflow_drag_bigbox_point_id: 1
+    fixed_workflow_drag_bigbox_pickup_pos: [0.65, -0.05, 1.24]
+    fixed_workflow_drag_bigbox_layer4_pickup_pos: [0.65, -0.05, 1.24]
+    fixed_workflow_direct_smallbox_point_id: 3
+    fixed_workflow_direct_smallbox_pickup_pos: [-0.10, 0.20, 1.23]
+    fixed_workflow_direct_smallbox_layer4_pickup_pos: [-0.10, 0.30, 1.23]
     acquire_mission_lease_service_name: /mission/acquire_workflow_lease
     release_mission_lease_service_name: /mission/release_workflow_lease
 
@@ -14,7 +48,8 @@ execute_workflow:
     navigation_adapter: mqtt
     mqtt_host: 127.0.0.1
     mqtt_port: 1883
-    mqtt_robot_id: "6"
+    mqtt_robot_id: "realman-001"
+    mqtt_navigation_robot_id: "realman-001"
     mqtt_request_topic: mission/navigation/request
     mqtt_result_topic: mission/navigation/result
     mqtt_client_id: ""
@@ -23,9 +58,15 @@ execute_workflow:
     mqtt_connect_timeout_sec: 10.0
     mqtt_navigation_timeout_sec: 300.0
     mqtt_navigation_frame_id: map
-    mqtt_navigation_points_json: "{}"
+    mqtt_navigation_points_json: >-
+      {"1":{"x":0.65,"y":-0.05,"yaw":1.24},
+       "2":{"x":-0.81,"y":-0.77,"yaw":-1.89},
+       "3":{"x":-0.10,"y":0.20,"yaw":1.23},
+       "4":{"x":-0.17,"y":-0.59,"yaw":1.12},
+       "5":{"x":3.17,"y":0.759915,"yaw":3.077476},
+       "6":{"x":4.10,"y":-0.13,"yaw":0.01}}
 
-    # Platform MQTT {"robot_id":"6","start":true} -> Action goal.
+    # Platform MQTT {"robot_id":"realman-001","start":true} -> Action goal.
     mqtt_start_enabled: true
     mqtt_start_topic: mission/workflow/start
     mqtt_status_topic: mission/workflow/status
@@ -39,9 +80,6 @@ execute_workflow:
     global_observation_verify_front_stack_poses: true
     global_observation_front_min_lateral_separation_m: 0.20
     global_observation_front_max_depth_spread_m: 0.35
-    # Reject a complete rear row by camera depth; tune from现场标定 if needed.
-    # Zero disables only this absolute-depth gate while retaining row checks.
-    global_observation_front_max_camera_depth_m: 1.20
     target_label: 0
     dry_run: false
     server_wait_timeout_sec: 10.0

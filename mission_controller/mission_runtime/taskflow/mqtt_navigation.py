@@ -75,10 +75,11 @@ def parse_navigation_points_json(payload: str) -> dict[str, NavigationPoint]:
 class MqttNavigationGateway:
     """Publish a configured target pose and wait for the matching result.
 
-    Request payloads include the logical point ID and map pose, for example
-    ``{"robot_id":"6","point_id":5,"frame_id":"map",...}``.
+    Request payloads include the logical point ID and map pose.  The wire
+    protocol groups the pose values as ``pos: [x, y, yaw]``, for example
+    ``{"robot_id":"realman-001","point_id":5,"frame_id":"map","pos":[1.0,2.0,0.0]}``.
     Results use the platform robot-level protocol:
-    ``{"robot_id":"6","success":true,"message":"arrived"}``.
+    ``{"robot_id":"realman-001","success":true,"message":"arrived"}``.
     """
 
     def __init__(
@@ -93,7 +94,7 @@ class MqttNavigationGateway:
         keepalive_sec: int = 60,
         connect_timeout_sec: float = 10.0,
         navigation_timeout_sec: float = 300.0,
-        robot_id: str = "6",
+        robot_id: str = "realman-001",
         frame_id: str = "map",
         point_poses: Mapping[str, NavigationPoint] | None = None,
         client: Any | None = None,
@@ -133,7 +134,10 @@ class MqttNavigationGateway:
             self._port,
             self._keepalive_sec,
         )
-        if int(connect_result) != self._mqtt_success:
+        # Paho 2.x's asynchronous connect API returns None after scheduling
+        # the connection.  Older clients/fakes may return a numeric status.
+        # Only convert a value when one was actually returned.
+        if connect_result is not None and int(connect_result) != self._mqtt_success:
             self._connection_error = (
                 f"MQTT connect_async returned error {int(connect_result)}"
             )
@@ -293,19 +297,44 @@ class MqttNavigationGateway:
         cancel_requested: Callable[[], bool],
     ) -> NavigationResult:
         point_id = str(request.point_id).strip()
-        if point_id not in _VALID_POINT_IDS:
-            return NavigationResult(
-                False,
-                "invalid",
-                f"MQTT navigation point must be in 1..16, got {point_id!r}",
-            )
-        target = self._point_poses.get(point_id)
-        if target is None:
-            return NavigationResult(
-                False,
-                "invalid",
-                f"MQTT navigation point {point_id} has no configured coordinates",
-            )
+        if request.pos is None:
+            if point_id not in _VALID_POINT_IDS:
+                return NavigationResult(
+                    False,
+                    "invalid",
+                    f"MQTT navigation point must be in 1..16, got {point_id!r}",
+                )
+            target = self._point_poses.get(point_id)
+            if target is None:
+                return NavigationResult(
+                    False,
+                    "invalid",
+                    f"MQTT navigation point {point_id} has no configured coordinates",
+                )
+        else:
+            values = tuple(request.pos)
+            if len(values) != 3:
+                return NavigationResult(
+                    False,
+                    "invalid",
+                    "MQTT custom navigation pos must contain exactly 3 values "
+                    "[x, y, yaw]",
+                )
+            try:
+                coordinates = tuple(float(value) for value in values)
+            except (TypeError, ValueError):
+                return NavigationResult(
+                    False,
+                    "invalid",
+                    "MQTT custom navigation pos values must be numeric",
+                )
+            if not all(math.isfinite(value) for value in coordinates):
+                return NavigationResult(
+                    False,
+                    "invalid",
+                    "MQTT custom navigation pos values must be finite",
+                )
+            target = NavigationPoint(*coordinates)
         with self._request_lock:
             if self._closed:
                 return NavigationResult(False, "unavailable", "MQTT gateway is closed")
@@ -332,9 +361,7 @@ class MqttNavigationGateway:
                         "robot_id": self._robot_id,
                         "point_id": int(point_id),
                         "frame_id": self._frame_id,
-                        "x": target.x,
-                        "y": target.y,
-                        "yaw": target.yaw,
+                        "pos": [target.x, target.y, target.yaw],
                     },
                     ensure_ascii=False,
                     separators=(",", ":"),

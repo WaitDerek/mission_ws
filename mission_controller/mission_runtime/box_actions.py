@@ -394,7 +394,7 @@ class BoxActionsMixin:
             )
 
     def _execute_place_box_test(self, goal_handle) -> PlaceBoxTest.Result:
-        """Place the currently held small box using TF and connected motion."""
+        """Place the currently held box using TF and connected motion."""
         started_at = time.monotonic()
         request = goal_handle.request
         result = PlaceBoxTest.Result()
@@ -408,6 +408,7 @@ class BoxActionsMixin:
             detail, left_target, right_target = self._execute_place_box_test_motion(
                 goal_handle,
                 self.direct_sdk_adapter,
+                request.box_type,
                 request.dry_run,
             )
             result.left_target_pose = left_target
@@ -421,10 +422,15 @@ class BoxActionsMixin:
                         "release_after_place=true; gripper opening skipped in dry-run",
                     )
                 else:
+                    release_basis = (
+                        "placement target and bilateral force-Z table support confirmed"
+                        if self._boolean("place_box_test_force_unload_enabled")
+                        else "placement target confirmed"
+                    )
                     self._publish_place_box_test_feedback(
                         goal_handle,
                         "RELEASING_BOX",
-                        "placement target confirmed; opening both grippers",
+                        f"{release_basis}; opening both grippers",
                     )
                     self._publish_both_grippers(
                         goal_handle, self._float("gripper_open_position")
@@ -435,11 +441,18 @@ class BoxActionsMixin:
                         self._float("gripper_settle_sec"),
                         "while waiting for the placed box to be released",
                     )
+                post_release_detail = self._execute_place_box_test_post_release(
+                    goal_handle,
+                    self.direct_sdk_adapter,
+                    request.dry_run,
+                )
+                detail = f"{detail}; {post_release_detail}"
             else:
                 self._publish_place_box_test_feedback(
                     goal_handle,
                     "HOLDING_BOX",
-                    "placement target confirmed; test mode keeps both grippers closed",
+                    "placement target confirmed; test mode keeps both grippers "
+                    "closed and skips post-release arm/body motion",
                 )
 
             result.success = True

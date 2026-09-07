@@ -1,0 +1,24 @@
+# Strict test workflow: navigate to one observation point, run the global
+# observation Action, then navigate to the first operation point selected by
+# the returned plan. No grasp/placement Action (and therefore no per-box
+# FoundationPose request) is executed.
+string request_id
+bool start
+int32 observation_point_id
+---
+bool success
+string workflow_id
+string message
+uint32 completed_navigation_count
+uint32 completed_observation_count
+uint32 planned_box_count
+int32 selected_operation_point_id
+string final_stage
+---
+string workflow_id
+string stage
+string current_point_id
+string current_stack_id
+uint32 current_order_index
+uint32 total_order_items
+string detail

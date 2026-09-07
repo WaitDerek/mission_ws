@@ -197,7 +197,7 @@ class TestDepalletizingWorkflowAction(unittest.TestCase):
         self.assertIn("accepted", events)
         self.assertIn("feedback", events)
         self.assertTrue(result["success"])
-        self.assertEqual(result["robot_id"], "6")
+        self.assertEqual(result["robot_id"], "realman-001")
         self.assertEqual(result["request_id"], "platform-1")
         self.assertEqual(result["final_stage"], "COMPLETE")
 
@@ -217,7 +217,7 @@ class TestDepalletizingWorkflowAction(unittest.TestCase):
                     "event": "rejected",
                     "robot_id": "7",
                     "request_id": "platform-2",
-                    "message": "workflow MQTT robot_id must be 6",
+                    "message": "workflow MQTT robot_id must be realman-001",
                 }
             ],
         )

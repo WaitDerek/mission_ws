@@ -642,11 +642,24 @@ class BoxPreparationMixin:
         return f"{stage1_result}; {stage2_result}"
 
     def _execute_pre_detection_arm_intermediate_movej(
-        self, goal_handle, dry_run: bool, final_units: list[int], arm: str
+        self,
+        goal_handle,
+        dry_run: bool,
+        final_units: list[int],
+        arm: str,
+        *,
+        target_joint_indices: tuple[int, ...] = (0,),
     ) -> str:
-        """Move detection Joint1 first while preserving live Joints 2-7."""
+        """Move selected detection joints while preserving the other live joints."""
         if arm not in ("left", "right"):
             raise MissionError(f"invalid detection arm: {arm}")
+        if not target_joint_indices or any(
+            index < 0 or index >= 7 for index in target_joint_indices
+        ) or len(set(target_joint_indices)) != len(target_joint_indices):
+            raise MissionError(
+                "detection intermediate MoveJ target_joint_indices must contain "
+                "unique joint indices in [0, 6]"
+            )
         prefix = f"box_pre_detection_{arm}_movej"
         units_per_degree = self._float(f"{prefix}_command_units_per_degree")
         with self.joint_state_lock:
@@ -666,14 +679,28 @@ class BoxPreparationMixin:
             )
         units = [int(value) for value in final_units]
         if not dry_run:
-            units[1:] = [
+            live_units = [
                 int(round(math.degrees(value) * units_per_degree))
-                for value in positions[1:7]
+                for value in positions[0:7]
             ]
+            units = live_units
+            for index in target_joint_indices:
+                units[index] = int(final_units[index])
         target = [math.radians(float(value) / units_per_degree) for value in units]
+        target_joint_text = "+".join(
+            f"joint{index + 1}" for index in target_joint_indices
+        )
+        live_joint_indices = [
+            index for index in range(7) if index not in target_joint_indices
+        ]
+        live_joint_text = "+".join(
+            f"joint{index + 1}" for index in live_joint_indices
+        ) or "none"
         detail = (
             f"pre-detection {arm} arm intermediate MoveJ: "
-            f"device={self._integer(f'{prefix}_device')}, joint_units={units}"
+            f"device={self._integer(f'{prefix}_device')}, "
+            f"target={target_joint_text}, live={live_joint_text}, "
+            f"joint_units={units}"
         )
         self._publish_box_grasp_feedback(
             goal_handle, f"PRE_DETECTION_{arm.upper()}_INTERMEDIATE_TARGETS", detail
@@ -861,9 +888,34 @@ class BoxPreparationMixin:
             tf_mode=tf_mode,
             drag_mode=drag_mode,
         )
-        intermediate_detail = self._execute_pre_detection_arm_intermediate_movej(
-            goal_handle, dry_run, units, arm
-        )
+        if tf_mode and drag_mode and arm == "left":
+            # The left camera/arm must enter its DragBox TF observation pose in
+            # a safe order: Joint2 first, then Joint1+Joint2, then the
+            # remaining joints. Each stage re-reads live feedback so joints
+            # not being commanded in that stage remain unchanged.
+            joint2_detail = self._execute_pre_detection_arm_intermediate_movej(
+                goal_handle,
+                dry_run,
+                units,
+                arm,
+                target_joint_indices=(1,),
+            )
+            joint1_detail = self._execute_pre_detection_arm_intermediate_movej(
+                goal_handle,
+                dry_run,
+                units,
+                arm,
+                target_joint_indices=(0, 1),
+            )
+            intermediate_detail = f"{joint2_detail}; {joint1_detail}"
+        else:
+            intermediate_detail = self._execute_pre_detection_arm_intermediate_movej(
+                goal_handle,
+                dry_run,
+                units,
+                arm,
+                target_joint_indices=(0,),
+            )
         units_per_degree = self._float(f"{prefix}_command_units_per_degree")
         target = [math.radians(float(value) / units_per_degree) for value in units]
         device = self._integer(f"{prefix}_device")

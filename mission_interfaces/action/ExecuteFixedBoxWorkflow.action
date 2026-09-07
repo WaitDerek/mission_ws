@@ -1,0 +1,25 @@
+# Run the fixed eight-box depalletizing sequence serially.
+# start_item_index is 1-based; stop_after_item_index=0 means run to item 8.
+string request_id
+bool start
+uint32 start_item_index
+uint32 stop_after_item_index
+bool dry_run
+# When true, navigate to the global observation point and build the task order
+# from the Vision GlobalObservation result. False keeps the fixed eight-item order.
+bool use_global_observation
+---
+bool success
+string workflow_id
+uint32 completed_box_count
+uint32 last_completed_item_index
+string final_stage
+string message
+---
+string workflow_id
+string stage
+uint32 current_item_index
+uint32 total_item_count
+string box_type
+uint32 box_layer
+string detail

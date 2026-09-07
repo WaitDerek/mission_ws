@@ -22,6 +22,13 @@ _ORDER_FIELDS = (
     "order_box_sizes",
 )
 
+_GRASP_MODE_ALIASES = {
+    "direct": "direct_grasp",
+    "direct_grasp": "direct_grasp",
+    "direct-grasp": "direct_grasp",
+    "drag": "drag",
+}
+
 
 @dataclass(frozen=True)
 class FrontStackPoseValidation:
@@ -154,6 +161,14 @@ def adapt_global_observation_result(
     )
 
     fields = {name: _sequence(result, name) for name in _ORDER_FIELDS}
+    raw_modes = getattr(result, "order_grasp_modes", None)
+    if raw_modes is None:
+        # Older Vision servers did not expose grasp modes. Preserve their
+        # established left-direct/right-drag convention as a fallback.
+        modes = None
+    else:
+        modes = _sequence(result, "order_grasp_modes")
+        fields["order_grasp_modes"] = modes
     lengths = {name: len(values) for name, values in fields.items()}
     if len(set(lengths.values())) != 1:
         detail = ", ".join(f"{name}={length}" for name, length in lengths.items())
@@ -203,6 +218,17 @@ def adapt_global_observation_result(
             raise ObservationValidationError(
                 f"Vision order item {order_index}: {exc}"
             ) from exc
+        if modes is None:
+            grasp_mode = "direct_grasp" if stack_index == 0 else "drag"
+        else:
+            raw_mode = str(modes[order_index]).strip().lower().replace(" ", "_")
+            try:
+                grasp_mode = _GRASP_MODE_ALIASES[raw_mode]
+            except KeyError as exc:
+                raise ObservationValidationError(
+                    f"Vision order item {order_index} has unsupported grasp mode "
+                    f"{modes[order_index]!r}; expected direct_grasp or drag"
+                ) from exc
         tasks.append(
             ObservationTask(
                 stack_id=stack_id,
@@ -211,6 +237,7 @@ def adapt_global_observation_result(
                 layer=layer,
                 box_type=box_type,
                 order_index=order_index,
+                grasp_mode=grasp_mode,
             )
         )
 

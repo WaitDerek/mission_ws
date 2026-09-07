@@ -91,6 +91,46 @@ class _SequenceAdapter:
         return "dual"
 
 
+class _PostCarryLiftAdapter:
+    def __init__(self):
+        self.calls = []
+
+    def execute_dual(self, left, right, mode, velocity, blocking, **kwargs):
+        self.calls.append((left, right, mode, velocity, blocking, kwargs))
+        return "tool_z_lift"
+
+
+class _PostCarryLiftHarness:
+    def __init__(self):
+        left = Pose()
+        left.orientation.w = 1.0
+        right = Pose()
+        right.position.z = 1.0
+        right.orientation.y = 1.0
+        self._last_tf_body_home_carry_arm_targets = {
+            "left": left,
+            "right": right,
+        }
+        self.values = {
+            "drag_box_tf_post_carry_arm_base_z_lift_enabled_bigbox": True,
+            "drag_box_tf_post_carry_arm_base_z_lift_enabled_smallbox": False,
+            "drag_box_tf_post_carry_arm_base_z_lift_distance_m": 0.03,
+            "drag_box_tf_post_carry_arm_base_z_lift_velocity_percent": 12.0,
+            "drag_box_tf_post_carry_arm_base_z_lift_timeout_sec": 60.0,
+            "direct_movel_blocking": True,
+        }
+        self.feedback = []
+
+    def _boolean(self, name):
+        return bool(self.values[name])
+
+    def _float(self, name):
+        return float(self.values[name])
+
+    def _publish_box_grasp_feedback(self, _goal_handle, stage, detail):
+        self.feedback.append((stage, detail))
+
+
 class _DragTfSequenceHarness:
     def __init__(self, carry_enabled):
         self.events = []
@@ -106,6 +146,7 @@ class _DragTfSequenceHarness:
             "box_post_movel_step4_motion_mode": "movej",
             "box_post_movel_velocity_percent": 10.0,
             "direct_sdk_motion_timeout_sec": 10.0,
+            "drag_box_tf_post_movel_sdk_motion_mode": "movel_offset",
         }
 
     def _boolean(self, name):
@@ -484,6 +525,54 @@ class TestDragBoxTfAction(unittest.TestCase):
         self.assertLess(step2_index, carry_index)
         self.assertLess(carry_index, rebase_index)
         self.assertLess(rebase_index, step3_index)
+
+    def test_drag_tf_bigbox_post_carry_lifts_each_arm_base_z(self):
+        harness = _PostCarryLiftHarness()
+        adapter = _PostCarryLiftAdapter()
+
+        detail = MissionController._execute_drag_box_tf_post_carry_arm_base_z_lift(
+            harness,
+            _MotionGoal(),
+            adapter,
+            False,
+            model_label="bigbox",
+        )
+
+        self.assertIn("arm-base-Z lift", detail)
+        self.assertEqual(len(adapter.calls), 1)
+        left, right, mode, velocity, blocking, kwargs = adapter.calls[0]
+        self.assertEqual(left, [0.0, 0.0, 0.03, 0.0, 0.0, 0.0])
+        self.assertEqual(right, left)
+        self.assertEqual(mode, "movel_offset")
+        self.assertEqual(velocity, 12.0)
+        self.assertTrue(blocking)
+        self.assertEqual(kwargs["offset_frame_type"], 0)
+        self.assertAlmostEqual(
+            harness._last_tf_body_home_carry_arm_targets["left"].position.z,
+            0.03,
+        )
+        self.assertAlmostEqual(
+            harness._last_tf_body_home_carry_arm_targets["right"].position.z,
+            1.03,
+        )
+
+    def test_drag_tf_smallbox_post_carry_arm_base_z_lift_is_disabled(self):
+        harness = _PostCarryLiftHarness()
+        adapter = _PostCarryLiftAdapter()
+
+        detail = MissionController._execute_drag_box_tf_post_carry_arm_base_z_lift(
+            harness,
+            _MotionGoal(),
+            adapter,
+            False,
+            model_label="smallbox",
+        )
+
+        self.assertEqual(
+            detail,
+            "drag_box_tf_post_carry_arm_base_z_lift=disabled_for_smallbox",
+        )
+        self.assertEqual(adapter.calls, [])
 
     def test_non_tf_drag_carry_switch_is_rejected(self):
         harness = _NonTfCarryHarness(drag_mode=True, carry_enabled=True)

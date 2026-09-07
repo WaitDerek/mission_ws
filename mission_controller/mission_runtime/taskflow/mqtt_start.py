@@ -14,7 +14,9 @@ from .mqtt_support import create_paho_client, mqtt_reason_is_failure
 @dataclass(frozen=True)
 class MqttStartRequest:
     request_id: str = ""
-    robot_id: str = "6"
+    robot_id: str = "realman-001"
+    workflow: str = "full"
+    observation_point_id: int = 1
 
 
 class MqttWorkflowStartBridge:
@@ -117,9 +119,36 @@ class MqttWorkflowStartBridge:
         robot_id = str(raw_robot_id).strip()
         if not robot_id:
             raise ValueError("workflow start JSON robot_id must not be empty")
+        workflow = str(value.get("workflow", "full")).strip().lower()
+        if workflow not in {"full", "observation_navigation"}:
+            raise ValueError(
+                "workflow start JSON workflow must be full or "
+                "observation_navigation"
+            )
+        if (
+            workflow == "observation_navigation"
+            and "observation_point_id" not in value
+            and "point_id" not in value
+        ):
+            raise ValueError(
+                "observation_navigation requires observation_point_id"
+            )
+        raw_point_id = value.get(
+            "observation_point_id", value.get("point_id", 1)
+        )
+        if isinstance(raw_point_id, bool) or not isinstance(raw_point_id, int):
+            raise ValueError(
+                "workflow start JSON observation_point_id must be an integer"
+            )
+        if workflow == "observation_navigation" and not 1 <= raw_point_id <= 4:
+            raise ValueError(
+                "observation_navigation observation_point_id must be in [1,4]"
+            )
         return MqttStartRequest(
             request_id=str(value.get("request_id", "")).strip(),
             robot_id=robot_id,
+            workflow=workflow,
+            observation_point_id=raw_point_id,
         )
 
     def _on_message(self, _client, _userdata, message) -> None:

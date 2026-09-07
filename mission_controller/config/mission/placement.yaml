@@ -24,43 +24,137 @@ mission_controller:
     - 0
     - 0
     place_box_test_body_joint_units:
-    - -15000
-    - 0
-    - 0
+    - -40000
+    - -60000
+    - -40000
     - 0
     place_box_test_left_target_pose_arm_base:
-    - -0.446381
-    - 0.569104
-    - -0.128351
-    - -0.395
-    - -0.461
-    - -0.577
-    - 0.545
+    - -0.323464
+    - 0.551264
+    - -0.096540
+    - -0.377
+    - -0.411
+    - -0.603
+    - 0.569
     place_box_test_right_target_pose_arm_base:
-    - -0.26007
-    - -0.611426
-    - -0.094985
-    - 0.463
-    - -0.444
-    - 0.566
-    - 0.516
+    - -0.364445
+    - -0.537010
+    - -0.085777
+    - 0.379
+    - -0.393
+    - 0.573
+    - 0.610
+    place_box_test_left_target_pose_arm_base_smallbox:
+    - -0.323464
+    - 0.551264
+    - -0.096540
+    - -0.377
+    - -0.411
+    - -0.603
+    - 0.569
+    place_box_test_right_target_pose_arm_base_smallbox:
+    - -0.364445
+    - -0.537010
+    - -0.085777
+    - 0.379
+    - -0.393
+    - 0.573
+    - 0.610
+    place_box_test_left_target_pose_arm_base_bigbox:
+    - -0.387499
+    - 0.568216
+    - 0.014259
+    - -0.413
+    - -0.426
+    - -0.575
+    - 0.562
+    place_box_test_right_target_pose_arm_base_bigbox:
+    - -0.327162
+    - -0.578776
+    - 0.012840
+    - 0.416
+    - -0.402
+    - 0.612
+    - 0.537
     place_box_test_segments: 6
     place_box_test_body_velocity: 12
     place_box_test_body_blend_radius: 5
     place_box_test_arm_blend_radius: 5
-    place_box_test_left_movel_velocity_percent: 12.0
-    place_box_test_right_movel_velocity_percent: 12.0
+    place_box_test_left_movel_velocity_percent: 10.0
+    place_box_test_right_movel_velocity_percent: 10.0
+    place_box_test_arm_motion_mode: movel
+    place_box_test_arm_offset_frame_type: 0
     place_box_test_final_correction_enabled: true
-    place_box_test_final_correction_velocity_percent: 12.0
+    place_box_test_final_correction_velocity_percent: 5.0
     place_box_test_timeout_sec: 180.0
     place_box_test_start_body_tolerance_rad: 0.035
     place_box_test_position_tolerance_m: 0.015
     place_box_test_orientation_tolerance_rad: 0.1
     place_box_test_stable_samples: 3
-    place_box_test_target_consistency_position_tolerance_m: 0.05
+    place_box_test_target_consistency_position_tolerance_m: 0.15
     place_box_test_target_consistency_orientation_tolerance_rad: 0.35
     place_box_test_body_stop_enabled: true
     place_box_test_body_stop_command: stop
+    # Fz-only release interlock.  Defaults are based on the measured carried
+    # versus table-supported change of about 10.5k counts on each wrist.
+    place_box_test_force_unload_enabled: false
+    place_box_test_force_unload_baseline_duration_sec: 0.5
+    place_box_test_force_unload_baseline_min_samples: 20
+    place_box_test_force_unload_baseline_timeout_sec: 3.0
+    place_box_test_force_unload_filter_samples: 15
+    place_box_test_force_unload_sensor_max_age_sec: 0.2
+    place_box_test_force_unload_threshold_left_counts: 7000.0
+    place_box_test_force_unload_threshold_right_counts: 7000.0
+    place_box_test_force_unload_sign_left: 1.0
+    place_box_test_force_unload_sign_right: 1.0
+    place_box_test_force_unload_required_duration_sec: 0.2
+    # After bilateral table support is detected, preserve each Link7 X/Y and
+    # orientation while moving both physical Link7 Z values to their average
+    # in base_link.  Reconfirm Fz support before releasing the box.
+    place_box_test_post_support_z_equalization_enabled: true
+    place_box_test_post_support_z_equalization_velocity_percent: 5.0
+    place_box_test_post_support_z_equalization_max_correction_m: 0.05
+    place_box_test_post_support_z_equalization_min_high_arm_downward_m: 0.02
+    place_box_test_post_support_z_equalization_tolerance_m: 0.005
+    place_box_test_post_support_z_equalization_timeout_sec: 30.0
+    place_box_test_post_release_arm_movej_enabled: true
+    place_box_test_post_release_arm_joint2_angle_deg: 60.0
+    place_box_test_post_release_arm_movej_velocity_percent: 12.0
+    place_box_test_post_release_arm_movej_position_tolerance_rad: 0.035
+    place_box_test_post_release_arm_movej_velocity_tolerance_rad_sec: 0.035
+    place_box_test_post_release_arm_movej_feedback_max_age_sec: 1.0
+    place_box_test_post_release_arm_movej_timeout_sec: 180.0
+    place_box_test_post_release_arm_movej_stable_samples: 3
+    place_box_test_post_release_body_home_enabled: true
+    place_box_test_post_release_body_home_joint_units:
+    - 0
+    - 0
+    - 0
+    - 0
+    place_box_test_post_release_arm_home_enabled: true
+    place_box_test_post_release_arm_home_left_joint_units:
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    place_box_test_post_release_arm_home_right_joint_units:
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    - 0
+    place_box_test_post_release_arm_home_command_units_per_degree: 1000.0
+    place_box_test_post_release_arm_home_velocity_percent: 12.0
+    place_box_test_post_release_arm_home_position_tolerance_rad: 0.035
+    place_box_test_post_release_arm_home_velocity_tolerance_rad_sec: 0.035
+    place_box_test_post_release_arm_home_feedback_max_age_sec: 1.0
+    place_box_test_post_release_arm_home_timeout_sec: 180.0
+    place_box_test_post_release_arm_home_stable_samples: 3
     gripper_closed_position: 0.0
     gripper_open_position: 100.0
     gripper_settle_sec: 1.0

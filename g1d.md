@@ -328,10 +328,10 @@ Mission 状态 Topic：`mission/workflow/status`。导航请求 Topic：
 回执没有请求编号，因此无法区分同一机器人上一段导航的延迟非 retained 回执；
 平台应对每次导航返回一次完成结果。
 
-同步参考为 RealBot `af8aa58`：保留四个 MQTT Topic、状态事件
+G1D 使用四个 MQTT Topic、状态事件
 `received/accepted/feedback/rejected/result`、`robot_id + point_id + pos` 导航请求。
 G1D 顺序仍为连接件位 1 抓取 → 前保位 3 安装 → 车标位 2 抓取与撕膜 → 前保位 3 安装，
-每步等待前一步最终成功。RealBot 的地图坐标、`realman-001` 身份与拆垛 Action 不作为 G1D 配置。
+每步等待前一步最终成功。导航坐标使用 G1D 现场实测配置。
 
 平台下发纯导航测试，同样使用 `mission/workflow/start`：
 

@@ -295,7 +295,7 @@ Assembly 流程：
 平台启动消息，Topic `mission/workflow/start`：
 
 ```json
-{"robot_id":"6","start":true,"request_id":"platform-001"}
+{"robot_id":"g1d","start":true,"request_id":"platform-001"}
 ```
 
 `robot_id` 必须与 `taskflow.yaml` 中配置的机器人 ID 一致。
@@ -304,22 +304,57 @@ Mission 状态 Topic：`mission/workflow/status`。导航请求 Topic：
 `mission/navigation/request`：
 
 ```json
-{"id":1,"frame_id":"map","pos":[2.14,-2.84,-2.89]}
+{"robot_id":"g1d","point_id":1,"frame_id":"map","pos":[2.14,-2.84,-2.89]}
 ```
 
 平台导航结果 Topic：`mission/navigation/result`：
 
 ```json
-{"robot_id":"6","success":true,"message":"arrived"}
+{"robot_id":"g1d","success":true,"message":"arrived"}
 ```
 
-导航请求中的 `id` 是点位编号；导航结果通过 `robot_id` 匹配当前机器人，并使用
-`success=false` 明确报告失败。其他机器人回执、遗留消息、失败回执或超时都不会
+导航请求中的 `point_id` 是点位编号；导航结果通过 `robot_id` 匹配当前机器人，并使用
+`success=false` 明确报告失败。其他机器人回执、retained 消息、失败回执或超时都不会
 放行下一步；ROS 子 Action 同样必须以 `SUCCEEDED` 结束且返回 `success=true`。
 
+启动 JSON 可显式带 `"workflow":"full"`，省略时也运行 G1D 完整任务流。
+`"workflow":"navigation"` 调用 `/execute_navigation`，执行纯导航 1 → 3 → 2 → 3。
+每段导航等待平台回执，不调用感知或机械臂。`completed_task_count` 表示成功到点次数，
+完整完成时为4。旧 `observation_navigation` 流程名不再接受。
+`/navigate_to_point` 支持点位 1～4 和自定义 `pos`；`dry_run` 只验证目标，不发布导航。
+`robot_id` 用于任务启动与状态回传；`mqtt_navigation_robot_id` 用于导航请求和
+结果匹配，留空时继承 `robot_id`。G1D 默认 ID 为 `"g1d"`。
+仅接受 JSON 回执，包含旧 `id/point_id` 字段的导航结果会被拒绝。
+回执没有请求编号，因此无法区分同一机器人上一段导航的延迟非 retained 回执；
+平台应对每次导航返回一次完成结果。
+
+同步参考为 RealBot `af8aa58`：保留四个 MQTT Topic、状态事件
+`received/accepted/feedback/rejected/result`、`robot_id + point_id + pos` 导航请求。
+G1D 顺序仍为连接件位 1 抓取 → 前保位 3 安装 → 车标位 2 抓取与撕膜 → 前保位 3 安装，
+每步等待前一步最终成功。RealBot 的地图坐标、`realman-001` 身份与拆垛 Action 不作为 G1D 配置。
+
+平台下发纯导航测试，同样使用 `mission/workflow/start`：
+
+```json
+{"robot_id":"g1d","start":true,"workflow":"navigation","request_id":"test-001"}
+```
+
+Mission 通过 `mission/workflow/status` 返回状态，所有正常任务生命周期消息均带
+`event`、`robot_id`、`request_id`、`workflow`。例如：
+
+```json
+{"event":"accepted","robot_id":"g1d","request_id":"test-001","workflow":"navigation","message":"workflow Action goal accepted"}
+```
+
+`feedback` 另外包含 `workflow_id/stage/point_id/task/current_step/total_steps/detail`；
+`result` 包含 `success/workflow_id/message/completed_task_count/final_stage/ros_status`。
+最终成功同时要求 ROS 状态为 `SUCCEEDED` 和业务结果 `success=true`。
+默认 QoS 1、retain=false，Broker 为 `127.0.0.1:1883`，由 taskflow.yaml 配置。
+独立 `/navigate_to_point` 通过 ROS Action 调用，下发导航仍使用上述 MQTT 请求与结果 Topic。
+
 实际点位坐标填写在 `mission_manager/config/taskflow.yaml` 的
-`mqtt_navigation_points_json`。1～4 任一点未配置或 `paho-mqtt` 不可用时，
-workflow 节点拒绝启动，不发布零位导航。
+`mqtt_navigation_points_json`。地图可以先只配置部分点位；调用未配置的点位时失败，
+不发布零位导航。自定义 `pos` 不要求地图内已有该点。MQTT 功能需要 `paho-mqtt`。
 
 本地调试可直接调用同一状态机：
 

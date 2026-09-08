@@ -1,0 +1,15 @@
+# Navigate to configured point 1..4 or a custom [x,y,yaw] map pose.
+string request_id
+bool start
+int32 point_id
+bool use_custom_pos
+float64[] pos
+bool dry_run
+---
+bool success
+int32 point_id
+string message
+float64[] pos
+---
+string stage
+string detail

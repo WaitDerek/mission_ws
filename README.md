@@ -116,9 +116,35 @@ ros2 action send_goal --feedback \
 
 ## 调用 `/execute_workflow`
 
+导航1 → 连接件抓取 → 导航3 → 安装 → 导航2 → 车标抓取、撕膜 → 导航3 → 安装。
+
 ```bash
 ros2 action send_goal --feedback \
   /execute_workflow \
   mission_manager_interfaces/action/ExecuteWorkflow \
   "{start: true}"
+```
+
+## 调用 `/navigate_to_point`
+
+```bash
+ros2 action send_goal --feedback /navigate_to_point \
+  mission_manager_interfaces/action/NavigateToPoint \
+  "{request_id: nav-001, start: true, point_id: 1, use_custom_pos: false, dry_run: false}"
+
+ros2 action send_goal --feedback /navigate_to_point \
+  mission_manager_interfaces/action/NavigateToPoint \
+  "{request_id: nav-002, start: true, point_id: 1, use_custom_pos: true, pos: [2.14, -2.84, -2.89], dry_run: false}"
+```
+
+## 调用 `/execute_navigation`
+
+纯导航：1 → 3 → 2 → 3，每次等待平台到点成功，不调用感知或机械臂 Action。
+
+```bash
+ros2 action send_goal --feedback /execute_navigation \
+  mission_manager_interfaces/action/ExecuteNavigation "{start: true}"
+
+mosquitto_pub -h 127.0.0.1 -t mission/workflow/start \
+  -m '{"robot_id":"g1d","start":true,"workflow":"navigation","request_id":"test-001"}'
 ```

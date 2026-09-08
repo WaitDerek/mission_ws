@@ -19,6 +19,7 @@ from .mqtt_support import (
 class MqttStartRequest:
     request_id: str = ""
     robot_id: str | int = ""
+    workflow: str = "full"
 
 
 def normalize_robot_id(value: object) -> str:
@@ -117,6 +118,9 @@ class MqttWorkflowStartBridge:
             raise ValueError("workflow start JSON must be an object")
         if value.get("start") is not True:
             raise ValueError("workflow start JSON requires start=true")
+        workflow = str(value.get("workflow", "full")).strip().lower()
+        if workflow not in ("full", "navigation"):
+            raise ValueError("workflow must be full or navigation")
         if "robot_id" not in value:
             raise ValueError("workflow start JSON requires robot id in robot_id")
         robot_id = value["robot_id"]
@@ -126,6 +130,7 @@ class MqttWorkflowStartBridge:
         return MqttStartRequest(
             request_id=str(value.get("request_id", "")).strip(),
             robot_id=robot_id,
+            workflow=workflow,
         )
 
     def _on_message(self, _client, _userdata, message) -> None:

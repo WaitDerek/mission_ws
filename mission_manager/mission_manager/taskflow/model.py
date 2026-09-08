@@ -10,6 +10,7 @@ class NavigationRequest:
     workflow_id: str
     step_id: str
     point_id: str
+    pos: tuple[float, float, float] | None = None
 
 
 @dataclass(frozen=True)

@@ -21,14 +21,14 @@ from .model import WorkflowProgress
 from .mqtt_navigation import (
     MqttNavigationGateway,
     parse_navigation_points_json,
-    require_all_navigation_points,
 )
 from .mqtt_trigger import WorkflowMqttTriggerMixin
 from .operations import RosWorkflowOperations
 from .state_machine import AssemblyWorkflowEngine
+from .test_actions import TestActionsMixin
 
 
-class WorkflowNode(WorkflowMqttTriggerMixin, Node):
+class WorkflowNode(TestActionsMixin, WorkflowMqttTriggerMixin, Node):
     """Run one 1 -> 3 -> 2 -> 3 workflow at a time."""
 
     def __init__(self) -> None:
@@ -71,6 +71,7 @@ class WorkflowNode(WorkflowMqttTriggerMixin, Node):
             callback_group=self._server_group,
         )
 
+        self._initialize_test_actions()
         self._initialize_mqtt_trigger()
         self.get_logger().info(
             "workflow ready: action=%s sequence=1->3->2->3"
@@ -82,13 +83,16 @@ class WorkflowNode(WorkflowMqttTriggerMixin, Node):
             namespace="",
             parameters=[
                 ("workflow_action_name", "/execute_workflow"),
+                ("navigate_to_point_action_name", "/navigate_to_point"),
+                ("navigation_action_name", "/execute_navigation"),
                 ("execute_grip_action_name", "/execute_grip"),
                 ("execute_peel_action_name", "/execute_peel"),
                 ("execute_assembly_action_name", "/execute_assembly"),
                 ("connector_point_id", "1"),
                 ("badge_point_id", "2"),
                 ("assembly_point_id", "3"),
-                ("robot_id", "6"),
+                ("robot_id", "g1d"),
+                ("mqtt_navigation_robot_id", ""),
                 ("navigation_adapter", "mqtt"),
                 ("mqtt_host", "127.0.0.1"),
                 ("mqtt_port", 1883),
@@ -152,10 +156,16 @@ class WorkflowNode(WorkflowMqttTriggerMixin, Node):
         )
         if len(set(topics)) != len(topics):
             raise ValueError("MQTT workflow and navigation topics must differ")
-        navigation_points = parse_navigation_points_json(
+        parse_navigation_points_json(
             self._string("mqtt_navigation_points_json")
         )
-        require_all_navigation_points(navigation_points)
+        # Partial maps allow independent navigation testing before all stations
+        # are measured. Each navigation still fails if its target is missing.
+        action_names = [self._string(name) for name in (
+            "workflow_action_name", "navigate_to_point_action_name",
+            "navigation_action_name")]
+        if not all(action_names) or len(set(action_names)) != len(action_names):
+            raise ValueError("workflow Action names must be nonempty and distinct")
         workflow_points = {
             self._string("connector_point_id"),
             self._string("badge_point_id"),
@@ -171,7 +181,7 @@ class WorkflowNode(WorkflowMqttTriggerMixin, Node):
     def _create_navigation_gateway(self):
         return MqttNavigationGateway(
             host=self._string("mqtt_host"),
-            robot_id=self._string("robot_id"),
+            robot_id=(self._string("mqtt_navigation_robot_id") or self._string("robot_id")),
             port=self._integer("mqtt_port"),
             request_topic=self._string("mqtt_request_topic"),
             result_topic=self._string("mqtt_result_topic"),
@@ -205,6 +215,7 @@ class WorkflowNode(WorkflowMqttTriggerMixin, Node):
             if self._workflow_reserved:
                 return GoalResponse.REJECT
             self._workflow_reserved = True
+            self._cancel_event.clear()
         return GoalResponse.ACCEPT
 
     def _cancel_callback(self, _goal_handle) -> CancelResponse:
@@ -215,9 +226,11 @@ class WorkflowNode(WorkflowMqttTriggerMixin, Node):
         return CancelResponse.ACCEPT
 
     def _execute(self, goal_handle) -> ExecuteWorkflow.Result:
+        return self._execute_flow(goal_handle, ExecuteWorkflow, RosWorkflowOperations)
+
+    def _execute_flow(self, goal_handle, action_type, operations_type):
         workflow_id = f"workflow-{uuid.uuid4().hex[:12]}"
-        self._cancel_event.clear()
-        operations = RosWorkflowOperations(
+        operations = operations_type(
             node=self,
             navigation_gateway=self._navigation_gateway,
             grip_client=self._grip_client,
@@ -232,14 +245,15 @@ class WorkflowNode(WorkflowMqttTriggerMixin, Node):
             engine = AssemblyWorkflowEngine(
                 operations,
                 progress_callback=lambda progress: self._publish_feedback(
-                    goal_handle, progress
+                    goal_handle, progress, action_type
                 ),
                 connector_point_id=self._string("connector_point_id"),
                 badge_point_id=self._string("badge_point_id"),
                 assembly_point_id=self._string("assembly_point_id"),
+                navigation_only=action_type is not ExecuteWorkflow,
             )
             outcome = engine.run(workflow_id)
-            result = ExecuteWorkflow.Result()
+            result = action_type.Result()
             result.success = outcome.success
             result.workflow_id = outcome.workflow_id
             result.message = outcome.message
@@ -252,14 +266,22 @@ class WorkflowNode(WorkflowMqttTriggerMixin, Node):
             else:
                 goal_handle.abort()
             return result
+        except Exception as exc:
+            operations.cancel_active()
+            result = action_type.Result()
+            result.workflow_id = workflow_id
+            result.message = str(exc)
+            result.final_stage = "INTERNAL_ERROR"
+            goal_handle.abort()
+            return result
         finally:
             self._active_operations = None
             with self._workflow_lock:
                 self._workflow_reserved = False
 
     @staticmethod
-    def _publish_feedback(goal_handle, progress: WorkflowProgress) -> None:
-        feedback = ExecuteWorkflow.Feedback()
+    def _publish_feedback(goal_handle, progress: WorkflowProgress, action_type=ExecuteWorkflow) -> None:
+        feedback = action_type.Feedback()
         feedback.workflow_id = progress.workflow_id
         feedback.stage = progress.stage
         feedback.current_point_id = progress.current_point_id
@@ -273,6 +295,8 @@ class WorkflowNode(WorkflowMqttTriggerMixin, Node):
         self._close_mqtt_trigger()
         self._navigation_gateway.close()
         self._action_server.destroy()
+        self._navigation_server.destroy()
+        self._route_server.destroy()
         super().destroy_node()
 
 

@@ -49,8 +49,10 @@ class AssemblyWorkflowEngine:
         connector_point_id: str = CONNECTOR_POINT_ID,
         badge_point_id: str = BADGE_POINT_ID,
         assembly_point_id: str = ASSEMBLY_POINT_ID,
+        navigation_only: bool = False,
     ) -> None:
         self._operations = operations
+        self._navigation_only = navigation_only
         self._progress_callback = progress_callback or (lambda _progress: None)
         self._connector_point_id = str(connector_point_id)
         self._badge_point_id = str(badge_point_id)
@@ -97,7 +99,8 @@ class AssemblyWorkflowEngine:
             return WorkflowOutcome(
                 True,
                 workflow_id,
-                "connector and badge assembly workflow completed",
+                "navigation route completed" if self._navigation_only
+                else "connector and badge assembly workflow completed",
                 "COMPLETE",
                 self._completed_tasks,
                 tuple(self._trace),
@@ -142,8 +145,12 @@ class AssemblyWorkflowEngine:
             )
         )
         self._require_success(result, stage)
+        if self._navigation_only:
+            self._completed_tasks += 1
 
     def _task(self, workflow_id, stage, target_type, callback) -> None:
+        if self._navigation_only:
+            return
         self._publish(
             workflow_id,
             stage,
@@ -184,7 +191,7 @@ class AssemblyWorkflowEngine:
                 current_point_id=point_id,
                 current_task=task,
                 current_step=self._step_index,
-                total_steps=TOTAL_STEPS,
+                total_steps=4 if self._navigation_only else TOTAL_STEPS,
                 detail=detail,
             )
         )

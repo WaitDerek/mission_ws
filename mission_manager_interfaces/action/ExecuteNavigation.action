@@ -1,0 +1,17 @@
+# G1D pure navigation route 1->3->2->3.
+# completed_task_count counts successful navigation legs.
+bool start
+---
+bool success
+string workflow_id
+string message
+uint32 completed_task_count
+string final_stage
+---
+string workflow_id
+string stage
+string current_point_id
+string current_task
+uint32 current_step
+uint32 total_steps
+string detail

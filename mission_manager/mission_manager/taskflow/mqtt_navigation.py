@@ -89,7 +89,7 @@ class MqttNavigationGateway:
         self,
         *,
         host: str,
-        robot_id: str = "6",
+        robot_id: str = "g1d",
         port: int = 1883,
         request_topic: str = "mission/navigation/request",
         result_topic: str = "mission/navigation/result",
@@ -224,6 +224,8 @@ class MqttNavigationGateway:
             raise ValueError("navigation result is invalid JSON") from exc
         if not isinstance(result, dict):
             raise ValueError("navigation result JSON must be an object")
+        if "id" in result or "point_id" in result:
+            raise ValueError("navigation result JSON must use robot_id, not id/point_id")
         raw_robot_id = result.get("robot_id")
         success = result.get("success")
         if isinstance(raw_robot_id, bool) or not isinstance(
@@ -290,6 +292,16 @@ class MqttNavigationGateway:
                 f"MQTT navigation point must be in 1..4, got {point_id!r}",
             )
         target = self._point_poses.get(point_id)
+        if request.pos is not None:
+            try:
+                if len(request.pos) != 3:
+                    raise ValueError("pos requires [x,y,yaw]")
+                values = tuple(float(value) for value in request.pos)
+                if not all(math.isfinite(value) for value in values):
+                    raise ValueError("pos must be finite")
+                target = NavigationPoint(*values)
+            except (TypeError, ValueError) as exc:
+                return NavigationResult(False, "invalid", str(exc))
         if target is None:
             return NavigationResult(
                 False,
@@ -325,7 +337,8 @@ class MqttNavigationGateway:
                 self._request_topic,
                 payload=json.dumps(
                     {
-                        "id": int(point_id),
+                        "robot_id": self._robot_id,
+                        "point_id": int(point_id),
                         "frame_id": self._frame_id,
                         "pos": [target.x, target.y, target.yaw],
                     },

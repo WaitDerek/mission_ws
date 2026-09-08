@@ -68,7 +68,6 @@ def test_navigation_publishes_pos_json_and_waits_for_matching_result():
     client = _MqttClient()
     gateway = MqttNavigationGateway(
         host="localhost",
-        robot_id="6",
         point_poses={"1": NavigationPoint(1.2, 3.4, 0.5)},
         client=client,
         connect_timeout_sec=0.5,
@@ -89,7 +88,8 @@ def test_navigation_publishes_pos_json_and_waits_for_matching_result():
         time.sleep(0.01)
     payload = json.loads(client.published[0][1])
     assert payload == {
-        "id": 1,
+        "robot_id": "g1d",
+        "point_id": 1,
         "frame_id": "map",
         "pos": [1.2, 3.4, 0.5],
     }
@@ -110,7 +110,7 @@ def test_navigation_publishes_pos_json_and_waits_for_matching_result():
         SimpleNamespace(
             topic="mission/navigation/result",
             retain=False,
-            payload=b'{"robot_id":"6","success":true,"message":"arrived"}',
+            payload=b'{"robot_id":"g1d","success":true,"message":"arrived"}',
         ),
     )
     thread.join(timeout=1.0)
@@ -124,6 +124,16 @@ def test_mqtt_start_requires_robot_id_and_start_true():
         b'{"robot_id":"g1d-01","start":true,"request_id":"platform-1"}'
     )
     assert decoded == MqttStartRequest("platform-1", "g1d-01")
+    assert MqttWorkflowStartBridge._decode_start(
+        b'{"robot_id":"6","start":true,"workflow":"full"}'
+    ).robot_id == "6"
+    assert MqttWorkflowStartBridge._decode_start(
+        b'{"robot_id":"g1d","start":true,"workflow":"navigation"}'
+    ).workflow == "navigation"
+    with pytest.raises(ValueError, match="workflow must be"):
+        MqttWorkflowStartBridge._decode_start(
+            b'{"robot_id":"g1d","start":true,"workflow":"unknown"}'
+        )
     with pytest.raises(ValueError, match="JSON object"):
         MqttWorkflowStartBridge._decode_start(b"start")
     with pytest.raises(ValueError, match="start=true"):
@@ -186,6 +196,32 @@ def test_mqtt_start_bridge_dispatches_and_publishes_json_status():
     bridge.close()
 
 
+@pytest.mark.parametrize("field", ["id", "point_id"])
+def test_navigation_rejects_legacy_fields_even_with_robot_id(field):
+    with pytest.raises(ValueError, match="id/point_id"):
+        MqttNavigationGateway._decode_result(
+            json.dumps({"robot_id": "6", "success": True, field: 1}).encode()
+        )
+
+
+def test_navigation_results_require_active_request_and_ignore_retained():
+    gateway = MqttNavigationGateway(host="localhost", robot_id="chassis-6", client=_MqttClient())
+    message = SimpleNamespace(topic="mission/navigation/result", retain=False,
+                              payload=b'{"robot_id":"chassis-6","success":false,"message":"blocked"}')
+    gateway._on_message(None, None, message)
+    assert not gateway._response_ready.is_set()
+    gateway._pending_point_id = "3"
+    message.retain = True
+    gateway._on_message(None, None, message)
+    assert not gateway._response_ready.is_set()
+    message.retain = False
+    gateway._on_message(None, None, message)
+    assert gateway._response_ready.is_set()
+    assert not gateway._response.success
+    assert gateway._response.message == "blocked"
+    gateway.close()
+
+
 class _TriggerHarness(WorkflowMqttTriggerMixin):
     def __init__(self):
         self.statuses = []
@@ -220,6 +256,7 @@ def test_workflow_trigger_accepts_only_configured_robot_id():
         "event": "received",
         "robot_id": "g1d-01",
         "request_id": "good",
+        "workflow": "full",
         "message": "MQTT start request queued",
     }
 
@@ -228,3 +265,38 @@ def test_paho_async_none_return_is_treated_as_accepted():
     assert mqtt_call_succeeded(None)
     assert mqtt_call_succeeded(0)
     assert not mqtt_call_succeeded(1)
+
+
+@pytest.mark.parametrize("workflow", ["full", "navigation"])
+def test_mqtt_dispatch_routes_goal_and_preserves_workflow_in_status(workflow):
+    from concurrent.futures import Future
+    from mission_manager_interfaces.action import ExecuteWorkflow, ExecuteNavigation
+    harness = _TriggerHarness()
+    calls = []
+    terminal = Future()
+    action_type = ExecuteWorkflow if workflow == "full" else ExecuteNavigation
+    result = action_type.Result()
+    result.success = True
+    result.workflow_id = "wf-test"
+    result.final_stage = "COMPLETE"
+    result.completed_task_count = 5
+    def send(goal, feedback_callback):
+        calls.append(type(goal))
+        response = Future()
+        response.set_result(SimpleNamespace(accepted=True, get_result_async=lambda: terminal))
+        return response
+    client = SimpleNamespace(server_is_ready=lambda: True, send_goal_async=send)
+    wrong_client = SimpleNamespace(server_is_ready=lambda: pytest.fail("wrong workflow client"))
+    harness._mqtt_workflow_client = client if workflow == "full" else wrong_client
+    harness._mqtt_navigation_client = client if workflow == "navigation" else wrong_client
+    harness._queue_mqtt_start(MqttStartRequest("request-test", "g1d-01", workflow))
+    harness._dispatch_mqtt_start()
+    assert calls == [action_type.Goal]
+    assert harness.statuses[-1]["event"] == "accepted"
+    assert harness.statuses[-1]["workflow"] == workflow
+    # An aborted ROS goal must never be reported as successful to the platform.
+    terminal.set_result(SimpleNamespace(status=6, result=result))
+    assert harness.statuses[-1]["event"] == "result"
+    assert harness.statuses[-1]["workflow"] == workflow
+    assert not harness.statuses[-1]["success"]
+    assert not harness._mqtt_start_busy

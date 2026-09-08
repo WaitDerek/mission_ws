@@ -5,8 +5,9 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+from action_msgs.msg import GoalStatus
 
-from mission_manager_interfaces.action import ExecuteWorkflow
+from mission_manager_interfaces.action import ExecuteWorkflow, ExecuteNavigation
 from rclpy.action import ActionClient
 
 from .mqtt_start import (
@@ -44,11 +45,16 @@ class WorkflowMqttTriggerMixin:
             self._dispatch_mqtt_start,
             callback_group=self._client_group,
         )
+        self._mqtt_navigation_client = ActionClient(
+            self, ExecuteNavigation,
+            self._string("navigation_action_name"),
+            callback_group=self._client_group)
 
     def _queue_mqtt_start(self, request: MqttStartRequest) -> None:
         normalized = MqttStartRequest(
             request_id=request.request_id or f"mqtt-{uuid.uuid4().hex[:12]}",
             robot_id=request.robot_id,
+            workflow=request.workflow,
         )
         expected_robot_id = self._string("robot_id")
         if normalize_robot_id(normalized.robot_id) != expected_robot_id:
@@ -81,6 +87,7 @@ class WorkflowMqttTriggerMixin:
                 "rejected",
                 normalized.request_id,
                 normalized.robot_id,
+                workflow=normalized.workflow,
                 message="another MQTT workflow request is active",
             )
             return
@@ -88,6 +95,7 @@ class WorkflowMqttTriggerMixin:
             "received",
             normalized.request_id,
             normalized.robot_id,
+            workflow=normalized.workflow,
             message="MQTT start request queued",
         )
 
@@ -97,13 +105,16 @@ class WorkflowMqttTriggerMixin:
         if pending is None:
             return
         request, deadline = pending
-        if not self._mqtt_workflow_client.server_is_ready():
+        navigation = request.workflow == "navigation"
+        client = self._mqtt_navigation_client if navigation else self._mqtt_workflow_client
+        if not client.server_is_ready():
             if time.monotonic() < deadline:
                 return
             self._finish_mqtt_start(
                 "rejected",
                 request.request_id,
                 request.robot_id,
+                workflow=request.workflow,
                 message="workflow Action server is unavailable",
             )
             return
@@ -111,13 +122,13 @@ class WorkflowMqttTriggerMixin:
             if self._mqtt_pending_start != pending:
                 return
             self._mqtt_pending_start = None
-        goal = ExecuteWorkflow.Goal()
+        goal = ExecuteNavigation.Goal() if navigation else ExecuteWorkflow.Goal()
         goal.start = True
         try:
-            future = self._mqtt_workflow_client.send_goal_async(
+            future = client.send_goal_async(
                 goal,
                 feedback_callback=lambda message: self._mqtt_workflow_feedback(
-                    request.request_id, request.robot_id, message
+                    request.request_id, request.robot_id, message, request.workflow
                 ),
             )
         except Exception as exc:  # noqa: BLE001
@@ -125,16 +136,17 @@ class WorkflowMqttTriggerMixin:
                 "rejected",
                 request.request_id,
                 request.robot_id,
+                workflow=request.workflow,
                 message=f"failed to send workflow Action goal: {exc}",
             )
             return
         future.add_done_callback(
             lambda result: self._mqtt_goal_response(
-                request.request_id, request.robot_id, result
+                request.request_id, request.robot_id, result, request.workflow
             )
         )
 
-    def _mqtt_goal_response(self, request_id: str, robot_id, future) -> None:
+    def _mqtt_goal_response(self, request_id: str, robot_id, future, workflow="full") -> None:
         try:
             goal_handle = future.result()
         except Exception as exc:  # noqa: BLE001
@@ -142,14 +154,16 @@ class WorkflowMqttTriggerMixin:
                 "rejected",
                 request_id,
                 robot_id,
+                workflow=workflow,
                 message=f"workflow goal failed: {exc}",
             )
             return
-        if not goal_handle.accepted:
+        if goal_handle is None or not goal_handle.accepted:
             self._finish_mqtt_start(
                 "rejected",
                 request_id,
                 robot_id,
+                workflow=workflow,
                 message="workflow goal was rejected",
             )
             return
@@ -157,20 +171,22 @@ class WorkflowMqttTriggerMixin:
             "accepted",
             request_id,
             robot_id,
+            workflow=workflow,
             message="workflow Action goal accepted",
         )
         goal_handle.get_result_async().add_done_callback(
-            lambda result: self._mqtt_workflow_result(request_id, robot_id, result)
+            lambda result: self._mqtt_workflow_result(request_id, robot_id, result, workflow)
         )
 
     def _mqtt_workflow_feedback(
-        self, request_id: str, robot_id, wrapped_feedback
+        self, request_id: str, robot_id, wrapped_feedback, workflow="full"
     ) -> None:
         feedback = wrapped_feedback.feedback
         self._publish_mqtt_status(
             "feedback",
             request_id,
             robot_id,
+            workflow=workflow,
             workflow_id=feedback.workflow_id,
             stage=feedback.stage,
             point_id=feedback.current_point_id,
@@ -180,7 +196,7 @@ class WorkflowMqttTriggerMixin:
             detail=feedback.detail,
         )
 
-    def _mqtt_workflow_result(self, request_id: str, robot_id, future) -> None:
+    def _mqtt_workflow_result(self, request_id: str, robot_id, future, workflow="full") -> None:
         try:
             wrapped = future.result()
             result = wrapped.result
@@ -189,6 +205,7 @@ class WorkflowMqttTriggerMixin:
                 "result",
                 request_id,
                 robot_id,
+                workflow=workflow,
                 success=False,
                 message=f"workflow result failed: {exc}",
             )
@@ -197,7 +214,8 @@ class WorkflowMqttTriggerMixin:
             "result",
             request_id,
             robot_id,
-            success=bool(result.success),
+            workflow=workflow,
+            success=(int(wrapped.status) == int(GoalStatus.STATUS_SUCCEEDED) and bool(result.success)),
             workflow_id=result.workflow_id,
             message=result.message,
             completed_task_count=int(result.completed_task_count),

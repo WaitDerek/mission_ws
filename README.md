@@ -1,5 +1,10 @@
 # Changan mission workspace
 
+双目 RGB 深度输入适配见
+[`stereo_depth_bridge/README.md`](stereo_depth_bridge/README.md)。该包面向
+Ubuntu 22.04 / ROS 2 Humble / Jetson Orin 上的 Isaac ROS 3.2 ESS，将左右广角
+RGB 相机转换为 FoundationPose 可直接订阅的左目对齐 RGB-D Topic。
+
 这个工作区提供十二个 RealBot Mission Action：
 
 - `/execute_adaptive_box_grasp` (`mission_interfaces/action/ExecuteAdaptiveBoxGrasp`)

@@ -1,0 +1,31 @@
+stereo_rectifier:
+  ros__parameters:
+    left_compressed_topic: /left_head_wide_cam/color/image_raw/compressed
+    left_camera_info_topic: /left_head_wide_cam/color/camera_info
+    right_compressed_topic: /right_head_wide_cam/color/image_raw/compressed
+    right_camera_info_topic: /right_head_wide_cam/color/camera_info
+
+    # auto first uses a valid stereo baseline encoded in CameraInfo.P. If that
+    # is absent, it falls back to the fixed R/T values below.
+    calibration_source: auto
+
+    # OpenCV convention: X_right = R * X_left + T.
+    # Replace these placeholders with the calibrated fixed stereo extrinsic.
+    rotation_left_to_right: [1.0, 0.0, 0.0,
+                             0.0, 1.0, 0.0,
+                             0.0, 0.0, 1.0]
+    translation_left_to_right_m: [0.0, 0.0, 0.0]
+
+    min_baseline_m: 0.0001
+    rectification_alpha: 0.0
+    sync_queue_size: 10
+    sync_slop_sec: 0.05
+
+    # Leave empty to preserve each camera driver's optical frame_id.
+    left_output_frame_id: ""
+    right_output_frame_id: ""
+
+    left_rectified_topic: /stereo/internal/left/image_rect
+    left_rectified_info_topic: /stereo/internal/left/camera_info_rect
+    right_rectified_topic: /stereo/internal/right/image_rect
+    right_rectified_info_topic: /stereo/internal/right/camera_info_rect

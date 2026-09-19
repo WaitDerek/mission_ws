@@ -1,48 +1,40 @@
-"""Start manipulation actions and the MQTT-driven workflow."""
+"""Start manipulation actions"""
 
+from launch_ros.actions import Node
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+from launch_ros.parameter_descriptions import ParameterValue
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
 
 def generate_launch_description() -> LaunchDescription:
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "config_file",
+                "config_dir",
                 default_value=PathJoinSubstitution(
-                    [FindPackageShare("mission_manager"), "config", "mission.yaml"]
+                    [FindPackageShare("mission_manager"), "config"]
                 ),
             ),
             DeclareLaunchArgument(
-                "handeye_file",
-                default_value="handeye_result_12.yaml",
-                description="Hand-eye YAML filename relative to the mission config directory.",
-            ),
-            DeclareLaunchArgument(
-                "taskflow_config_file",
-                default_value=PathJoinSubstitution(
-                    [FindPackageShare("mission_manager"), "config", "taskflow.yaml"]
-                ),
+                "fake_camera_pose",
+                default_value="false",
+                description="Whether to use a fake camera pose",
             ),
             Node(
                 package="mission_manager",
-                executable="mission_manager",
-                name="mission_manager",
+                executable="run_mission",
                 output="screen",
                 parameters=[
-                    LaunchConfiguration("config_file"),
-                    {"handeye_file": LaunchConfiguration("handeye_file")},
+                    {
+                        "config_dir": LaunchConfiguration("config_dir"),
+                        "fake_camera_pose": ParameterValue(
+                            LaunchConfiguration("fake_camera_pose"),
+                            value_type=bool,
+                        ),
+                    }
                 ],
-            ),
-            Node(
-                package="mission_manager",
-                executable="execute_workflow",
-                name="execute_workflow",
-                output="screen",
-                parameters=[LaunchConfiguration("taskflow_config_file")],
-            ),
+            )
         ]
     )

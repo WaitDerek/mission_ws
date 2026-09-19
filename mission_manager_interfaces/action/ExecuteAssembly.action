@@ -1,14 +1,11 @@
 # Assemble a held connector or badge into the detected front-bumper target.
-string request_id
-string target_type
+
+string target
 
 ---
 
 bool success
 string message
-bool contact_detected
-float64 force_delta
-geometry_msgs/PoseStamped target_pose
 
 ---
 

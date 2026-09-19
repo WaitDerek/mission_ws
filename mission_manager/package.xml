@@ -20,6 +20,7 @@
   <depend>task_interfaces</depend>
 
   <exec_depend>launch</exec_depend>
+  <exec_depend>scipy</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>python3-numpy</exec_depend>

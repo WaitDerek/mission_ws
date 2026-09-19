@@ -20,12 +20,12 @@ setup(
     zip_safe=True,
     maintainer="dekc",
     maintainer_email="dekc@example.com",
-    description="G1-D badge tracking mission controller.",
+    description="G1-D Changan Mission Manager.",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
-            "mission_manager = mission_manager.mission_manager:main",
-            "execute_workflow = mission_manager.taskflow.node:main",
+            "run_mission = mission.run:main",
+            "run_navigation = navigation.run:main",
         ],
     },
 )

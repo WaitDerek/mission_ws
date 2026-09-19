@@ -139,15 +139,8 @@ ros2 topic echo /pinocchio_g1d/right_ee_pose --once
 ## 6. 调用 execute_grasp
 
 ```bash
-ros2 action send_goal --feedback \
-  /execute_grasp \
-  mission_manager_interfaces/action/ExecuteGrasp \
-  "{request_id: 'g1d_badge_test',
-    target_label: 0,
-    arm: 'left',
-    publish_pose: true,
-    detection_timeout_sec: 120.0,
-    dry_run: false}"
+ros2 action send_goal --feedback /execute_grasp \
+    mission_manager_interfaces/action/ExecuteGrasp "{}" 
 ```
 
 G1-D 固定使用左臂和 `badge` 模型。`target_label`、`arm`、`publish_pose`、

@@ -2,10 +2,10 @@
     "model_label": "badge",
     "refresh_config": true,
     "movement_switch": [
-        [true , "Prepare pose"          ],
-        [true , "Assemble to the bumper"],
-        [true , "Withdraw"              ],
-        [true , "End"                   ]
+        [false , "Prepare pose"          ],
+        [false , "Assemble to the bumper"],
+        [false , "Withdraw"              ],
+        [false , "End"                   ]
     ],
     "server_timeout_sec": 10.0,
     "left_ee_T_cam": {

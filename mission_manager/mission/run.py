@@ -6,10 +6,11 @@ from .hardware_controller.relay import USBRelay
 from .hardware_controller.sensor import ForceTorque
 from .hardware_controller.robot import RobotController
 
-from .skills.execute_grasp import ExecuteGraspServer
-from .skills.execute_peel import ExecutePeelServer
-from .skills.execute_assembly import ExecuteAssemblyServer
-from .skills.execute_workflow import ExecuteWorkflowServer
+from .skills.execute_peel import ExecutorPeel
+from .skills.execute_grasp import ExecutorGrasp
+from .skills.execute_workflow import ExecutorWorkflow
+from .skills.execute_assembly import ExecutorAssembly
+from .skills.execute_navigation import ExecutorNavigation
 
 
 class MissionManager(Node):
@@ -24,35 +25,45 @@ class MissionManager(Node):
         self.force_sensor = ForceTorque(self)
         self.robot = RobotController(self, self.force_sensor)
 
-        # Mission Server
-        self.grasp_server = ExecuteGraspServer(
+        # Mission Executor        
+        self.executor_navigation = ExecutorNavigation(
             self,
             self.config_dir, 
             self.gripper, self.force_sensor, self.robot
         )
 
-        self.peel_server = ExecutePeelServer(
-            self,
-            self.config_dir,
-            self.gripper, self.force_sensor, self.robot
-        )
-
-        self.assembly_server = ExecuteAssemblyServer(
+        self.executor_grasp = ExecutorGrasp(
             self,
             self.config_dir, 
             self.gripper, self.force_sensor, self.robot
         )
 
-        self.workflow_server = ExecuteWorkflowServer(
+        self.executor_peel = ExecutorPeel(
             self,
             self.config_dir,
+            self.gripper, self.force_sensor, self.robot
+        )
+
+        self.executor_assembly = ExecutorAssembly(
+            self,
+            self.config_dir, 
+            self.gripper, self.force_sensor, self.robot
+        )
+
+        self.workflow_server = ExecutorWorkflow(
+            node=self,
+            config_dir=self.config_dir,
+            executor_navigation=self.executor_navigation,
+            executor_grasp=self.executor_grasp,
+            executor_peel=self.executor_peel,
+            executor_assembly=self.executor_assembly,
         )
 
 
 def main(args=None) -> None:
     rclpy.init(args=args)
     node = MissionManager()
-    executor = MultiThreadedExecutor(num_threads=5)
+    executor = MultiThreadedExecutor(num_threads=6)
     executor.add_node(node)
 
     try:

@@ -1,16 +1,23 @@
 import os
 import time
 import json
+import threading
 import numpy as np
 from .utils import *
 from rclpy.callback_groups import ReentrantCallbackGroup
 from mission_manager_interfaces.action import ExecuteGrasp
-from rclpy.action import ActionServer, CancelResponse, GoalResponse
+
+from rclpy.action import (
+    ActionClient,
+    ActionServer,
+    CancelResponse,
+    GoalResponse
+)
 
 GRIP_CONFIG_FILE = 'grasp_config.json'
 
 
-class ExecuteGraspServer:
+class ExecutorGrasp:
     def __init__(self, node, config_dir, gripper, force_sensor, robot):
 
         self.config_path = os.path.join(config_dir, GRIP_CONFIG_FILE)
@@ -26,9 +33,21 @@ class ExecuteGraspServer:
         self.fake_camera_pose = None
         self.left_ee_T_cam = None
         self.obj_T_above_target = None
+
+        self.wait_server_timeout = 5.0
+        self.wait_accept_timeout = 5.0
+        self.execution_timeout = 100.0
+        
         self._cal_parameter()
         
         self.callback_group = ReentrantCallbackGroup()
+
+        self._grasp_client = ActionClient(
+            self._node,
+            ExecuteGrasp,
+            '/execute_grasp',
+            callback_group=self.callback_group,
+        )
 
         self._action_server = ActionServer(
             node,
@@ -48,7 +67,39 @@ class ExecuteGraspServer:
         self.fake_camera_pose = self.config['fake_camera_pose']
         self.left_ee_T_cam = dict_2_tf_mat(self.config['left_ee_T_cam'])
         self.obj_T_above_target = self.get_obj_T_target()
+    
+    def _wait_for_future(self, future, timeout=2.0):
+        """
+        Wait for a ROS future without spinning the node.
 
+        The ROS executor must already be running elsewhere, normally
+        through a MultiThreadedExecutor in MissionManager.
+        """
+
+        done_event = threading.Event()
+
+        def on_done(_):
+            done_event.set()
+
+        future.add_done_callback(on_done)
+
+        if not done_event.wait(timeout):
+            self._node.get_logger().error(
+                'Timeout waiting for ROS future'
+            )
+
+            return None
+
+        try:
+            return future.result()
+
+        except Exception as e:
+            self._node.get_logger().error(
+                f'ROS future failed: {e}'
+            )
+
+            return None
+    
     def goal_callback(self, goal_request):
         """
         Accept an ExecuteGrasp goal.
@@ -323,4 +374,109 @@ class ExecuteGraspServer:
                 return False
         
         return True
+
+    def client_request(self, workflow_goal_handle, **kwargs):
+    
+        self._node.get_logger().info(
+            'Waiting for /execute_grasp action server...'
+        )
+
+        if not self._grasp_client.wait_for_server(
+            timeout_sec=self.wait_server_timeout
+        ):
+            self._node.get_logger().error(
+                '/execute_grasp action server not available'
+            )
+
+            return False
+
+        # ---------------------------------------------------------
+        # Create goal
+        # ---------------------------------------------------------
+
+        goal_msg = ExecuteGrasp.Goal()
+
+        # Fill goal fields here if ExecuteGrasp has any.
+        #
+        # Example:
+        # goal_msg.object_id = ...
+
+        # ---------------------------------------------------------
+        # Send goal
+        # ---------------------------------------------------------
+
+        self._node.get_logger().info(
+            'Sending /execute_grasp goal'
+        )
+
+        send_goal_future = self._grasp_client.send_goal_async(
+            goal_msg,
+            feedback_callback=self.grasp_feedback_callback,
+        )
+
+        goal_handle = self._wait_for_future(
+            send_goal_future,
+            timeout=self.wait_accept_timeout,
+        )
+
+        if goal_handle is None:
+
+            self._node.get_logger().error(
+                'Timeout or exception while sending /execute_grasp goal'
+            )
+
+            return False
+
+        # ---------------------------------------------------------
+        # Check acceptance
+        # ---------------------------------------------------------
+
+        if not goal_handle.accepted:
+
+            self._node.get_logger().error(
+                '/execute_grasp goal rejected'
+            )
+
+            return False
+
+        self._node.get_logger().info(
+            '/execute_grasp goal accepted'
+        )
+
+        # ---------------------------------------------------------
+        # Wait for result
+        # ---------------------------------------------------------
+
+        result_future = goal_handle.get_result_async()
+
+        result_response = self._wait_for_future(
+            result_future,
+            timeout=self.execution_timeout,
+        )
+
+        if result_response is None:
+
+            self._node.get_logger().error(
+                'Timeout or exception while waiting for '
+                '/execute_grasp result'
+            )
+
+            return False
+
+        result = result_response.result
+
+        if result.success:
+            self._node.get_logger().info('/execute_grasp completed')
+            return True
+        else:
+            self._node.get_logger().error(result.message)
+            return False
+
+    def grasp_feedback_callback(self, feedback_msg):
+
+        feedback = feedback_msg.feedback
+
+        self._node.get_logger().info(
+            f'/execute_grasp feedback: {feedback}'
+        )
 

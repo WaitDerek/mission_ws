@@ -4,12 +4,12 @@
     "refresh_config": true,
     "fake_camera_pose": true,
     "movement_switch": [
-        [true , "Prepare pose"                           ],
-        [true , "Align right camera to the badge"        ],
-        [true , "Move above the film"                    ],
-        [true , "Turn on vaccum suction and move forward"],
-        [true , "Peel off"                               ],
-        [true , "Apply an ending pose"                   ]
+        [false , "Prepare pose"                           ],
+        [false , "Align right camera to the badge"        ],
+        [false , "Move above the film"                    ],
+        [false , "Turn on vaccum suction and move forward"],
+        [false , "Peel off"                               ],
+        [false , "Apply an ending pose"                   ]
     ],
     "right_ee_T_cam": {
         "position": [

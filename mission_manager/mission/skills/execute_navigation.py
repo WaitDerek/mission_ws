@@ -1,15 +1,16 @@
 import os
-import time
 import json
+import threading
 import numpy as np
 from .utils import *
+from rclpy.action import ActionClient
 from rclpy.callback_groups import ReentrantCallbackGroup
 from mission_manager_interfaces.action import NavigateToPoint
 
 NAVIGATION_CONFIG_FILE = 'navigation_config.json'
 
 
-class Navigator:
+class ExecutorNavigation:
     def __init__(self, node, config_dir, gripper, force_sensor, robot):
 
         self.config_path = os.path.join(config_dir, NAVIGATION_CONFIG_FILE)
@@ -22,6 +23,10 @@ class Navigator:
         self._force_sensor = force_sensor
         self._robot = robot
 
+        self.wait_server_timeout = 5.0
+        self.wait_accept_timeout = 5.0
+        self.navigation_timeout = 100.0
+        
         self._cal_parameter()
         self.callback_group = ReentrantCallbackGroup()
 
@@ -71,7 +76,14 @@ class Navigator:
 
             return None
 
-    def navigate_to_point(self, workflow_goal_handle, navi_goal):
+    def client_request(self, workflow_goal_handle, **kwargs):
+
+        navi_goal = kwargs.get('navi_goal', False)
+        if not navi_goal:
+            self._node.get_logger().error(
+                'can not get navigation goal'
+            )
+            return False
 
         self._node.get_logger().info(
             'Waiting for /navigate_to_point action server...'
@@ -103,7 +115,7 @@ class Navigator:
         # ---------------------------------------------------------
 
         self._node.get_logger().info(
-            f'Sending /navigate_to_point goal-{navi_goal['point_id']}'
+            f"Sending /navigate_to_point {navi_goal['request_id']}"
         )
 
         send_goal_future = self._navigate_client.send_goal_async(
@@ -120,7 +132,7 @@ class Navigator:
 
             self._node.get_logger().error(
                 f'Timeout or exception while sending '
-                f'/navigate_to_point goal-{navi_goal['point_id']}'
+                f"/navigate_to_point {navi_goal['request_id']}"
             )
 
             return False
@@ -132,13 +144,13 @@ class Navigator:
         if not goal_handle.accepted:
 
             self._node.get_logger().error(
-                f'/navigate_to_point goal-{navi_goal['point_id']} rejected'
+                f"/navigate_to_point {navi_goal['request_id']} rejected"
             )
 
             return False
 
         self._node.get_logger().info(
-            f'/navigate_to_point goal-{navi_goal['point_id']} accepted'
+            f"/navigate_to_point {navi_goal['request_id']} accepted"
         )
 
         # ---------------------------------------------------------
@@ -156,7 +168,7 @@ class Navigator:
 
             self._node.get_logger().error(
                 f'Timeout or exception while waiting for '
-                f'/navigate_to_point-{navi_goal['point_id']} result'
+                f"/navigate_to_point {navi_goal['request_id']} result"
             )
 
             return False
@@ -164,10 +176,10 @@ class Navigator:
         result = result_response.result
 
         if result.success:
-            self._node.get_logger().info(f'/navigate_to_point-{navi_goal['point_id']} completed')
+            self._node.get_logger().info(f"/navigate_to_point {navi_goal['request_id']} completed")
             return True
         else:
-            self._node.get_logger().error(f'/navigate_to_point-{navi_goal['point_id']} Failed')
+            self._node.get_logger().error(f"/navigate_to_point {navi_goal['request_id']} Failed")
             self._node.get_logger().error(result.message)
             return False
 

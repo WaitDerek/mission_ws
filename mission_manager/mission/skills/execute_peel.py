@@ -1,16 +1,23 @@
 import os
 import time
 import json
+import threading
 import numpy as np
 from .utils import *
 from rclpy.callback_groups import ReentrantCallbackGroup
 from mission_manager_interfaces.action import ExecutePeel
-from rclpy.action import ActionServer, CancelResponse, GoalResponse
+
+from rclpy.action import (
+    ActionClient,
+    ActionServer,
+    CancelResponse,
+    GoalResponse
+)
 
 PEEL_CONFIG_FILE = 'peel_config.json'
 
 
-class ExecutePeelServer:
+class ExecutorPeel:
     def __init__(self, node, config_dir, gripper, force_sensor, robot):
 
         self.config_path = os.path.join(config_dir, PEEL_CONFIG_FILE)
@@ -26,9 +33,21 @@ class ExecutePeelServer:
         self.obj_T_above_target = None
         self.right_ee_T_cam = None
         self.fake_camera_pose = None
+
+        self.wait_server_timeout = 5.0
+        self.wait_accept_timeout = 5.0
+        self.execution_timeout = 100.0
+        
         self._cal_parameter()
                 
         self.callback_group = ReentrantCallbackGroup()
+
+        self._peel_client = ActionClient(
+            self._node,
+            ExecutePeel,
+            '/execute_peel',
+            callback_group=self.callback_group,
+        )
 
         self._action_server = ActionServer(
             node,
@@ -48,7 +67,38 @@ class ExecutePeelServer:
         self.fake_camera_pose = self.config['fake_camera_pose']
         self.obj_T_above_target = self.get_obj_T_target()
         self.right_ee_T_cam = dict_2_tf_mat(self.config['right_ee_T_cam'])
-        
+
+    def _wait_for_future(self, future, timeout=2.0):
+        """
+        Wait for a ROS future without spinning the node.
+
+        The ROS executor must already be running elsewhere, normally
+        through a MultiThreadedExecutor in MissionManager.
+        """
+
+        done_event = threading.Event()
+
+        def on_done(_):
+            done_event.set()
+
+        future.add_done_callback(on_done)
+
+        if not done_event.wait(timeout):
+            self._node.get_logger().error(
+                'Timeout waiting for ROS future'
+            )
+
+            return None
+
+        try:
+            return future.result()
+
+        except Exception as e:
+            self._node.get_logger().error(
+                f'ROS future failed: {e}'
+            )
+
+            return None  
 
     def goal_callback(self, goal_request):
         """
@@ -372,4 +422,108 @@ class ExecutePeelServer:
                 return False
 
         return self._gripper.turn_off('right')
+
+    def client_request(self, workflow_goal_handle, **kwargs):
     
+        self._node.get_logger().info(
+            'Waiting for /execute_peel action server...'
+        )
+
+        if not self._peel_client.wait_for_server(
+            timeout_sec=self.wait_server_timeout
+        ):
+            self._node.get_logger().error(
+                '/execute_peel action server not available'
+            )
+
+            return False
+
+        # ---------------------------------------------------------
+        # Create goal
+        # ---------------------------------------------------------
+
+        goal_msg = ExecutePeel.Goal()
+
+        # ExecutePeel has an empty goal in your current example:
+        #
+        # ros2 action send_goal --feedback /execute_peel \
+        #     mission_manager_interfaces/action/ExecutePeel "{}"
+
+        # ---------------------------------------------------------
+        # Send goal
+        # ---------------------------------------------------------
+
+        self._node.get_logger().info(
+            'Sending /execute_peel goal'
+        )
+
+        send_goal_future = self._peel_client.send_goal_async(
+            goal_msg,
+            feedback_callback=self.peel_feedback_callback,
+        )
+
+        goal_handle = self._wait_for_future(
+            send_goal_future,
+            timeout=self.wait_accept_timeout,
+        )
+
+        if goal_handle is None:
+
+            self._node.get_logger().error(
+                'Timeout or exception while sending /execute_peel goal'
+            )
+
+            return False
+
+        # ---------------------------------------------------------
+        # Check acceptance
+        # ---------------------------------------------------------
+
+        if not goal_handle.accepted:
+
+            self._node.get_logger().error(
+                '/execute_peel goal rejected'
+            )
+
+            return False
+
+        self._node.get_logger().info(
+            '/execute_peel goal accepted'
+        )
+
+        # ---------------------------------------------------------
+        # Wait for result
+        # ---------------------------------------------------------
+
+        result_future = goal_handle.get_result_async()
+
+        result_response = self._wait_for_future(
+            result_future,
+            timeout=self.execution_timeout,
+        )
+
+        if result_response is None:
+
+            self._node.get_logger().error(
+                'Timeout or exception while waiting for '
+                '/execute_peel result'
+            )
+
+            return False
+
+        result = result_response.result
+
+        if result.success:
+            self._node.get_logger().info('/execute_peel completed')
+            return True
+        else:
+            self._node.get_logger().error(result.message)
+            return False
+
+    def peel_feedback_callback(self, feedback_msg):
+
+        feedback = feedback_msg.feedback
+
+        self._node.get_logger().info(
+            f'/execute_peel feedback: {feedback}'
+        )

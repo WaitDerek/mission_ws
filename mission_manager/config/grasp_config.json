@@ -1,13 +1,13 @@
 {
     "model_label": "badge",
     "refresh_config": true,
-    "fake_camera_pose": true,
+    "fake_camera_pose": false,
     "movement_switch": [
-        [true , "Prepare pose"                           ],
-        [true , "Move above the car badge"               ],
-        [true , "Turn on vaccum suction and move forward"],
-        [true , "Grasp the car badge out of the bin"     ],
-        [true, "Apply an ending pose"                   ]
+        [false , "Prepare pose"                           ],
+        [false , "Move above the car badge"               ],
+        [false , "Turn on vaccum suction and move forward"],
+        [false , "Grasp the car badge out of the bin"     ],
+        [false , "Apply an ending pose"                   ]
     ],
     "server_timeout_sec": 10.0,
     "left_ee_T_cam": {
@@ -23,7 +23,7 @@
             0.6723131018891694
         ]
     },
-    "torso_height": 0.05,
+    "torso_height": 0.2,
     "prepare_traj":{
         "left":[
             [
@@ -45,13 +45,13 @@
                 -0.09668873250484467
             ],
             [
-                1.3308002948760986,
-                0.8644581437110901,
-                0.10208163410425186,
-                -0.1043945848941803,
-                -0.7966633439064026,
-                -0.49340254068374634,
-                -0.2948119342327118
+                0.32470059394836426,
+                0.44666406512260437,
+                0.015423697419464588,
+                -0.6150544285774231,
+                -0.6984766125679016,
+                1.0923501253128052,
+                0.236125186085701
             ]
         ],
         "right":[
@@ -97,10 +97,10 @@
     "suction_force_threshold": 4.0,
     "bottom_to_left_ee": 0.19,
     "above_dist": 0.08,
-    "max_approach_distance": 0.13,
+    "max_approach_distance": 0.10,
     "backward_dist": 0.13,
     "offset_matrix": [
-        [  1.000,  0.000,  0.000,  0.035],
+        [  1.000,  0.000,  0.000,  0.045],
         [  0.000,  0.996,  0.087, -0.010],
         [  0.000, -0.087,  0.996,  0.000],
         [  0.000,  0.000,  0.000,  1.000]

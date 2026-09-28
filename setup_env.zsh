@@ -59,7 +59,7 @@ ros2 topic pub --once /g1_d/torso/command \
 
 ros2 topic pub --once /g1_d/torso/command \
   task_interfaces/msg/G1dTorsoCommand \
-  "{control_mode: 3, target_position: 0.05, speed: 0.4, initialize: false}"
+  "{control_mode: 3, target_position: 0.0, speed: 0.4, initialize: false}"
 # ---------------------------------------------------------------------------
 
 

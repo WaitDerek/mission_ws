@@ -46,8 +46,8 @@ class RobotController:
         # Configuration
         # ------------------------------------------------------------------
 
-        self.server_timeout = 5.0
-        self.wait_cancel_timeout = 20.0
+        self.server_timeout = 20.0
+        self.wait_cancel_timeout = 30.0
         self.loop_interval = 0.01
         
         # ------------------------------------------------------------------

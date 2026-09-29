@@ -31,10 +31,12 @@
             }
         },
         {
-            "if_exec": true,
+            "if_exec": false,
             "description": "Grasp car badge",
             "executor": "ExecutorGrasp",
             "params": {
+                "model_label": "badge",
+                "if_update_config": true
             }
         },
         {
@@ -75,7 +77,7 @@
             }
         },
         {
-            "if_exec": true,
+            "if_exec": false,
             "description": "Assemble car badge",
             "executor": "ExecutorAssembly",
             "params": {

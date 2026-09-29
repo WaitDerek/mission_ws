@@ -5,10 +5,9 @@ source /opt/ros/foxy/setup.zsh
 source /home/unitree/code/vision_ws/install/setup.zsh
 ros2 launch realsense_d405_bringup dual_d405.launch.py
 
-cd /home/unitree/code/vision_ws/src/hangcha-perception 
-conda deactivate
+cd /home/unitree/code/vision_ws/src/hangcha-perception
 conda activate changan
-export VISION_WS=/home/unitree/code/vision_ws/src/hangcha-perception
+export VISION_WS=/home/unitree/code/vision_ws/
 source /opt/ros/foxy/setup.zsh
 source /home/unitree/code/vision_ws/install/setup.zsh
 export ROS_DOMAIN_ID=23
@@ -59,7 +58,7 @@ ros2 topic pub --once /g1_d/torso/command \
 
 ros2 topic pub --once /g1_d/torso/command \
   task_interfaces/msg/G1dTorsoCommand \
-  "{control_mode: 3, target_position: 0.0, speed: 0.4, initialize: false}"
+  "{control_mode: 3, target_position: 0.10, speed: 0.2, initialize: false}"
 # ---------------------------------------------------------------------------
 
 
@@ -140,7 +139,7 @@ ros2 launch mission_manager mission.launch.py \
     config_dir:=/home/unitree/code/mission_ws/src/mission_manager/config
 
 ros2 action send_goal --feedback /execute_grasp \
-    mission_manager_interfaces/action/ExecuteGrasp "{}" 
+    mission_manager_interfaces/action/ExecuteGrasp "{model_label: 'badge_connector', if_update_config: true}" 
 
 ros2 action send_goal --feedback /execute_peel \
     mission_manager_interfaces/action/ExecutePeel "{}" 
@@ -177,22 +176,15 @@ source /home/unitree/code/dual_arm_ws/install/setup.zsh
 ros2 action send_goal /move_arm_j task_interfaces/action/MoveArmJoints \
 "{
   left_joints: [
-1.022637963294983,
-                0.40355679392814636,
-                1.0049611330032349,
-                0.26080071926116943,
-                -0.371343195438385,
-                -0.26601386070251465,
-                -1.610739827156067
+    0.11159710586071014,
+    0.03385543450713158,
+    0.4069842994213104,
+    1.2657978534698486,
+    -0.20814202725887299,
+    -1.3314114809036255,
+    -0.6657357215881348
   ], 
   right_joints: [
-  -0.1438107043504715,
-                -0.26147183775901794,
-                0.1994294971227646,
-                1.3429043292999268,
-                0.13344435393810272,
-                -0.20543359220027924,
-                0.3900386095046997
 
   ],
   dry_run: false, 

@@ -29,6 +29,9 @@ class ExecutorAssembly:
         self._force_sensor = force_sensor
         self._robot = robot
 
+        self.left_ee_T_cam = None
+        self.obj_T_above_target = None
+
         self.wait_server_timeout = 5.0
         self.wait_accept_timeout = 5.0
         self.execution_timeout = 100.0
@@ -59,7 +62,28 @@ class ExecutorAssembly:
         )
 
     def _cal_parameter(self):
-        return
+        self.left_ee_T_cam = dict_2_tf_mat(self.config['left_ee_T_cam'])
+        self.obj_T_above_target = self.get_obj_T_target()
+
+    def get_obj_T_target(self):
+        t1 = np.array([
+            [  0.0, -1.0,  0.0,  0.0],
+            [  1.0,  0.0,  0.0,  0.0],
+            [  0.0,  0.0,  1.0,  0.0],
+            [  0.0,  0.0,  0.0,  1.0],
+        ])
+        t2 = np.array([
+            [  1.0,  0.0,  0.0,  0.0],
+            [  0.0,  0.0, -1.0,  0.0],
+            [  0.0,  1.0,  0.0,  0.0],
+            [  0.0,  0.0,  0.0,  1.0],
+        ])
+        rot = np.array(self.config['offset_matrix']) @ t1 @ t2
+
+        t3 = np.eye(4)
+        t3[1, 3] = -self.config['bottom_to_left_ee']-self.config['above_dist']
+        obj_T_above_target = rot @ t3
+        return obj_T_above_target
 
     def _wait_for_future(self, future, timeout=2.0):
         """
@@ -175,9 +199,15 @@ class ExecutorAssembly:
         movement_i += 1
 
         if self.config['movement_switch'][movement_i][0]:
+            if not self.move_above():
+                goal_handle.abort()
+                return self.make_result(False, "[Assemble Car Badge] Move Above Failed")
+        movement_i += 1
+
+        if self.config['movement_switch'][movement_i][0]:
             if not self.assemble_move_t():
                 goal_handle.abort()
-                return self.make_result(False, "[Assemble Car Badge] Move Forward Failed")
+                return self.make_result(False, "[Assemble Car Badge] Assembly Failed")
         movement_i += 1
 
         if self.config['movement_switch'][movement_i][0]:
@@ -213,6 +243,24 @@ class ExecutorAssembly:
                 return False
         time.sleep(2)
         return True
+
+    def move_above(self):
+        base_T_left_ee, _ = self._robot.get_base_T_ee()
+        if base_T_left_ee is None:
+            return False
+
+        cam_T_obj = self._robot.get_cam_T_obj(self.config['connector_label'])
+        if cam_T_obj is None :
+            return False
+
+        base_T_obj = base_T_left_ee @ self.left_ee_T_cam @ cam_T_obj
+        base_T_down_tar = base_T_obj @ self.obj_T_above_target
+        down_target_pose = (mat_2_pose_array(base_T_down_tar))
+        self._node.get_logger().info(
+            f"Down target pose:\n{base_T_down_tar}"
+        )
+
+        return self._robot.move_p(down_target_pose, [])
 
     def assemble_move_t(self):
         left_pose = [0.0] * 6

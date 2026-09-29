@@ -81,7 +81,7 @@ class ExecutorNavigation:
         navi_goal = kwargs.get('navi_goal', False)
         if not navi_goal:
             self._node.get_logger().error(
-                'can not get navigation goal'
+                'Can not get navigation goal'
             )
             return False
 

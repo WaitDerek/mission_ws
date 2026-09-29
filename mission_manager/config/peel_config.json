@@ -4,7 +4,7 @@
     "refresh_config": true,
     "fake_camera_pose": true,
     "movement_switch": [
-        [false , "Prepare pose"                           ],
+        [true , "Prepare pose"                           ],
         [false , "Align right camera to the badge"        ],
         [false , "Move above the film"                    ],
         [false , "Turn on vaccum suction and move forward"],

@@ -2,6 +2,9 @@
 # Legacy goal fields remain for command-line compatibility; G1-D always uses
 # the left arm and the configured badge model.
 
+string model_label
+bool if_update_config
+
 ---
 
 bool success

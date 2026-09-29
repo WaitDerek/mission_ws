@@ -135,8 +135,10 @@ source /home/unitree/code/driver_ws/install_foxy/setup.zsh
 source /home/unitree/code/mission_ws/install/setup.zsh
 PYTHONPATH=/home/unitree/miniconda3/envs/changan/lib/python3.8/site-packages:$PYTHONPATH
 
+
 ros2 launch mission_manager mission.launch.py \
     config_dir:=/home/unitree/code/mission_ws/src/mission_manager/config
+
 
 ros2 action send_goal --feedback /execute_grasp \
     mission_manager_interfaces/action/ExecuteGrasp "{model_label: 'badge_connector', if_update_config: true}" 
@@ -145,7 +147,7 @@ ros2 action send_goal --feedback /execute_peel \
     mission_manager_interfaces/action/ExecutePeel "{}" 
 
 ros2 action send_goal --feedback /execute_assembly \
-    mission_manager_interfaces/action/ExecuteAssembly "{}" 
+    mission_manager_interfaces/action/ExecuteAssembly "{assemble_obj: 'badge_connector', if_update_config: true}" 
   
 ros2 action send_goal --feedback /execute_workflow \
     mission_manager_interfaces/action/ExecuteWorkflow "{}" 

@@ -1,6 +1,5 @@
 {
-    "connector_label": "badge_connector",
-    "refresh_config": true,
+    "vision_model_label": "badge_connector",
     "movement_switch": [
         [false , "Prepare pose"          ],
         [false , "Move above the connector"],

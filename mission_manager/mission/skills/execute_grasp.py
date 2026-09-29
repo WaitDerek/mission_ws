@@ -162,7 +162,7 @@ class ExecutorGrasp:
             self._node.get_logger().info('current config: badge_connector')
         else:
             self.current_config = self.badge_config
-            self._node.get_logger().info(f'current config: badge')
+            self._node.get_logger().info('current config: badge')
         
         self._node.get_logger().info("Start Grasping Car Badge")
         self.publish_feedback(
@@ -383,7 +383,7 @@ class ExecutorGrasp:
 
     def client_request(self, workflow_goal_handle, **kwargs):
 
-        model_label = kwargs.get('model_label')
+        model_label = kwargs.get('model_label', None)
         if (not model_label or \
             model_label not in ('badge', 'badge_connector')
         ):

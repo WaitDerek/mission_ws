@@ -1,6 +1,7 @@
 # Assemble a held connector or badge into the detected front-bumper target.
 
-string target
+string assemble_obj
+bool if_update_config
 
 ---
 

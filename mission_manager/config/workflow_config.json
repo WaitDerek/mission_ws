@@ -10,14 +10,53 @@
                     "start": true, 
                     "point_id": 1, 
                     "use_custom_pos": true, 
-                    "pos": [-0.01, -0.02, 0.03],
+                    "pos": [0.1, 0.01, 0.06],
                     "dry_run": false
                 }
             }
         },
         {
             "if_exec": false,
-            "description": "Navigate to grasp point",
+            "description": "Navigate to grasp badge connector",
+            "executor": "ExecutorNavigation",
+            "params": {
+                "navi_goal":  {
+                    "request_id": "grasp-connector-point", 
+                    "start": true, 
+                    "point_id": 1, 
+                    "use_custom_pos": true, 
+                    "pos": [2.64, 2.52, 1.65], 
+                    "dry_run": false
+                }
+            }
+        },
+        {
+            "if_exec": false,
+            "description": "Navigate to assembly point",
+            "executor": "ExecutorNavigation",
+            "params": {
+                "navi_goal":  {
+                    "request_id": "assembly-point", 
+                    "start": true, 
+                    "point_id": 1, 
+                    "use_custom_pos": true, 
+                    "pos": [-1.31, 2.42, 1.57],
+                    "dry_run": false
+                }
+            }
+        },
+        {
+            "if_exec": false,
+            "description": "Assemble connector",
+            "executor": "ExecutorAssembly",
+            "params": {
+                "assemble_obj": "badge_connector",
+                "if_update_config": true
+            }
+        },
+        {
+            "if_exec": false,
+            "description": "Navigate to grasp car badge",
             "executor": "ExecutorNavigation",
             "params": {
                 "navi_goal":  {
@@ -25,7 +64,7 @@
                     "start": true, 
                     "point_id": 1, 
                     "use_custom_pos": true, 
-                    "pos": [2.27, -1.22, -1.32], 
+                    "pos": [2.04, 2.6, 1.51], 
                     "dry_run": false
                 }
             }
@@ -49,7 +88,7 @@
                     "start": true, 
                     "point_id": 1, 
                     "use_custom_pos": true, 
-                    "pos": [3.77, 0.05, 0.03], 
+                    "pos": [0.75, 1.0, 3.1], 
                     "dry_run": false
                 }
             }
@@ -71,7 +110,7 @@
                     "start": true, 
                     "point_id": 1, 
                     "use_custom_pos": true, 
-                    "pos": [5.0, -1.3, -1.32],
+                    "pos": [-1.31, 2.42, 1.57],
                     "dry_run": false
                 }
             }
@@ -81,6 +120,8 @@
             "description": "Assemble car badge",
             "executor": "ExecutorAssembly",
             "params": {
+                "assemble_obj": "badge",
+                "if_update_config": true
             }
         },
         {
@@ -93,7 +134,7 @@
                     "start": true, 
                     "point_id": 1, 
                     "use_custom_pos": true, 
-                    "pos": [-1.18, -0.61, -0.61],
+                    "pos": [-1.05, -1.68, 1.57],
                     "dry_run": false
                 }
             }

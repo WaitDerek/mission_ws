@@ -40,11 +40,14 @@ mission_controller:
     place_box_test_waist_z_search_step_m: 0.040
     place_box_test_waist_ik_min_margin_deg: 2.0
     place_box_test_waist_ik_max_step_deg: 75.0
+    place_box_test_table_descent_velocity_percent: 5.0
     # Retain legacy segmented descent; select it again with mode: segmented.
     place_box_test_descent_mode: continuous
     # Measured Link8 Z in base_footprint, captured 2026-09-30 during installation.
     place_box_test_continuous_left_min_z_footprint_m: 0.975131
     place_box_test_continuous_right_min_z_footprint_m: 0.966566
+    place_box_test_continuous_left_velocity_percent: 10.0
+    place_box_test_continuous_right_velocity_percent: 15.0
     place_box_test_continuous_max_drop_difference_m: 0.03
     place_box_test_descent_y_search_enabled: false  # Legacy compatibility; direct MoveL does not search.
     place_box_test_descent_work_y_step_m: 0.002
@@ -161,9 +164,10 @@ mission_controller:
     place_box_test_post_release_arm_movej_enabled: true
     place_box_test_post_release_tool_y_retreat_enabled: true
     place_box_test_post_release_tool_y_retreat_m: 0.001
+    place_box_test_post_release_tool_y_retreat_velocity_percent: 3.0
     place_box_test_post_release_tool_y_retreat_timeout_sec: 30.0
     place_box_test_post_release_arm_joint2_angle_deg: 60.0
-    place_box_test_post_release_arm_movej_velocity_percent: 12.0
+    place_box_test_post_release_arm_movej_velocity_percent: 15.0
     place_box_test_post_release_arm_movej_position_tolerance_rad: 0.035
     place_box_test_post_release_arm_movej_velocity_tolerance_rad_sec: 0.035
     place_box_test_post_release_arm_movej_feedback_max_age_sec: 1.0
@@ -193,7 +197,7 @@ mission_controller:
     - 0
     - 0
     place_box_test_post_release_arm_home_command_units_per_degree: 1000.0
-    place_box_test_post_release_arm_home_velocity_percent: 12.0
+    place_box_test_post_release_arm_home_velocity_percent: 15.0
     place_box_test_post_release_arm_home_position_tolerance_rad: 0.035
     place_box_test_post_release_arm_home_velocity_tolerance_rad_sec: 0.035
     place_box_test_post_release_arm_home_feedback_max_age_sec: 1.0

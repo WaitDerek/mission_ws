@@ -101,7 +101,7 @@ mission_controller:
     direct_movel_service_name: /realbot/movel
     direct_movel_target_mode: camera_offset_box_orientation
     direct_movel_use_current_fixture_orientation: false
-    direct_movel_velocity_percent: 12.0
+    direct_movel_velocity_percent: 15.0
     direct_sdk_connect_level: 3
     direct_sdk_left_ip: 192.168.127.18
     direct_sdk_motion_timeout_sec: 120.0

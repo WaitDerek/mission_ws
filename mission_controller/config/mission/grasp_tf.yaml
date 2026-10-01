@@ -28,6 +28,7 @@ mission_controller:
     # Interactive calibration-only hold point. Keep false in normal missions.
     grasp_box_tf_calibration_stop_after_initial_dual_target_enabled: false
     grasp_box_tf_post_waist_pre_movej_command_units_per_degree: 1000.0
+    grasp_box_tf_post_waist_pre_movej_velocity_percent: 50.0
     grasp_box_tf_post_waist_pre_movej_timeout_sec: 120.0
     grasp_box_tf_post_waist_pre_movej_left_joint_units_bigbox_layer1:
     - -26941
@@ -177,27 +178,27 @@ mission_controller:
     - 0
     - 0
     - 0
-    grasp_box_tf_body_home_carry_left_movel_velocity_percent: 12.0
+    grasp_box_tf_body_home_carry_left_movel_velocity_percent: 10.0
     grasp_box_tf_body_home_carry_orientation_tolerance_rad: 0.0872665
     grasp_box_tf_body_home_carry_position_tolerance_m: 0.01
-    grasp_box_tf_body_home_carry_right_movel_velocity_percent: 12.0
+    grasp_box_tf_body_home_carry_right_movel_velocity_percent: 15.0
     # Layer/model-specific carry speeds; initialized from the unified 12% value.
-    grasp_box_tf_body_home_carry_left_movel_velocity_percent_bigbox_layer1: 12.0
-    grasp_box_tf_body_home_carry_right_movel_velocity_percent_bigbox_layer1: 12.0
-    grasp_box_tf_body_home_carry_left_movel_velocity_percent_bigbox_layer2: 12.0
-    grasp_box_tf_body_home_carry_right_movel_velocity_percent_bigbox_layer2: 12.0
-    grasp_box_tf_body_home_carry_left_movel_velocity_percent_bigbox_layer3: 12.0
-    grasp_box_tf_body_home_carry_right_movel_velocity_percent_bigbox_layer3: 12.0
-    grasp_box_tf_body_home_carry_left_movel_velocity_percent_bigbox_layer4: 12.0
-    grasp_box_tf_body_home_carry_right_movel_velocity_percent_bigbox_layer4: 12.0
-    grasp_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer1: 12.0
-    grasp_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer1: 12.0
-    grasp_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer2: 12.0
-    grasp_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer2: 12.0
-    grasp_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer3: 12.0
-    grasp_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer3: 12.0
-    grasp_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer4: 12.0
-    grasp_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer4: 12.0
+    grasp_box_tf_body_home_carry_left_movel_velocity_percent_bigbox_layer1: 10.0
+    grasp_box_tf_body_home_carry_right_movel_velocity_percent_bigbox_layer1: 15.0
+    grasp_box_tf_body_home_carry_left_movel_velocity_percent_bigbox_layer2: 10.0
+    grasp_box_tf_body_home_carry_right_movel_velocity_percent_bigbox_layer2: 15.0
+    grasp_box_tf_body_home_carry_left_movel_velocity_percent_bigbox_layer3: 10.0
+    grasp_box_tf_body_home_carry_right_movel_velocity_percent_bigbox_layer3: 15.0
+    grasp_box_tf_body_home_carry_left_movel_velocity_percent_bigbox_layer4: 10.0
+    grasp_box_tf_body_home_carry_right_movel_velocity_percent_bigbox_layer4: 15.0
+    grasp_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer1: 10.0
+    grasp_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer1: 15.0
+    grasp_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer2: 10.0
+    grasp_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer2: 15.0
+    grasp_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer3: 10.0
+    grasp_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer3: 15.0
+    grasp_box_tf_body_home_carry_left_movel_velocity_percent_smallbox_layer4: 10.0
+    grasp_box_tf_body_home_carry_right_movel_velocity_percent_smallbox_layer4: 15.0
     # Layer/model-specific waist MoveJ speeds; layer 1 is deliberately slow.
     grasp_box_tf_body_home_carry_body_velocity_bigbox_layer1: 3
     grasp_box_tf_body_home_carry_body_velocity_bigbox_layer2: 12
@@ -222,6 +223,7 @@ mission_controller:
     # Force-carry bilateral clamp; signed Tool-Y force changes from baseline (N).
     grasp_box_tf_force_carry_target_force_left_n: -75.0
     grasp_box_tf_force_carry_target_force_right_n: 75.0
+    grasp_box_tf_force_clamp_sdk_speed_mm_s: 5.0
     grasp_box_tf_force_clamp_sdk_max_travel_left_m: 0.20
     grasp_box_tf_force_clamp_sdk_max_travel_right_m: 0.20
     grasp_box_tf_force_clamp_sdk_control_period_sec: 0.02

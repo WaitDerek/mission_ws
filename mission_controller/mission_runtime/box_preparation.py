@@ -14,7 +14,8 @@ try:
 except ModuleNotFoundError:
     EstimateObjectPose = None
 
-from .common import MissionError
+from .common import MissionCanceled, MissionError
+from .realman_sdk_adapter import RealManSdkCanceled, RealManSdkError
 
 
 class BoxPreparationMixin:
@@ -649,6 +650,9 @@ class BoxPreparationMixin:
         arm: str,
         *,
         target_joint_indices: tuple[int, ...] = (0,),
+        use_python_sdk: bool = False,
+        phase: str = "pre-detection",
+        feedback_stage: str | None = None,
     ) -> str:
         """Move selected detection joints while preserving the other live joints."""
         if arm not in ("left", "right"):
@@ -673,7 +677,7 @@ class BoxPreparationMixin:
             sequence_before <= 0 or len(positions) < 7 or age > max_age
         ):
             raise MissionError(
-                f"fresh {arm}-arm feedback required before detection intermediate MoveJ: "
+                f"fresh {arm}-arm feedback required before {phase} intermediate MoveJ: "
                 f"sequence={sequence_before}, joints={len(positions)}, "
                 f"feedback_age_sec={age:.3f}, timeout_sec={max_age:.1f}"
             )
@@ -697,49 +701,77 @@ class BoxPreparationMixin:
             f"joint{index + 1}" for index in live_joint_indices
         ) or "none"
         detail = (
-            f"pre-detection {arm} arm intermediate MoveJ: "
+            f"{phase} {arm} arm intermediate MoveJ: "
             f"device={self._integer(f'{prefix}_device')}, "
             f"target={target_joint_text}, live={live_joint_text}, "
             f"joint_units={units}"
         )
+        target_stage = (
+            f"{feedback_stage}_TARGETS"
+            if feedback_stage
+            else f"PRE_DETECTION_{arm.upper()}_INTERMEDIATE_TARGETS"
+        )
+        moving_stage = (
+            f"MOVING_{feedback_stage}"
+            if feedback_stage
+            else f"MOVING_{arm.upper()}_ARM_TO_DETECTION_INTERMEDIATE_POSE"
+        )
+        reached_stage = (
+            f"{feedback_stage}_REACHED"
+            if feedback_stage
+            else f"{arm.upper()}_ARM_DETECTION_INTERMEDIATE_REACHED"
+        )
         self._publish_box_grasp_feedback(
-            goal_handle, f"PRE_DETECTION_{arm.upper()}_INTERMEDIATE_TARGETS", detail
+            goal_handle, target_stage, detail
         )
         if dry_run:
             return f"{detail}; skipped in dry-run"
 
-        self._wait_for_service(
-            self.body_command_client,
-            self._string("box_joint1_command_service_name"),
-            goal_handle,
-        )
-        payload = {
-            "device": self._integer(f"{prefix}_device"),
-            "payload": {
-                "command": "movej",
-                "joint": units,
-                "v": self._integer(f"{prefix}_velocity"),
-                "r": self._integer(f"{prefix}_blend_radius"),
-                "trajectory_connect": self._integer(f"{prefix}_trajectory_connect"),
-            },
-        }
-        request = StringCmd.Request()
-        request.data = json.dumps(payload, separators=(",", ":")) + "\r\n"
         self._publish_box_grasp_feedback(
             goal_handle,
-            f"MOVING_{arm.upper()}_ARM_TO_DETECTION_INTERMEDIATE_POSE",
-            f"sending the {arm}-arm intermediate detection MoveJ command",
+            moving_stage,
+            f"sending the {arm}-arm {phase} intermediate MoveJ command "
+            "via /robot/command",
         )
-        response = self._wait_future(
-            self.body_command_client.call_async(request),
-            goal_handle,
-            f"calling pre-detection {arm} arm intermediate MoveJ",
-            self._float("dependency_wait_timeout_sec"),
-            cancel_local_future=False,
-        )
-        self._parse_string_command_response(
-            response, f"pre-detection {arm} arm intermediate MoveJ"
-        )
+        if use_python_sdk:
+            motion_result = self._execute_pre_detection_arm_sdk_movej(
+                goal_handle,
+                arm,
+                units,
+                prefix,
+                f"{phase} {arm} arm intermediate MoveJ",
+            )
+        else:
+            self._wait_for_service(
+                self.body_command_client,
+                self._string("box_joint1_command_service_name"),
+                goal_handle,
+            )
+            payload = {
+                "device": self._integer(f"{prefix}_device"),
+                "payload": {
+                    "command": "movej",
+                    "joint": units,
+                    "v": self._integer(f"{prefix}_velocity"),
+                    "r": self._integer(f"{prefix}_blend_radius"),
+                    "trajectory_connect": self._integer(
+                        f"{prefix}_trajectory_connect"
+                    ),
+                },
+            }
+            request = StringCmd.Request()
+            request.data = json.dumps(payload, separators=(",", ":")) + "\r\n"
+            response = self._wait_future(
+                self.body_command_client.call_async(request),
+                goal_handle,
+                f"calling {phase} {arm} arm intermediate MoveJ",
+                self._float("dependency_wait_timeout_sec"),
+                cancel_local_future=False,
+            )
+            self._parse_string_command_response(
+                response, f"{phase} {arm} arm intermediate MoveJ"
+            )
+            motion_result = "/robot/command MoveJ accepted"
         tolerance = self._float(f"{prefix}_position_tolerance_rad")
         velocity_tolerance = self._float(f"{prefix}_velocity_tolerance_rad_sec")
         stable_required = self._integer(f"{prefix}_stable_samples")
@@ -749,7 +781,7 @@ class BoxPreparationMixin:
         while time.monotonic() < deadline:
             self._check_canceled(
                 goal_handle,
-                f"while verifying the {arm}-arm intermediate detection MoveJ",
+                f"while verifying the {arm}-arm {phase} intermediate MoveJ",
             )
             now = time.monotonic()
             with self.joint_state_lock:
@@ -786,15 +818,46 @@ class BoxPreparationMixin:
             if stable_samples >= stable_required:
                 self._publish_box_grasp_feedback(
                     goal_handle,
-                    f"{arm.upper()}_ARM_DETECTION_INTERMEDIATE_REACHED",
-                    f"{arm} arm reached the intermediate detection pose",
+                    reached_stage,
+                    f"{arm} arm reached the {phase} intermediate pose",
                 )
-                return f"{detail}; arm_feedback=confirmed"
+                return f"{detail}; {motion_result}; arm_feedback=confirmed"
             time.sleep(0.02)
         raise MissionError(
-            f"{arm} arm did not reach the intermediate detection pose: "
+            f"{arm} arm did not reach the {phase} intermediate pose: "
             f"{latest_detail}; timeout_sec={self._float(f'{prefix}_timeout_sec'):.1f}"
         )
+
+    def _execute_pre_detection_arm_sdk_movej(
+        self,
+        goal_handle,
+        arm: str,
+        joint_units: list[int],
+        parameter_prefix: str,
+        description: str,
+    ) -> str:
+        """Send one fixed detection MoveJ through the adapter's ROS transport."""
+        adapter = getattr(self, "direct_sdk_adapter", None)
+        if adapter is None:
+            raise MissionError(f"{description} requires the Python SDK adapter")
+        units_per_degree = self._float(
+            f"{parameter_prefix}_command_units_per_degree"
+        )
+        joint_degrees = [float(value) / units_per_degree for value in joint_units]
+        try:
+            return adapter.execute_single_movej(
+                arm,
+                joint_degrees,
+                self._integer(f"{parameter_prefix}_velocity"),
+                self._integer(f"{parameter_prefix}_blend_radius"),
+                self._integer(f"{parameter_prefix}_trajectory_connect"),
+                cancel_requested=lambda: goal_handle.is_cancel_requested,
+                timeout_sec=self._float(f"{parameter_prefix}_timeout_sec"),
+            )
+        except RealManSdkCanceled as exc:
+            raise MissionCanceled(str(exc)) from exc
+        except (RealManSdkError, ValueError) as exc:
+            raise MissionError(f"{description} failed: {exc}") from exc
 
     def _box_layer_pre_detection_arm_movej_joint_units(
         self,
@@ -888,8 +951,21 @@ class BoxPreparationMixin:
             tf_mode=tf_mode,
             drag_mode=drag_mode,
         )
-        if tf_mode and drag_mode and arm == "left":
-            # The left camera/arm must enter its DragBox TF observation pose in
+        use_python_sdk = tf_mode and not drag_mode and arm == "right"
+        if use_python_sdk:
+            # GraspBox TF uses the right wrist camera. Move Joint2 first so
+            # Joint1 and the remaining joints cannot sweep through the box,
+            # then execute the complete calibrated seven-axis target.
+            intermediate_detail = self._execute_pre_detection_arm_intermediate_movej(
+                goal_handle,
+                dry_run,
+                units,
+                arm,
+                target_joint_indices=(1,),
+                use_python_sdk=True,
+            )
+        elif tf_mode and drag_mode:
+            # The selected camera arm enters its DragBox TF observation pose in
             # a safe order: Joint2 first, then Joint1+Joint2, then the
             # remaining joints. Each stage re-reads live feedback so joints
             # not being commanded in that stage remain unchanged.
@@ -920,7 +996,9 @@ class BoxPreparationMixin:
         target = [math.radians(float(value) / units_per_degree) for value in units]
         device = self._integer(f"{prefix}_device")
         detail = (
-            f"pre-detection {arm} arm MoveJ: " f"device={device}, joint_units={units}"
+            f"pre-detection {arm} arm MoveJ: "
+            f"device={device}, joint_units={units}, "
+            f"command_backend={'python_sdk' if use_python_sdk else 'robot_command'}"
         )
         self._publish_box_grasp_feedback(
             goal_handle, f"PRE_DETECTION_{arm.upper()}_MOVEJ_TARGETS", detail
@@ -928,36 +1006,51 @@ class BoxPreparationMixin:
         if dry_run:
             return f"{intermediate_detail}; {detail}; skipped in dry-run"
 
-        service_name = self._string("box_joint1_command_service_name")
-        self._wait_for_service(self.body_command_client, service_name, goal_handle)
         with self.joint_state_lock:
             sequence_before = self.latest_slave_arm_state_sequences.get(arm, 0)
             pose_sequence_before = self.latest_slave_arm_pose_sequences.get(arm, 0)
-        payload = {
-            "device": device,
-            "payload": {
-                "command": "movej",
-                "joint": units,
-                "v": self._integer(f"{prefix}_velocity"),
-                "r": self._integer(f"{prefix}_blend_radius"),
-                "trajectory_connect": self._integer(f"{prefix}_trajectory_connect"),
-            },
-        }
-        request = StringCmd.Request()
-        request.data = json.dumps(payload, separators=(",", ":")) + "\r\n"
         self._publish_box_grasp_feedback(
             goal_handle,
             f"MOVING_{arm.upper()}_ARM_TO_DETECTION_POSE",
-            f"sending the fixed {arm}-arm detection MoveJ command",
+            f"sending the fixed {arm}-arm detection MoveJ command "
+            "via /robot/command",
         )
-        response = self._wait_future(
-            self.body_command_client.call_async(request),
-            goal_handle,
-            f"calling pre-detection {arm} arm MoveJ",
-            self._float("dependency_wait_timeout_sec"),
-            cancel_local_future=False,
-        )
-        self._parse_string_command_response(response, f"pre-detection {arm} arm MoveJ")
+        if use_python_sdk:
+            motion_result = self._execute_pre_detection_arm_sdk_movej(
+                goal_handle,
+                arm,
+                units,
+                prefix,
+                f"pre-detection {arm} arm final MoveJ",
+            )
+        else:
+            service_name = self._string("box_joint1_command_service_name")
+            self._wait_for_service(self.body_command_client, service_name, goal_handle)
+            payload = {
+                "device": device,
+                "payload": {
+                    "command": "movej",
+                    "joint": units,
+                    "v": self._integer(f"{prefix}_velocity"),
+                    "r": self._integer(f"{prefix}_blend_radius"),
+                    "trajectory_connect": self._integer(
+                        f"{prefix}_trajectory_connect"
+                    ),
+                },
+            }
+            request = StringCmd.Request()
+            request.data = json.dumps(payload, separators=(",", ":")) + "\r\n"
+            response = self._wait_future(
+                self.body_command_client.call_async(request),
+                goal_handle,
+                f"calling pre-detection {arm} arm MoveJ",
+                self._float("dependency_wait_timeout_sec"),
+                cancel_local_future=False,
+            )
+            self._parse_string_command_response(
+                response, f"pre-detection {arm} arm MoveJ"
+            )
+            motion_result = "/robot/command MoveJ accepted"
         self._publish_box_grasp_feedback(
             goal_handle,
             f"WAITING_FOR_{arm.upper()}_ARM_DETECTION_POSE",
@@ -1004,7 +1097,10 @@ class BoxPreparationMixin:
                     f"{arm.upper()}_ARM_DETECTION_POSE_REACHED",
                     f"{arm} arm reached the fixed detection pose with fresh EEPose feedback",
                 )
-                return f"{detail}; arm_feedback=confirmed"
+                return (
+                    f"{intermediate_detail}; {detail}; {motion_result}; "
+                    "arm_feedback=confirmed"
+                )
             time.sleep(0.02)
         raise MissionError(
             f"{arm} arm did not reach the fixed detection pose: "
@@ -1014,7 +1110,7 @@ class BoxPreparationMixin:
     def _drag_box_tf_post_detection_left_movej_joint_units(
         self, box_layer: int, model_label: str | None = None
     ) -> list[int]:
-        """Return the DragBox-TF left-arm pose used after left-camera detection."""
+        """Return the DragBox-TF left-arm avoidance pose after box detection."""
         if box_layer < 1 or box_layer > 4:
             raise MissionError("box_layer must be in [1, 4]")
         model = str(model_label or "bigbox").strip().lower()
@@ -1038,7 +1134,7 @@ class BoxPreparationMixin:
         box_layer: int,
         model_label: str | None = None,
     ) -> str:
-        """Move the left arm away from the camera pose after DragBox TF detection."""
+        """Move the left arm from its layer posture to DragBox TF avoidance."""
         if not self._boolean("drag_box_tf_post_detection_left_movej_enabled"):
             return "drag_box_tf_post_detection_left_movej=disabled"
         prefix = "box_pre_detection_left_movej"
@@ -1055,10 +1151,113 @@ class BoxPreparationMixin:
         self._publish_box_grasp_feedback(
             goal_handle, "POST_DETECTION_LEFT_ARM_MOVEJ_TARGETS", detail
         )
+        model = str(model_label or "bigbox").strip().lower()
+        staged_avoidance = model in ("bigbox", "smallbox")
+        transition_units = None
+        if staged_avoidance:
+            transition_parameter = (
+                "drag_box_tf_post_detection_left_transition_joint_units_"
+                f"{model}"
+            )
+            transition_values = self._float_array(transition_parameter)
+            if len(transition_values) != 7 or not all(
+                math.isfinite(value) for value in transition_values
+            ):
+                raise MissionError(
+                    f"{transition_parameter} must contain seven finite joint values"
+                )
+            transition_units = [int(round(value)) for value in transition_values]
+            lower = self._float_array("waist_workspace_left_arm_joint_min_deg")
+            upper = self._float_array("waist_workspace_left_arm_joint_max_deg")
+            if len(lower) != 7 or len(upper) != 7:
+                raise MissionError("left arm joint limits must contain seven values")
+            for index, value in enumerate(transition_units):
+                degrees = value / units_per_degree
+                if not lower[index] <= degrees <= upper[index]:
+                    raise MissionError(
+                        f"{transition_parameter} joint{index + 1}={degrees:.3f}deg "
+                        f"is outside [{lower[index]:.3f},{upper[index]:.3f}]deg"
+                    )
         if dry_run:
-            return f"{detail}; skipped in dry-run"
+            self._publish_box_grasp_feedback(
+                goal_handle,
+                "POST_DETECTION_LEFT_ARM_STAGED_MOVEJ_TARGETS"
+                if staged_avoidance else "POST_DETECTION_LEFT_ARM_JOINT4_TARGETS",
+                (
+                    "dry-run: three /robot/command MoveJ stages: "
+                    f"transition={transition_units}, "
+                    f"joint1_first={[units[0], *transition_units[1:]]}, "
+                    f"avoidance={units}"
+                )
+                if staged_avoidance else
+                "dry-run: Joint4 moves first while Joint1-3 and Joint5-7 stay at their live values",
+            )
+            order = "transition_then_joint1_then_remaining" if staged_avoidance else "joint4_then_remaining"
+            return f"{detail}; order={order}; skipped in dry-run"
 
+        if staged_avoidance:
+            transition_target = [
+                math.radians(float(value) / units_per_degree)
+                for value in transition_units
+            ]
+            joint1_first_units = [units[0], *transition_units[1:]]
+            joint1_first_target = [
+                math.radians(float(value) / units_per_degree)
+                for value in joint1_first_units
+            ]
+            for stage_name, stage_units, stage_target in (
+                ("TRANSITION", transition_units, transition_target),
+                ("JOINT1", joint1_first_units, joint1_first_target),
+                ("REMAINING", units, target),
+            ):
+                self._execute_drag_box_tf_post_detection_left_ros_movej(
+                    goal_handle,
+                    stage_units,
+                    stage_target,
+                    detail,
+                    "order=transition_then_joint1_then_remaining",
+                    stage_name=stage_name,
+                )
+            self._publish_box_grasp_feedback(
+                goal_handle,
+                "POST_DETECTION_LEFT_ARM_REACHED",
+                "three staged left-arm ROS MoveJ commands reached the configured "
+                "avoidance pose with stable feedback",
+            )
+            return (
+                f"{detail}; order=transition_then_joint1_then_remaining; "
+                f"transition_joint_units={transition_units}; arm_feedback=confirmed"
+            )
+
+        joint4_detail = self._execute_pre_detection_arm_intermediate_movej(
+            goal_handle,
+            False,
+            units,
+            "left",
+            target_joint_indices=(3,),
+            phase="post-detection",
+            feedback_stage="POST_DETECTION_LEFT_ARM_JOINT4",
+        )
+
+        return self._execute_drag_box_tf_post_detection_left_ros_movej(
+            goal_handle, units, target, detail, joint4_detail
+        )
+
+    def _execute_drag_box_tf_post_detection_left_ros_movej(
+        self, goal_handle, units, target, detail, preparation_detail,
+        *, stage_name: str | None = None,
+    ) -> str:
+        """Send one left-arm joint target through ROS and wait for feedback."""
+
+        prefix = "box_pre_detection_left_movej"
         service_name = self._string("box_joint1_command_service_name")
+        if stage_name is not None:
+            self._publish_box_grasp_feedback(
+                goal_handle,
+                f"POST_DETECTION_LEFT_ARM_{stage_name}_TARGETS",
+                f"{preparation_detail}; joint_units={units}",
+            )
+        self._check_canceled(goal_handle, "before DragBox TF left-arm MoveJ")
         self._wait_for_service(self.body_command_client, service_name, goal_handle)
         with self.joint_state_lock:
             sequence_before = self.latest_slave_arm_state_sequences.get("left", 0)
@@ -1076,8 +1275,9 @@ class BoxPreparationMixin:
         request.data = json.dumps(payload, separators=(",", ":")) + "\r\n"
         self._publish_box_grasp_feedback(
             goal_handle,
-            "MOVING_LEFT_ARM_TO_POST_DETECTION_POSE",
-            "sending the configured left-arm post-detection MoveJ",
+            f"MOVING_LEFT_ARM_POST_DETECTION_{stage_name}"
+            if stage_name is not None else "MOVING_LEFT_ARM_TO_POST_DETECTION_POSE",
+            f"{preparation_detail}; moving left arm to joint_units={units}",
         )
         response = self._wait_future(
             self.body_command_client.call_async(request),
@@ -1091,7 +1291,8 @@ class BoxPreparationMixin:
         )
         self._publish_box_grasp_feedback(
             goal_handle,
-            "WAITING_FOR_POST_DETECTION_LEFT_ARM",
+            f"WAITING_FOR_POST_DETECTION_LEFT_ARM_{stage_name}"
+            if stage_name is not None else "WAITING_FOR_POST_DETECTION_LEFT_ARM",
             "post-detection left-arm MoveJ accepted; waiting for stable feedback",
         )
         self._wait_for_post_arm_joint_targets(
@@ -1100,15 +1301,20 @@ class BoxPreparationMixin:
             [],
             {"left": sequence_before},
             parameter_prefix=prefix,
-            description="DragBox TF post-detection left arm MoveJ",
+            description=(
+                f"DragBox TF post-detection left arm {stage_name} MoveJ"
+                if stage_name is not None
+                else "DragBox TF post-detection left arm MoveJ"
+            ),
             active_arms=("left",),
         )
         self._publish_box_grasp_feedback(
             goal_handle,
-            "POST_DETECTION_LEFT_ARM_REACHED",
-            "left arm reached the configured post-detection pose with stable feedback",
+            f"POST_DETECTION_LEFT_ARM_{stage_name}_REACHED"
+            if stage_name is not None else "POST_DETECTION_LEFT_ARM_REACHED",
+            f"left arm reached joint_units={units} with stable feedback",
         )
-        return f"{detail}; arm_feedback=confirmed"
+        return f"{preparation_detail}; {detail}; arm_feedback=confirmed"
 
     # Backward-compatible right-arm entry points retained for existing
     # callers and tests.  New code should use the arm-generic helpers above.
@@ -1403,17 +1609,26 @@ class BoxPreparationMixin:
         *,
         tf_mode: bool = False,
         drag_mode: bool = False,
+        approach_angles_override=None,
     ):
         """Move J1/J2/J3 and preserve measured J4/J5 values."""
-        approach_angles = [
-            math.radians(angle_deg)
-            for angle_deg in self._box_layer_joint123_approach_angles_deg(
-                box_layer,
-                model_label,
-                tf_mode=tf_mode,
-                drag_mode=drag_mode,
-            )
-        ]
+        approach_angles = (
+            [float(value) for value in approach_angles_override]
+            if approach_angles_override is not None
+            else [
+                math.radians(angle_deg)
+                for angle_deg in self._box_layer_joint123_approach_angles_deg(
+                    box_layer,
+                    model_label,
+                    tf_mode=tf_mode,
+                    drag_mode=drag_mode,
+                )
+            ]
+        )
+        if len(approach_angles) != 3 or not all(
+            math.isfinite(value) for value in approach_angles
+        ):
+            raise MissionError("body Joint1/2/3 target override is invalid")
         initial, _, sequence_before = self._wait_for_fresh_body_feedback(goal_handle)
         units_per_degree = self._float_array("box_body_command_units_per_degree")
         command_angles = approach_angles + initial[3:4]

@@ -147,7 +147,91 @@ class _Goal:
     is_cancel_requested = False
 
 
+class _DetectionSdkAdapter:
+    def __init__(self):
+        self.calls = []
+
+    def execute_single_movej(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+        return "sdk movej ok"
+
+
+class _DetectionOrderHarness:
+    def __init__(self):
+        self.intermediate_calls = []
+        self.feedback = []
+        self.direct_sdk_adapter = _DetectionSdkAdapter()
+
+    def _boolean(self, name):
+        assert name == "box_pre_detection_right_movej_enabled"
+        return True
+
+    def _float(self, name):
+        return {
+            "box_pre_detection_right_movej_command_units_per_degree": 1000.0,
+            "box_pre_detection_right_movej_timeout_sec": 40.0,
+        }[name]
+
+    def _integer(self, name):
+        return {
+            "box_pre_detection_right_movej_device": 1,
+            "box_pre_detection_right_movej_velocity": 15,
+            "box_pre_detection_right_movej_blend_radius": 0,
+            "box_pre_detection_right_movej_trajectory_connect": 0,
+        }[name]
+
+    def _box_layer_pre_detection_arm_movej_joint_units(self, *args, **kwargs):
+        del args, kwargs
+        return [1000, 2000, 3000, 4000, 5000, 6000, 7000]
+
+    def _execute_pre_detection_arm_intermediate_movej(self, *args, **kwargs):
+        self.intermediate_calls.append((args, kwargs))
+        return "joint2 stage"
+
+    def _publish_box_grasp_feedback(self, _goal_handle, stage, detail):
+        self.feedback.append((stage, detail))
+
+
 class TestBoxLayerAndPostArmMoveJ(unittest.TestCase):
+    def test_grasp_tf_right_detection_moves_joint2_first_with_sdk(self):
+        harness = _DetectionOrderHarness()
+        detail = MissionController._execute_pre_detection_arm_movej_fixed(
+            harness,
+            _Goal(),
+            True,
+            2,
+            "smallbox",
+            arm="right",
+            tf_mode=True,
+            drag_mode=False,
+        )
+
+        self.assertEqual(len(harness.intermediate_calls), 1)
+        args, kwargs = harness.intermediate_calls[0]
+        self.assertEqual(args[3], "right")
+        self.assertEqual(kwargs["target_joint_indices"], (1,))
+        self.assertTrue(kwargs["use_python_sdk"])
+        self.assertIn("command_backend=python_sdk", detail)
+
+    def test_detection_sdk_movej_converts_joint_units_to_degrees(self):
+        harness = _DetectionOrderHarness()
+        result = MissionController._execute_pre_detection_arm_sdk_movej(
+            harness,
+            _Goal(),
+            "right",
+            [1000, 2000, 3000, 4000, 5000, 6000, 7000],
+            "box_pre_detection_right_movej",
+            "test detection MoveJ",
+        )
+
+        self.assertEqual(result, "sdk movej ok")
+        self.assertEqual(len(harness.direct_sdk_adapter.calls), 1)
+        args, kwargs = harness.direct_sdk_adapter.calls[0]
+        self.assertEqual(args[0], "right")
+        self.assertEqual(args[1], [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+        self.assertEqual(args[2:5], (15, 0, 0))
+        self.assertEqual(kwargs["timeout_sec"], 40.0)
+
     def test_layer_detection_pose_selects_second_layer_units(self):
         harness = _LayerHarness()
         harness._float_array = lambda name: {

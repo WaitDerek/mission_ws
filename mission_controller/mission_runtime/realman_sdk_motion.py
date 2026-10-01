@@ -295,7 +295,7 @@ class RealManSdkMotionMixin:
         cancel_requested: Optional[Callable[[], bool]] = None,
         timeout_sec: float = 120.0,
     ) -> str:
-        """Execute synchronized blocking joint-space MoveJ on both SDK arms."""
+        """Execute blocking joint-space MoveJ on both arms."""
         targets = {
             "left": [float(value) for value in left_joint_degrees],
             "right": [float(value) for value in right_joint_degrees],
@@ -324,6 +324,20 @@ class RealManSdkMotionMixin:
             raise RealManSdkError("SDK motion timeout must be finite and positive")
 
         with self._motion_lock:
+            ros_movej = getattr(self, "_ros_movej_transport", None)
+            if ros_movej is not None:
+                # Keep SDK stop handles ready even though the MoveJ itself is
+                # sent over ROS. Cancellation must still stop a moving arm.
+                self._connect()
+                self._motion_active = True
+                try:
+                    return ros_movej.execute(
+                        targets, speed, blend, connect,
+                        cancel_requested=cancel_requested,
+                        timeout_sec=timeout_sec,
+                    )
+                finally:
+                    self._motion_active = False
             self._connect()
             robots = dict(zip(("left", "right"), self._robots()))
             if any(robot is None for robot in robots.values()):
@@ -423,12 +437,10 @@ class RealManSdkMotionMixin:
         cancel_requested: Optional[Callable[[], bool]] = None,
         timeout_sec: float = 120.0,
     ) -> str:
-        """Execute a blocking joint-space MoveJ on one SDK connection.
+        """Execute a blocking joint-space MoveJ on one arm.
 
-        ``rm_movej`` expects seven joint angles in degrees.  This method is
-        intentionally kept on the same adapter and motion lock as
-        ``execute_single`` so a DragBox pre-join MoveJ and its following
-        MoveJ_P use the same SDK robot handle and command channel.
+        The Mission nodes configure a ROS transport; standalone SDK users
+        retain the existing SDK fallback. Both paths use the motion lock.
         """
         if arm not in ("left", "right"):
             raise RealManSdkError(f"invalid RealMan arm: {arm}")
@@ -454,6 +466,18 @@ class RealManSdkMotionMixin:
             raise RealManSdkError("SDK motion timeout must be finite and positive")
 
         with self._motion_lock:
+            ros_movej = getattr(self, "_ros_movej_transport", None)
+            if ros_movej is not None:
+                self._connect()
+                self._motion_active = True
+                try:
+                    return ros_movej.execute(
+                        {arm: joints}, speed, blend, connect,
+                        cancel_requested=cancel_requested,
+                        timeout_sec=timeout_sec,
+                    )
+                finally:
+                    self._motion_active = False
             self._connect()
             left_robot, right_robot = self._robots()
             robot = left_robot if arm == "left" else right_robot

@@ -13,6 +13,8 @@ try:
 except ModuleNotFoundError:
     EstimateObjectPose = None
 
+from .box_drag_join import BoxDragJoinMixin
+from .box_waist_planning import BoxWaistPlanningMixin
 from .common import (
     MissionCanceled,
     MissionError,
@@ -28,8 +30,278 @@ from .realman_sdk_adapter import (
 BoxSupportMixin = None
 
 
-class BoxExecutionMixin:
-    """Post-grasp trajectories, drag joins, and direct motion execution."""
+class BoxExecutionMixin(BoxWaistPlanningMixin, BoxDragJoinMixin):
+    """Execute post-grasp trajectories and direct arm motions."""
+
+    @staticmethod
+    def _post_waist_pre_movej_prefix(*, drag_mode: bool) -> str:
+        return (
+            "drag_box_tf_post_waist_pre_movej"
+            if drag_mode
+            else "grasp_box_tf_post_waist_pre_movej"
+        )
+
+    def _post_waist_pre_movej_targets(
+        self,
+        box_layer: int,
+        model_label: str | None,
+        *,
+        drag_mode: bool,
+    ) -> tuple[list[float], list[float]] | None:
+        """Return independently calibrated post-waist arm targets in degrees."""
+        prefix = self._post_waist_pre_movej_prefix(drag_mode=drag_mode)
+        if not self._boolean(f"{prefix}_enabled"):
+            return None
+        if box_layer not in range(1, 5):
+            raise MissionError("post-waist pre-MoveJ box_layer must be in [1, 4]")
+        model = str(model_label or "bigbox").strip().lower()
+        if model not in ("bigbox", "smallbox"):
+            raise MissionError(
+                f"post-waist pre-MoveJ box_type must be bigbox or smallbox, got {model!r}"
+            )
+        units_per_degree = self._float(f"{prefix}_command_units_per_degree")
+        targets = []
+        for arm in ("left", "right"):
+            parameter_name = (
+                f"{prefix}_{arm}_joint_units_{model}_layer{box_layer}"
+            )
+            values = self._float_array(parameter_name)
+            if len(values) != 7 or not all(math.isfinite(value) for value in values):
+                raise MissionError(
+                    f"{parameter_name} must contain seven finite joint values"
+                )
+            if drag_mode and all(abs(value) < 0.5 for value in values):
+                raise MissionError(
+                    f"{parameter_name} is not calibrated; configure DragBox-specific "
+                    "values before enabling drag_box_tf_post_waist_pre_movej"
+                )
+            targets.append([float(value) / units_per_degree for value in values])
+        return targets[0], targets[1]
+
+    def _execute_post_waist_pre_movej(
+        self,
+        goal_handle,
+        adapter,
+        dry_run: bool,
+        box_layer: int,
+        model_label: str | None,
+        *,
+        drag_mode: bool,
+        right_arm_only: bool,
+        timing: str = "post_waist",
+        already_completed: bool = False,
+        velocity_parameter_name: str | None = None,
+        preparation_distal_first: bool = False,
+    ) -> str:
+        """Move through the configured posture at the requested workflow point."""
+        prefix = self._post_waist_pre_movej_prefix(drag_mode=drag_mode)
+        if already_completed:
+            return f"{prefix}=completed_parallel_before_waist"
+        targets = self._post_waist_pre_movej_targets(
+            box_layer,
+            model_label,
+            drag_mode=drag_mode,
+        )
+        if targets is None:
+            return f"{prefix}=disabled"
+        left_target, right_target = targets
+        active_arms = ("right",) if right_arm_only else ("left", "right")
+        parallel_before_waist = timing == "parallel_before_waist"
+        if timing not in ("post_waist", "parallel_before_waist"):
+            raise MissionError(f"unsupported {prefix} timing: {timing}")
+        stage_prefix = (
+            "PARALLEL_PREPARATION" if parallel_before_waist else "POST_WAIST_PRE_MOVEJ"
+        )
+        timing_detail = (
+            "parallel_before_waist" if parallel_before_waist else "post_waist"
+        )
+        # Only Drag's explicit distal-first preparation remains staged.
+        use_staged_preparation = parallel_before_waist and not drag_mode and preparation_distal_first
+        first_group = "JOINT3_TO_7" if preparation_distal_first else "JOINT1_2"
+        second_group = "JOINT1_2" if preparation_distal_first else "JOINT3_TO_7"
+        velocity_parameter = velocity_parameter_name or f"{prefix}_velocity_percent"
+        movej_velocity = self._float(velocity_parameter)
+        detail = (
+            f"{prefix}=enabled; box_type={str(model_label or 'bigbox').lower()}; "
+            f"box_layer={box_layer}; timing={timing_detail}; "
+            f"active_arms={','.join(active_arms)}; "
+            f"movej_velocity_percent={movej_velocity:g}; "
+            f"preparation_order={(('joint3_to_7_then_joint1_2' if preparation_distal_first else 'joint1_2_then_joint3_to_7') if use_staged_preparation else 'single_stage')}; "
+            f"left_deg=[{','.join(f'{value:.3f}' for value in left_target)}]; "
+            f"right_deg=[{','.join(f'{value:.3f}' for value in right_target)}]"
+        )
+        self._publish_box_grasp_feedback(
+            goal_handle,
+            f"{stage_prefix}_TARGETS",
+            detail,
+        )
+        if dry_run:
+            return f"{detail}; skipped in dry-run"
+        if adapter is None:
+            raise MissionError(f"{prefix} requires direct_motion_backend=python_sdk")
+        try:
+            if use_staged_preparation:
+                max_age = self._float(
+                    "box_pre_target_arm_movej_feedback_max_age_sec"
+                )
+                now = time.monotonic()
+                distal_stage_targets = {}
+                with self.joint_state_lock:
+                    final_targets = {
+                        "left": left_target,
+                        "right": right_target,
+                    }
+                    for arm in active_arms:
+                        final_target = final_targets[arm]
+                        positions = list(
+                            self.latest_slave_arm_positions.get(arm, [])
+                        )
+                        age = now - self.latest_slave_arm_state_times.get(arm, 0.0)
+                        if len(positions) < 7 or age > max_age:
+                            raise MissionError(
+                                "fresh seven-joint feedback is required for "
+                                "staged arm preparation: "
+                                f"arm={arm}, joints={len(positions)}, "
+                                f"age={age:.3f}s, limit={max_age:.3f}s"
+                            )
+                        distal_stage = [
+                            math.degrees(float(value)) for value in positions[:7]
+                        ]
+                        if preparation_distal_first:
+                            distal_stage[2:] = [float(v) for v in final_target[2:]]
+                        else:
+                            distal_stage[:2] = [float(v) for v in final_target[:2]]
+                        distal_stage_targets[arm] = distal_stage
+
+                self._publish_box_grasp_feedback(
+                    goal_handle,
+                    f"MOVING_PARALLEL_PREPARATION_{first_group}",
+                    f"Preparation stage 1/2: moving {first_group} for "
+                    f"{', '.join(active_arms)} to the layer-specific target; "
+                    "other joints remain at their measured angles",
+                )
+                movej_kwargs = {
+                    "blend_radius": 0,
+                    "trajectory_connect": 0,
+                    "cancel_requested": lambda: goal_handle.is_cancel_requested,
+                    "timeout_sec": self._float(f"{prefix}_timeout_sec"),
+                }
+                if right_arm_only:
+                    distal_result = adapter.execute_single_movej(
+                        "right",
+                        distal_stage_targets["right"],
+                        movej_velocity,
+                        **movej_kwargs,
+                    )
+                else:
+                    distal_result = adapter.execute_dual_movej(
+                        distal_stage_targets["left"],
+                        distal_stage_targets["right"],
+                        movej_velocity,
+                        **movej_kwargs,
+                    )
+                self._publish_box_grasp_feedback(
+                    goal_handle,
+                    f"PARALLEL_PREPARATION_{first_group}_REACHED",
+                    f"Preparation stage 1/2 completed; {first_group} reached target",
+                )
+                self._publish_box_grasp_feedback(
+                    goal_handle,
+                    f"MOVING_PARALLEL_PREPARATION_{second_group}",
+                    f"Preparation stage 2/2: moving {second_group} "
+                    "to the complete layer-specific targets",
+                )
+                if right_arm_only:
+                    final_result = adapter.execute_single_movej(
+                        "right",
+                        right_target,
+                        movej_velocity,
+                        **movej_kwargs,
+                    )
+                else:
+                    final_result = adapter.execute_dual_movej(
+                        left_target,
+                        right_target,
+                        movej_velocity,
+                        **movej_kwargs,
+                    )
+                motion_result = (
+                    f"{first_group}_stage=({distal_result}); "
+                    f"{second_group}_stage=({final_result})"
+                )
+            elif right_arm_only:
+                self._publish_box_grasp_feedback(
+                    goal_handle,
+                    f"MOVING_{stage_prefix}",
+                    f"executing layer {box_layer} {timing_detail} MoveJ for "
+                    f"{', '.join(active_arms)} arm(s)",
+                )
+                motion_result = adapter.execute_single_movej(
+                    "right",
+                    right_target,
+                    movej_velocity,
+                    blend_radius=0,
+                    trajectory_connect=0,
+                    cancel_requested=lambda: goal_handle.is_cancel_requested,
+                    timeout_sec=self._float(f"{prefix}_timeout_sec"),
+                )
+            else:
+                self._publish_box_grasp_feedback(
+                    goal_handle,
+                    f"MOVING_{stage_prefix}",
+                    f"executing layer {box_layer} {timing_detail} MoveJ for "
+                    f"{', '.join(active_arms)} arm(s)",
+                )
+                motion_result = adapter.execute_dual_movej(
+                    left_target,
+                    right_target,
+                    movej_velocity,
+                    blend_radius=0,
+                    trajectory_connect=0,
+                    cancel_requested=lambda: goal_handle.is_cancel_requested,
+                    timeout_sec=self._float(f"{prefix}_timeout_sec"),
+                )
+        except RealManSdkCanceled as exc:
+            raise MissionCanceled(str(exc)) from exc
+        except (RealManSdkError, ValueError) as exc:
+            raise MissionError(f"{prefix} failed: {exc}") from exc
+        self._publish_box_grasp_feedback(
+            goal_handle,
+            f"{stage_prefix}_REACHED",
+            f"layer {box_layer} {timing_detail} MoveJ completed",
+        )
+        return f"{detail}; {motion_result}"
+
+    def _execute_drag_box_tf_right_grasp_preparation(
+        self,
+        goal_handle,
+        adapter,
+        dry_run: bool,
+        box_layer: int,
+        model_label: str | None,
+    ) -> str:
+        """Move only the DragBox right arm through the GraspBox prep profile."""
+        if not self._boolean("drag_box_tf_right_grasp_preparation_enabled"):
+            return "drag_box_tf_right_grasp_preparation=disabled"
+        detail = self._execute_post_waist_pre_movej(
+            goal_handle,
+            adapter,
+            dry_run,
+            box_layer,
+            model_label,
+            drag_mode=False,
+            right_arm_only=True,
+            timing="parallel_before_waist",
+            velocity_parameter_name=(
+                "drag_box_tf_post_waist_pre_movej_velocity_percent"
+            ),
+            preparation_distal_first=True,
+        )
+        return (
+            "drag_box_tf_right_grasp_preparation=enabled; "
+            "target_profile=grasp_box_tf; "
+            f"{detail}"
+        )
 
     def _equalize_tf_dual_target_z(
         self,
@@ -75,26 +347,14 @@ class BoxExecutionMixin:
             f"original_right_z={original_right_z:.4f}"
         )
 
-    @staticmethod
-    def _drag_tf_reanchor_active(
-        *,
-        enabled: bool,
-        tf_mode: bool,
-        drag_mode: bool,
-        delayed_left_join: bool,
-    ) -> bool:
-        """Return whether the runtime Drag3 re-anchor path is applicable."""
-        return bool(enabled and tf_mode and drag_mode and delayed_left_join)
 
     def _tf_post_movel_sdk_motion_mode(
         self, *, tf_mode: bool, drag_mode: bool, requested_mode: str = "movel"
     ) -> str:
-        """Select the SDK primitive for TF Step/Drag Cartesian translations.
+        """Select the SDK primitive for TF post-grasp Cartesian translations.
 
-        Step/Drag targets are still constructed as absolute poses in each arm
-        base so the existing box-frame geometry, Z equalization, force clamp,
-        and diagnostics remain unchanged.  ``movel_offset`` only changes the
-        final SDK primitive used to reach those poses.
+        Ordinary Step targets are constructed as absolute arm-base poses.
+        Drag1/2/3 are handled separately as native Tool-frame SDK offsets.
         """
         requested = str(requested_mode).strip().lower()
         if not tf_mode or requested != "movel":
@@ -130,225 +390,6 @@ class BoxExecutionMixin:
         if str(motion_mode).strip().lower() == "movel_offset":
             return BoxExecutionMixin._work_frame_offset_between_poses(start, target)
         return pose_to_sdk_target(target)
-
-    def _drag_tf_world_transform_to_arm_pose(self, transform, arm: str) -> Pose:
-        """Express one frozen-frame Link7 transform in the live arm base."""
-        base_frame = self._string("grasp_box_tf_freeze_frame").strip().lstrip("/")
-        arm_base_frame = self._string(f"{arm}_arm_base_frame").strip().lstrip("/")
-        base_to_arm_base = self._lookup_tf_carry_transform(
-            base_frame,
-            arm_base_frame,
-            parameter_prefix="drag_box_tf_body_home_carry",
-        )
-        arm_base_to_target = BoxSupportMixin._compose_transform(
-            BoxSupportMixin._inverse_transform(base_to_arm_base),
-            transform,
-        )
-        return self._endpoint_sync_transform_to_pose(arm_base_to_target)
-
-    def _capture_drag_tf_right_grasp_relation(self) -> str:
-        """Capture the physical box->right-Link7 relation before Drag1.
-
-        The box is still supported by the shelf after the right-arm Step1
-        contact search.  The frozen FoundationPose box transform can therefore
-        be paired with the actual right Link7 TF to obtain the rigid relation
-        used to infer the box pose after Drag3.
-        """
-        frozen_box_pose = getattr(self, "_last_grasp_box_tf_box_pose", None)
-        relation_by_arm = getattr(
-            self, "_last_grasp_box_tf_box_to_link7_targets", None
-        )
-        if frozen_box_pose is None or not relation_by_arm:
-            raise MissionError(
-                "DragBox TF re-anchor has no frozen box pose or box->Link7 targets"
-            )
-        base_frame = self._string("grasp_box_tf_freeze_frame").strip().lstrip("/")
-        pose_frame = frozen_box_pose.header.frame_id.strip().lstrip("/")
-        if pose_frame != base_frame:
-            raise MissionError(
-                "DragBox TF re-anchor frozen box frame mismatch: "
-                f"pose_frame={pose_frame}, expected={base_frame}"
-            )
-        frozen_box = self._pose_stamped_to_transform(frozen_box_pose)
-        actual_right = self._lookup_tf_carry_transform(
-            base_frame,
-            self._string("right_link8_frame").strip().lstrip("/"),
-            parameter_prefix="drag_box_tf_body_home_carry",
-        )
-        right_relation = BoxSupportMixin._compose_transform(
-            BoxSupportMixin._inverse_transform(frozen_box),
-            actual_right,
-        )
-        self._last_drag_box_tf_desired_box_to_link7_targets = deepcopy(
-            relation_by_arm
-        )
-        self._last_drag_box_tf_right_grasp_relation = right_relation
-        return (
-            "drag_tf_right_grasp_relation=captured_after_step1; "
-            f"box_to_right_link7_translation="
-            f"[{right_relation[0][0]:.4f},{right_relation[0][1]:.4f},"
-            f"{right_relation[0][2]:.4f}]"
-        )
-
-    def _reanchor_drag_tf_left_join_after_drag3(self):
-        """Infer the moved box from actual right Link7 and rebuild left join."""
-        desired_relations = getattr(
-            self, "_last_drag_box_tf_desired_box_to_link7_targets", None
-        )
-        right_relation = getattr(
-            self, "_last_drag_box_tf_right_grasp_relation", None
-        )
-        if not desired_relations or right_relation is None:
-            raise MissionError(
-                "DragBox TF re-anchor has no captured right-arm grasp relation"
-            )
-        base_frame = self._string("grasp_box_tf_freeze_frame").strip().lstrip("/")
-        actual_right = self._lookup_tf_carry_transform(
-            base_frame,
-            self._string("right_link8_frame").strip().lstrip("/"),
-            parameter_prefix="drag_box_tf_body_home_carry",
-        )
-        current_box = BoxSupportMixin._compose_transform(
-            actual_right,
-            BoxSupportMixin._inverse_transform(right_relation),
-        )
-        left_world_target = BoxSupportMixin._compose_transform(
-            current_box,
-            desired_relations["left"],
-        )
-        left_target = self._drag_tf_world_transform_to_arm_pose(
-            left_world_target, "left"
-        )
-        right_target = self._drag_tf_world_transform_to_arm_pose(
-            actual_right, "right"
-        )
-        left_target, _right_target, z_detail = (
-            BoxExecutionMixin._equalize_tf_dual_target_z(
-                self,
-                left_target,
-                right_target,
-                reference="right",
-            )
-        )
-        self._last_drag_box_tf_reanchored_box_after_drag3 = current_box
-        relation_by_arm = deepcopy(desired_relations)
-        relation_by_arm["right"] = right_relation
-        self._last_grasp_box_tf_box_to_link7_targets = relation_by_arm
-        return left_target, (
-            "drag_tf_reanchor_after_drag3=completed; authority=actual_right_link7; "
-            f"inferred_box_position=[{current_box[0][0]:.4f},"
-            f"{current_box[0][1]:.4f},{current_box[0][2]:.4f}]; "
-            f"left_join_target=recomputed_from_common_box; {z_detail}"
-        )
-
-    def _reanchor_drag_tf_step2_from_actual_grasp(
-        self,
-        targets,
-        next_target_index: int,
-        *,
-        box_layer: int,
-        model_label: str | None,
-    ) -> str:
-        """Rebuild Step2 from one box frame after the delayed left clamp.
-
-        Both TCP targets are generated from the same translated box transform.
-        The actual post-clamp box->TCP relations are captured first, preserving
-        the physical grasp while preventing the two arms from using separately
-        reconstructed box axes.
-        """
-        right_relation = getattr(
-            self, "_last_drag_box_tf_right_grasp_relation", None
-        )
-        if right_relation is None:
-            raise MissionError(
-                "DragBox TF Step2 re-anchor has no right-arm grasp relation"
-            )
-        base_frame = self._string("grasp_box_tf_freeze_frame").strip().lstrip("/")
-        actual_link = {
-            arm: self._lookup_tf_carry_transform(
-                base_frame,
-                self._string(f"{arm}_link8_frame").strip().lstrip("/"),
-                parameter_prefix="drag_box_tf_body_home_carry",
-            )
-            for arm in ("left", "right")
-        }
-        current_box = BoxSupportMixin._compose_transform(
-            actual_link["right"],
-            BoxSupportMixin._inverse_transform(right_relation),
-        )
-        relation_by_arm = {
-            arm: BoxSupportMixin._compose_transform(
-                BoxSupportMixin._inverse_transform(current_box),
-                actual_link[arm],
-            )
-            for arm in ("left", "right")
-        }
-
-        left_parameter = self._post_movel_xyz_parameter_name(
-            "left",
-            2,
-            model_label,
-            box_layer=box_layer,
-            tf_mode=True,
-            drag_mode=True,
-        )
-        right_parameter = self._post_movel_xyz_parameter_name(
-            "right",
-            2,
-            model_label,
-            box_layer=box_layer,
-            tf_mode=True,
-            drag_mode=True,
-        )
-        left_delta = tuple(float(value) for value in self._float_array(left_parameter))
-        right_delta = tuple(
-            float(value) for value in self._float_array(right_parameter)
-        )
-        if len(left_delta) != 3 or len(right_delta) != 3:
-            raise MissionError("DragBox TF Step2 deltas must contain three values")
-        if any(
-            abs(left_delta[index] - right_delta[index]) > 1.0e-6
-            for index in range(3)
-        ):
-            raise MissionError(
-                "DragBox TF rigid Step2 requires identical left/right box-frame "
-                f"deltas: left={left_delta}, right={right_delta}"
-            )
-
-        step2_box = BoxSupportMixin._compose_transform(
-            current_box,
-            (left_delta, (0.0, 0.0, 0.0, 1.0)),
-        )
-        step2_poses = {
-            arm: self._drag_tf_world_transform_to_arm_pose(
-                BoxSupportMixin._compose_transform(
-                    step2_box, relation_by_arm[arm]
-                ),
-                arm,
-            )
-            for arm in ("left", "right")
-        }
-        step2_index = next(
-            (
-                index
-                for index in range(next_target_index, len(targets))
-                if targets[index][0] == "step2"
-            ),
-            None,
-        )
-        if step2_index is None:
-            raise MissionError("DragBox TF re-anchor could not find Step2 target")
-        targets[step2_index] = (
-            "step2",
-            step2_poses["left"],
-            step2_poses["right"],
-        )
-        self._last_grasp_box_tf_box_to_link7_targets = relation_by_arm
-        return (
-            "drag_tf_step2_reanchor=completed; common_box_frame=true; "
-            f"box_delta=[{left_delta[0]:.4f},{left_delta[1]:.4f},"
-            f"{left_delta[2]:.4f}]; post_clamp_box_to_link7=recaptured"
-        )
 
     def _rebase_post_movel_targets_after_tf_carry(
         self,
@@ -408,80 +449,6 @@ class BoxExecutionMixin:
                 "right",
             )
             targets[index] = (label, left_current, right_current)
-
-    def _execute_drag_box_tf_post_carry_arm_base_z_lift(
-        self,
-        goal_handle,
-        adapter,
-        dry_run: bool,
-        *,
-        model_label: str | None,
-        box_layer: int | None = None,
-    ) -> str:
-        """Lift both DragBox TCPs along each arm-base +Z after waist carry."""
-        model = str(model_label or "").strip().lower()
-        if model not in ("bigbox", "smallbox"):
-            return "drag_box_tf_post_carry_arm_base_z_lift=not_applicable"
-        enabled_name = f"drag_box_tf_post_carry_arm_base_z_lift_enabled_{model}"
-        if not self._boolean(enabled_name):
-            return f"drag_box_tf_post_carry_arm_base_z_lift=disabled_for_{model}"
-
-        distance_name = "drag_box_tf_post_carry_arm_base_z_lift_distance_m"
-        if model == "bigbox" and int(box_layer or 0) in (3, 4):
-            distance_name += f"_bigbox_layer{int(box_layer)}"
-        distance_m = self._float(distance_name)
-        velocity = self._float(
-            "drag_box_tf_post_carry_arm_base_z_lift_velocity_percent"
-        )
-        timeout_sec = self._float(
-            "drag_box_tf_post_carry_arm_base_z_lift_timeout_sec"
-        )
-        detail = (
-            "DragBox TF post-carry dual-arm arm-base-Z lift: "
-            f"box_type={model}; arm_base_offset=[0.0,0.0,{distance_m:.4f}]m; "
-            f"velocity={velocity:.1f}; sdk=rm_movel_offset; frame_type=work"
-        )
-        self._publish_box_grasp_feedback(
-            goal_handle,
-            "DRAG_TF_POST_CARRY_ARM_BASE_Z_LIFT",
-            detail,
-        )
-        if dry_run:
-            return f"{detail}; skipped in dry-run"
-        if adapter is None:
-            raise MissionError(
-                "DragBox TF post-carry arm-base-Z lift requires "
-                "direct_motion_backend=python_sdk"
-            )
-
-        offset = [0.0, 0.0, distance_m, 0.0, 0.0, 0.0]
-        try:
-            motion_result = adapter.execute_dual(
-                offset,
-                offset,
-                "movel_offset",
-                velocity,
-                self._boolean("direct_movel_blocking"),
-                cancel_requested=lambda: goal_handle.is_cancel_requested,
-                timeout_sec=timeout_sec,
-                offset_frame_type=0,
-            )
-        except RealManSdkCanceled as exc:
-            raise MissionCanceled(str(exc)) from exc
-        except (RealManSdkError, ValueError) as exc:
-            raise MissionError(
-                f"DragBox TF post-carry arm-base-Z lift failed: {exc}"
-            ) from exc
-
-        carry_targets = getattr(self, "_last_tf_body_home_carry_arm_targets", None)
-        if carry_targets:
-            lifted_targets = {}
-            for arm in ("left", "right"):
-                pose = deepcopy(carry_targets[arm])
-                pose.position.z += distance_m
-                lifted_targets[arm] = pose
-            self._last_tf_body_home_carry_arm_targets = lifted_targets
-        return f"{detail}; {motion_result}"
 
     def _wait_for_endpoint_arm_targets(
         self, goal_handle, targets_by_arm, sequence_after
@@ -827,169 +794,6 @@ class BoxExecutionMixin:
             f"{right_target.position.y:.3f}, {right_target.position.z:.3f}] m"
         )
 
-    def _execute_drag_box_left_join_pre_movej(
-        self,
-        goal_handle,
-        adapter,
-        dry_run: bool,
-    ) -> str:
-        """Move the left arm to its configured posture before the join.
-
-        DragBox intentionally keeps the left arm stationary while the right
-        arm performs Drag1--Drag3. Immediately before the delayed left-arm
-        MoveJ_P join, this optional MoveJ places the left arm in a known,
-        reachable posture. Both commands use the same Python SDK adapter and
-        the same left-arm SDK handle; the ROS ``/robot/command`` path is not
-        used here.
-        """
-        if not self._boolean("drag_box_left_join_pre_movej_enabled"):
-            return "left_join_pre_movej=disabled"
-
-        units = [
-            int(round(value))
-            for value in self._float_array("drag_box_left_join_pre_movej_joint_units")
-        ]
-        if len(units) != 7:
-            raise MissionError(
-                "drag_box_left_join_pre_movej_joint_units must contain 7 values"
-            )
-        units_per_degree = self._float(
-            "box_pre_target_arm_movej_command_units_per_degree"
-        )
-        if not math.isfinite(units_per_degree) or units_per_degree <= 0.0:
-            raise MissionError(
-                "box_pre_target_arm_movej_command_units_per_degree must be positive"
-            )
-        left_target_degrees = [float(value) / units_per_degree for value in units]
-        detail = (
-            "DragBox left-arm join pre-MoveJ: "
-            "backend=python_sdk, arm=left, "
-            f"joint_units={units}, "
-            f"joint_degrees={[round(value, 3) for value in left_target_degrees]}"
-        )
-        self._publish_box_grasp_feedback(
-            goal_handle,
-            "DRAG_LEFT_JOIN_PRE_MOVEJ_TARGETS",
-            detail,
-        )
-        if dry_run:
-            return f"{detail}; skipped in dry-run"
-        if adapter is None:
-            raise MissionError(
-                "DragBox left-arm join pre-MoveJ requires "
-                "direct_motion_backend=python_sdk"
-            )
-
-        with self.joint_state_lock:
-            sequence_before = {
-                "left": self.latest_slave_arm_state_sequences.get("left", 0)
-            }
-        self._publish_box_grasp_feedback(
-            goal_handle,
-            "MOVING_DRAG_LEFT_JOIN_PRE_MOVEJ",
-            "sending DragBox left-arm join pre-MoveJ through Python SDK",
-        )
-        try:
-            motion_result = adapter.execute_single_movej(
-                "left",
-                left_target_degrees,
-                self._float("box_pre_target_arm_movej_velocity"),
-                blend_radius=self._integer("box_pre_target_arm_movej_blend_radius"),
-                trajectory_connect=self._integer(
-                    "box_pre_target_arm_movej_trajectory_connect"
-                ),
-                cancel_requested=lambda: goal_handle.is_cancel_requested,
-                timeout_sec=self._float("box_pre_target_arm_movej_timeout_sec"),
-            )
-        except RealManSdkCanceled as exc:
-            raise MissionCanceled(str(exc)) from exc
-        except (RealManSdkError, ValueError) as exc:
-            raise MissionError(
-                f"DragBox left-arm join pre-MoveJ failed: {exc}"
-            ) from exc
-
-        self._publish_box_grasp_feedback(
-            goal_handle,
-            "WAITING_FOR_DRAG_LEFT_JOIN_PRE_MOVEJ",
-            "Python SDK pre-MoveJ completed; waiting for fresh stable left-arm feedback",
-        )
-        self._wait_for_post_arm_joint_targets(
-            goal_handle,
-            left_target_rad=[math.radians(value) for value in left_target_degrees],
-            right_target_rad=[0.0] * 7,
-            sequence_after=sequence_before,
-            parameter_prefix="box_pre_target_arm_movej",
-            description="DragBox left-arm join pre-MoveJ",
-            active_arms=("left",),
-        )
-        settle_sec = self._float("arm_settle_sec")
-        if settle_sec > 0.0:
-            time.sleep(settle_sec)
-        self._publish_box_grasp_feedback(
-            goal_handle,
-            "DRAG_LEFT_JOIN_PRE_MOVEJ_REACHED",
-            f"left arm reached the pre-MoveJ target with stable feedback; "
-            f"backend=python_sdk; settle_sec={settle_sec:.3f}",
-        )
-        return f"{detail}; {motion_result}; arm_feedback=confirmed; settle_sec={settle_sec:.3f}"
-
-    def _execute_drag_box_left_join(
-        self,
-        goal_handle,
-        adapter,
-        left_target: Pose,
-        dry_run: bool,
-    ) -> str:
-        """Move the delayed left arm to its cumulative post-drag target."""
-        motion_mode = self._string("drag_box_left_join_motion_mode").strip().lower()
-        if motion_mode not in ("movel", "movej_p"):
-            raise MissionError(
-                "drag_box_left_join_motion_mode must be 'movel' or 'movej_p'"
-            )
-        detail = (
-            "delayed left-arm join after Drag3: "
-            f"{motion_mode} target="
-            f"[{left_target.position.x:.3f}, {left_target.position.y:.3f}, "
-            f"{left_target.position.z:.3f}] m, "
-            f"q=[{left_target.orientation.x:.3f}, "
-            f"{left_target.orientation.y:.3f}, "
-            f"{left_target.orientation.z:.3f}, "
-            f"{left_target.orientation.w:.3f}], "
-            "target_frame=left_arm_base"
-        )
-        self._publish_box_grasp_feedback(
-            goal_handle,
-            "POST_MOVEL_LEFT_JOIN_TARGETS",
-            detail,
-        )
-        if adapter is None:
-            if not dry_run:
-                raise MissionError(
-                    "delayed left-arm join requires direct_motion_backend=python_sdk"
-                )
-        pre_movej_result = self._execute_drag_box_left_join_pre_movej(
-            goal_handle,
-            adapter,
-            dry_run,
-        )
-        if dry_run:
-            return f"{pre_movej_result}; {detail}; skipped in dry-run"
-        try:
-            motion_result = adapter.execute_single(
-                "left",
-                pose_to_sdk_target(left_target),
-                motion_mode,
-                self._float("drag_box_left_join_velocity_percent"),
-                self._boolean("direct_movel_blocking"),
-                cancel_requested=lambda: goal_handle.is_cancel_requested,
-                timeout_sec=self._float("drag_box_left_join_timeout_sec"),
-            )
-        except RealManSdkCanceled as exc:
-            raise MissionCanceled(str(exc)) from exc
-        except (RealManSdkError, ValueError) as exc:
-            raise MissionError(f"delayed left-arm join failed: {exc}") from exc
-        return f"{pre_movej_result}; {detail}; {motion_result}; " "left_join=confirmed"
-
     def _execute_post_movel_sequence(
         self,
         goal_handle,
@@ -1005,6 +809,12 @@ class BoxExecutionMixin:
         model_label: str | None = None,
         tf_mode: bool = False,
     ) -> str:
+        force_carry_profile = bool(
+            getattr(getattr(goal_handle, "request", None), "force_carry_profile", False)
+        )
+        if force_carry_profile and not tf_mode:
+            raise MissionError("force-carry profile requires a TF grasp action")
+        direct_carry_after_clamp = force_carry_profile and not drag_mode
         self._last_step2_endpoint_sync_completed = False
         self._last_tf_body_home_carry_completed = False
         self._last_tf_body_home_carry_arm_targets = None
@@ -1032,6 +842,12 @@ class BoxExecutionMixin:
             if hasattr(self, "_force_clamp_mode")
             else "disabled"
         )
+        if force_carry_profile and force_mode != "closed_loop":
+            raise MissionError("force-carry profile requires SDK Tool-Y closed-loop clamp")
+        if force_carry_profile and drag_mode and not delayed_left_join:
+            raise MissionError("force-carry DragBox requires left-arm join after Drag3")
+        if direct_carry_after_clamp and not tf_carry_enabled:
+            raise MissionError("force-carry GraspBox requires TF body-home carry")
         drag_tf_reanchor_enabled = BoxExecutionMixin._drag_tf_reanchor_active(
             enabled=(
                 self._boolean("drag_box_tf_reanchor_after_drag3_enabled")
@@ -1045,6 +861,7 @@ class BoxExecutionMixin:
         self._last_drag_box_tf_desired_box_to_link7_targets = None
         self._last_drag_box_tf_right_grasp_relation = None
         self._last_drag_box_tf_reanchored_box_after_drag3 = None
+        self._last_drag_box_tf_left_join_calibration_hold_completed = False
         if not standard_post_movel_enabled and not drag_post_movel_enabled:
             if force_mode == "closed_loop":
                 raise MissionError(
@@ -1112,6 +929,11 @@ class BoxExecutionMixin:
         ):
             is_step4 = label == "step4"
             is_left_only_step = label == "step1_left"
+            is_drag_tool_step = drag_mode and label in (
+                "step_drag1",
+                "step_drag2",
+                "step_drag3",
+            )
             motion_mode = "movel"
             if is_step4:
                 motion_mode = (
@@ -1128,13 +950,29 @@ class BoxExecutionMixin:
                 drag_mode=drag_mode,
                 requested_mode=motion_mode,
             )
+            if is_drag_tool_step:
+                # Drag deltas are native SDK Tool-frame offsets, independent
+                # of the box-frame mode used for ordinary post-grasp steps.
+                motion_mode = "movel_offset"
             z_equalization_detail = "target_z_equalization=not_applicable"
             sends_dual_pose = (
                 not is_left_only_step
                 and not (right_arm_only and not left_joined)
                 and not (is_step4 and motion_mode == "movej")
             )
-            if tf_mode and sends_dual_pose:
+            uses_rigid_step2 = (
+                tf_mode
+                and not dry_run
+                and label == "step2"
+                and force_mode == "closed_loop"
+                and self._boolean("box_tf_step2_rigid_base_z_lift_enabled")
+            )
+            if (
+                tf_mode
+                and sends_dual_pose
+                and not uses_rigid_step2
+                and not is_drag_tool_step
+            ):
                 left_step, right_step, z_equalization_detail = (
                     BoxExecutionMixin._equalize_tf_dual_target_z(
                         self,
@@ -1144,6 +982,21 @@ class BoxExecutionMixin:
                     )
                 )
                 targets[sequence_index - 1] = (label, left_step, right_step)
+            elif uses_rigid_step2:
+                z_equalization_detail = (
+                    "target_z_equalization=shared_base_link_rigid_lift; "
+                    "independent_arm_base_z_equalization=skipped"
+                )
+            elif is_drag_tool_step:
+                z_equalization_detail = (
+                    "target_z_equalization=not_applicable; "
+                    "sdk_command=rm_movel_offset(frame_type=tool)"
+                )
+            delta_frame_detail = (
+                "base_link_positive_z"
+                if uses_rigid_step2
+                else ("tool" if is_drag_tool_step else "foundationpose_box")
+            )
             detail_arms = ("left",) if is_left_only_step else active_arms
             detail = (
                 f"post-grasp {', '.join(detail_arms)} arm {motion_mode} {label} "
@@ -1151,10 +1004,35 @@ class BoxExecutionMixin:
                 "in left/right arm "
                 f"base frames: "
                 f"{BoxSupportMixin._dual_target_position_detail(left_step, right_step)}; "
-                "delta_frame=foundationpose_box; "
+                f"delta_frame={delta_frame_detail}; "
                 "orientation unchanged from the initial Link8 targets; "
                 f"{z_equalization_detail}"
             )
+            drag_step_index = (
+                int(label.removeprefix("step_drag")) if is_drag_tool_step else 0
+            )
+
+            def sdk_motion_target(arm: str, start: Pose, target: Pose) -> list[float]:
+                if is_drag_tool_step:
+                    parameter_name = BoxSupportMixin._drag_post_movel_xyz_parameter_name(
+                        self,
+                        arm,
+                        drag_step_index,
+                        model_label,
+                        box_layer=box_layer,
+                        tf_mode=tf_mode,
+                        drag_mode=True,
+                    )
+                    delta = self._float_array(parameter_name)
+                    if len(delta) != 3:
+                        raise MissionError(
+                            f"{parameter_name} must contain exactly 3 values"
+                        )
+                    return [float(value) for value in delta] + [0.0, 0.0, 0.0]
+                return BoxExecutionMixin._post_movel_sdk_target(
+                    start, target, motion_mode
+                )
+
             self._publish_box_grasp_feedback(
                 goal_handle,
                 f"POST_MOVEL_{label.upper()}_TARGETS",
@@ -1162,6 +1040,23 @@ class BoxExecutionMixin:
             )
             if dry_run:
                 results.append(f"{detail}; skipped in dry-run")
+                if direct_carry_after_clamp and label == "step1":
+                    if not tf_carry_enabled:
+                        raise MissionError(
+                            "force-carry GraspBox requires TF body-home carry"
+                        )
+                    results.append(
+                        self._execute_tf_body_home_carry(
+                            goal_handle,
+                            None,
+                            True,
+                            parameter_prefix=tf_carry_parameter_prefix,
+                            box_layer=box_layer,
+                            model_label=model_label,
+                        )
+                    )
+                    results.append("force_carry_profile=direct_carry_after_clamp; step2=skipped")
+                    return " | ".join(results)
                 if delayed_left_join and label == "step_drag3":
                     if drag_tf_reanchor_enabled:
                         results.append(
@@ -1174,6 +1069,8 @@ class BoxExecutionMixin:
                             None,
                             left_step,
                             True,
+                            box_layer=box_layer,
+                            model_label=model_label,
                         )
                     )
                     left_joined = True
@@ -1211,17 +1108,6 @@ class BoxExecutionMixin:
                             model_label=model_label,
                         )
                     )
-                    if tf_mode and drag_mode:
-                        results.append(
-                            BoxExecutionMixin._execute_drag_box_tf_post_carry_arm_base_z_lift(
-                                self,
-                                goal_handle,
-                                None,
-                                True,
-                                model_label=model_label,
-                                box_layer=box_layer,
-                            )
-                        )
                 continue
             # Step1 is the force-controlled clamping motion.  DragBox first
             # searches contact with the right arm only; after Drag3 the
@@ -1254,55 +1140,24 @@ class BoxExecutionMixin:
                             f"before {label}: age={age:.3f}s"
                         )
                     current_poses[arm] = pose
-                left_delta_name = self._post_movel_xyz_parameter_name(
-                    "left",
-                    1,
-                    model_label,
-                    box_layer=box_layer,
-                    tf_mode=True,
-                    drag_mode=drag_mode,
-                )
-                right_delta_name = self._post_movel_xyz_parameter_name(
-                    "right",
-                    1,
-                    model_label,
-                    box_layer=box_layer,
-                    tf_mode=True,
-                    drag_mode=drag_mode,
-                )
-                directions = {
-                    "left": self._force_clamp_direction(
-                        self._float_array(left_delta_name), "left"
-                    ),
-                    "right": self._force_clamp_direction(
-                        self._float_array(right_delta_name), "right"
-                    ),
-                }
-                if label == "step1" and drag_mode and delayed_left_join:
-                    actual_right, force_detail = self._force_clamp_contact_only(
-                        goal_handle,
-                        adapter,
-                        force_session,
-                        "right",
-                        current_poses["right"],
-                        self._float_array(right_delta_name),
-                    )
-                    actual_by_arm = {"right": actual_right}
-                else:
-                    actual_by_arm, force_detail = self._force_clamp_bilateral(
+                actual_by_arm, force_detail = (
+                    self._force_clamp_sdk_tool_y_stream(
                         goal_handle,
                         adapter,
                         force_session,
                         current_poses,
-                        directions,
+                        initial_drag_right_contact=(
+                            label == "step1"
+                            and drag_mode
+                            and delayed_left_join
+                        ),
+                        target_force_override_n=self._force_carry_clamp_target_override(
+                            force_carry_profile=force_carry_profile,
+                            drag_mode=drag_mode,
+                            label=label,
+                        ),
                     )
-                    # A zero direction is passive: do not apply a correction
-                    # based on a monitored arm that was not moved.
-                    actual_by_arm = {
-                        arm: pose
-                        for arm, pose in actual_by_arm.items()
-                        if directions.get(arm) is not None
-                    }
+                )
                 actual_left = actual_by_arm.get("left", left_step)
                 actual_right = actual_by_arm.get("right", right_step)
                 for arm, actual_pose in actual_by_arm.items():
@@ -1314,13 +1169,55 @@ class BoxExecutionMixin:
                     actual_by_arm,
                     {"left": left_step, "right": right_step},
                 )
+                if (
+                    label == "step1"
+                    and not drag_mode
+                    and not direct_carry_after_clamp
+                    and self._boolean("box_tf_step2_rigid_base_z_lift_enabled")
+                ):
+                    rigid_lift_detail = (
+                        self._reanchor_drag_tf_step2_from_actual_grasp(
+                            targets,
+                            sequence_index,
+                            box_layer=box_layer,
+                            model_label=model_label,
+                            drag_mode=False,
+                        )
+                    )
+                    results.append(rigid_lift_detail)
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "TF_STEP2_RIGID_LIFT_READY",
+                        rigid_lift_detail,
+                    )
                 results.append(f"{detail}; {force_detail}")
                 self._publish_box_grasp_feedback(
                     goal_handle,
                     "FORCE_CLAMP_CONFIRMED",
-                    f"{force_detail}; nominal Step1 distance ignored; "
-                    "Step2 will use the actual force-confirmed pose",
+                    f"{force_detail}; nominal Step1 distance ignored; " + (
+                        "waist-home carry starts from the actual force-confirmed pose; "
+                        "Step2 lift skipped"
+                        if direct_carry_after_clamp
+                        else "Step2 will use the actual force-confirmed pose"
+                    ),
                 )
+                if direct_carry_after_clamp:
+                    if not tf_carry_enabled:
+                        raise MissionError(
+                            "force-carry GraspBox requires TF body-home carry"
+                        )
+                    results.append(
+                        self._execute_tf_body_home_carry(
+                            goal_handle,
+                            adapter,
+                            False,
+                            parameter_prefix=tf_carry_parameter_prefix,
+                            box_layer=box_layer,
+                            model_label=model_label,
+                        )
+                    )
+                    results.append("force_carry_profile=direct_carry_after_clamp; step2=skipped")
+                    return " | ".join(results)
                 if (
                     drag_tf_reanchor_enabled
                     and label == "step1"
@@ -1329,6 +1226,9 @@ class BoxExecutionMixin:
                 ):
                     capture_detail = self._capture_drag_tf_right_grasp_relation()
                     results.append(capture_detail)
+                    results.append(self._precheck_drag_tf_left_join_after_contact(
+                        goal_handle, adapter, box_layer=box_layer, model_label=model_label
+                    ))
                     self._publish_box_grasp_feedback(
                         goal_handle,
                         "DRAG_TF_RIGHT_GRASP_RELATION_CAPTURED",
@@ -1337,13 +1237,14 @@ class BoxExecutionMixin:
                 if label == "step1_left":
                     left_joined = True
                     active_arms = ("left", "right")
-                    if drag_tf_reanchor_enabled:
+                    if self._boolean("box_tf_step2_rigid_base_z_lift_enabled"):
                         reanchor_detail = (
                             self._reanchor_drag_tf_step2_from_actual_grasp(
                                 targets,
                                 sequence_index,
                                 box_layer=box_layer,
                                 model_label=model_label,
+                                drag_mode=True,
                             )
                         )
                         results.append(reanchor_detail)
@@ -1399,43 +1300,49 @@ class BoxExecutionMixin:
                 if is_left_only_step:
                     motion_result = adapter.execute_single(
                         "left",
-                        BoxExecutionMixin._post_movel_sdk_target(
-                            current_post_poses["left"], left_step, motion_mode
-                        ),
+                        sdk_motion_target("left", current_post_poses["left"], left_step),
                         motion_mode,
                         self._float("box_post_movel_velocity_percent"),
                         self._boolean("direct_movel_blocking"),
                         cancel_requested=lambda: goal_handle.is_cancel_requested,
                         timeout_sec=self._float("direct_sdk_motion_timeout_sec"),
-                        offset_frame_type=0,
+                        offset_frame_type=1 if is_drag_tool_step else 0,
                     )
                 elif right_arm_only and not left_joined:
                     motion_result = adapter.execute_single(
                         "right",
-                        BoxExecutionMixin._post_movel_sdk_target(
-                            current_post_poses["right"], right_step, motion_mode
-                        ),
+                        sdk_motion_target("right", current_post_poses["right"], right_step),
                         motion_mode,
                         self._float("box_post_movel_velocity_percent"),
                         self._boolean("direct_movel_blocking"),
                         cancel_requested=lambda: goal_handle.is_cancel_requested,
                         timeout_sec=self._float("direct_sdk_motion_timeout_sec"),
-                        offset_frame_type=0,
+                        offset_frame_type=1 if is_drag_tool_step else 0,
+                    )
+                elif label == "step2" and motion_mode == "movel":
+                    left_speed = self._float("box_post_lift_left_velocity_percent")
+                    right_speed = self._float("box_post_lift_right_velocity_percent")
+                    self._publish_box_grasp_feedback(
+                        goal_handle, "POST_MOVEL_STEP2_SPEEDS",
+                        f"dual lift MoveL: left={left_speed:g}%, right={right_speed:g}%",
+                    )
+                    motion_result = adapter.execute_dual_movel_endpoint(
+                        sdk_motion_target("left", current_post_poses["left"], left_step),
+                        sdk_motion_target("right", current_post_poses["right"], right_step),
+                        left_speed, right_speed,
+                        cancel_requested=lambda: goal_handle.is_cancel_requested,
+                        timeout_sec=self._float("direct_sdk_motion_timeout_sec"),
                     )
                 else:
                     motion_result = adapter.execute_dual(
-                        BoxExecutionMixin._post_movel_sdk_target(
-                            current_post_poses["left"], left_step, motion_mode
-                        ),
-                        BoxExecutionMixin._post_movel_sdk_target(
-                            current_post_poses["right"], right_step, motion_mode
-                        ),
+                        sdk_motion_target("left", current_post_poses["left"], left_step),
+                        sdk_motion_target("right", current_post_poses["right"], right_step),
                         motion_mode,
                         self._float("box_post_movel_velocity_percent"),
                         self._boolean("direct_movel_blocking"),
                         cancel_requested=lambda: goal_handle.is_cancel_requested,
                         timeout_sec=self._float("direct_sdk_motion_timeout_sec"),
-                        offset_frame_type=0,
+                        offset_frame_type=1 if is_drag_tool_step else 0,
                     )
             except RealManSdkCanceled as exc:
                 raise MissionCanceled(str(exc)) from exc
@@ -1470,7 +1377,7 @@ class BoxExecutionMixin:
                 join_left_target = left_step
                 if drag_tf_reanchor_enabled:
                     join_left_target, reanchor_detail = (
-                        self._reanchor_drag_tf_left_join_after_drag3()
+                        self._reanchor_drag_tf_left_join_after_drag3(model_label=model_label, box_layer=box_layer)
                     )
                     targets[sequence_index - 1] = (
                         label,
@@ -1489,17 +1396,39 @@ class BoxExecutionMixin:
                         adapter,
                         join_left_target,
                         False,
+                        box_layer=box_layer,
+                        model_label=model_label,
                     )
                 )
                 current_post_poses["left"] = deepcopy(join_left_target)
                 left_joined = True
                 active_arms = ("left", "right")
-            if drag_tf_reanchor_enabled and label == "step1_left":
+                if self._boolean(
+                    "drag_box_tf_calibration_stop_after_left_join_enabled"
+                ):
+                    hold_detail = (
+                        "calibration hold reached after Drag3 re-anchoring and "
+                        "left-arm join; bilateral force clamp, Step2, carry, "
+                        "and home motions were not executed"
+                    )
+                    self._last_drag_box_tf_left_join_calibration_hold_completed = True
+                    results.append(hold_detail)
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "DRAG_LEFT_TARGET_CALIBRATION_HOLD",
+                        hold_detail,
+                    )
+                    return " | ".join(results)
+            if (
+                label == "step1_left"
+                and self._boolean("box_tf_step2_rigid_base_z_lift_enabled")
+            ):
                 reanchor_detail = self._reanchor_drag_tf_step2_from_actual_grasp(
                     targets,
                     sequence_index,
                     box_layer=box_layer,
                     model_label=model_label,
+                    drag_mode=True,
                 )
                 results.append(reanchor_detail)
                 self._publish_box_grasp_feedback(
@@ -1540,17 +1469,6 @@ class BoxExecutionMixin:
                         model_label=model_label,
                     )
                 )
-                if tf_mode and drag_mode:
-                    results.append(
-                        BoxExecutionMixin._execute_drag_box_tf_post_carry_arm_base_z_lift(
-                            self,
-                            goal_handle,
-                            adapter,
-                            False,
-                            model_label=model_label,
-                            box_layer=box_layer,
-                        )
-                    )
                 self._rebase_post_movel_targets_after_tf_carry(
                     targets,
                     sequence_index,
@@ -1578,6 +1496,8 @@ class BoxExecutionMixin:
         delayed_left_join: bool = False,
         tf_mode: bool = False,
         model_label: str | None = None,
+        parallel_optimization=None,
+        preparation_already_completed: bool = False,
     ) -> str:
         """Send final Link8 targets, optionally for the right arm only."""
         tf_carry_parameter_prefix = BoxSupportMixin._tf_body_home_carry_parameter_prefix(
@@ -1653,12 +1573,16 @@ class BoxExecutionMixin:
                 raise MissionError(
                     "TF GraspBox has no frozen base-frame box pose after detection"
                 )
-            left_tf_target, right_tf_target = self._make_tf_link8_target_poses(
-                frozen_box_pose,
-                box_layer,
-                model_label,
-                drag_mode=drag_mode,
-            )
+            if parallel_optimization is not None:
+                left_tf_target = parallel_optimization["left_target"]
+                right_tf_target = parallel_optimization["right_target"]
+            else:
+                left_tf_target, right_tf_target = self._make_tf_link8_target_poses(
+                    frozen_box_pose,
+                    box_layer,
+                    model_label,
+                    drag_mode=drag_mode,
+                )
             box_transform = self._pose_stamped_to_transform(frozen_box_pose)
             self._last_grasp_box_tf_box_to_link7_targets = {
                 "left": BoxSupportMixin._compose_transform(
@@ -1670,6 +1594,40 @@ class BoxExecutionMixin:
                     self._pose_stamped_to_transform(right_tf_target),
                 ),
             }
+            if parallel_optimization is not None:
+                (
+                    optimized_waist,
+                    optimized_workspace,
+                    optimization_detail,
+                ) = self._wait_tf_waist_optimization_parallel(
+                    goal_handle, parallel_optimization
+                )
+                optimization_detail = (
+                    f"{optimization_detail}; computation_timing=parallel_with_arm_preparation"
+                )
+            else:
+                direct_carry_options = (
+                    {"direct_carry_after_clamp": True}
+                    if bool(getattr(getattr(goal_handle, "request", None), "force_carry_profile", False))
+                    and not drag_mode
+                    else {}
+                )
+                (
+                    optimized_waist,
+                    optimized_workspace,
+                    optimization_detail,
+                ) = self._optimize_tf_waist_target(
+                    goal_handle,
+                    left_tf_target,
+                    right_tf_target,
+                    box_layer,
+                    model_label,
+                    drag_mode=drag_mode,
+                    equalize_target_z=not right_arm_only and not delayed_left_join,
+                    right_arm_only=right_arm_only,
+                    delayed_left_join=delayed_left_join,
+                    **direct_carry_options,
+                )
             left_target, right_target, execution_detail = self._apply_tf_execution_mode(
                 goal_handle,
                 left_tf_target,
@@ -1678,8 +1636,11 @@ class BoxExecutionMixin:
                 box_layer,
                 model_label,
                 drag_mode=drag_mode,
+                approach_angles_override=optimized_waist,
             )
+            execution_detail = f"{execution_detail}; {optimization_detail}"
         else:
+            optimized_workspace = None
             arm_poses = getattr(self, "_last_box_pose_by_arm", {})
             left_target = self._make_direct_movel_pose(
                 arm_poses.get("left", box_pose),
@@ -1767,6 +1728,11 @@ class BoxExecutionMixin:
             right_target.position.z,
         )
         motion_mode = self._string("direct_movel_motion_mode").strip().lower()
+        execute_optimized_movej = bool(
+            tf_mode
+            and optimized_workspace is not None
+            and motion_mode == "movej_p"
+        )
         compensation_detail = (
             "fixture-center compensated"
             if self._boolean("direct_movel_fixture_compensation_enabled")
@@ -1832,6 +1798,31 @@ class BoxExecutionMixin:
         self._publish_box_grasp_feedback(goal_handle, "DIRECT_MOVEL_TARGETS", detail)
         post_right_arm_only = right_arm_only and not delayed_left_join
         if dry_run:
+            optimized_movej_detail = ""
+            if execute_optimized_movej:
+                if right_arm_only:
+                    optimized_movej_detail = (
+                        "; dry-run uses the predicted right-arm IK only; "
+                        "post-waist live-TF IK and ROS MoveJ are skipped: "
+                        f"right=[{','.join(f'{value:.3f}' for value in optimized_workspace.right_joint_deg)}]"
+                    )
+                else:
+                    optimized_movej_detail = (
+                        "; dry-run uses the predicted dual-arm IK only; "
+                        "post-waist live-TF IK and ROS MoveJ are skipped: "
+                        f"left=[{','.join(f'{value:.3f}' for value in optimized_workspace.left_joint_deg)}], "
+                        f"right=[{','.join(f'{value:.3f}' for value in optimized_workspace.right_joint_deg)}]"
+                    )
+            post_waist_pre_movej_detail = self._execute_post_waist_pre_movej(
+                goal_handle,
+                None,
+                True,
+                box_layer,
+                model_label,
+                drag_mode=drag_mode,
+                right_arm_only=right_arm_only,
+                already_completed=preparation_already_completed,
+            )
             post_detail = self._execute_post_movel_sequence(
                 goal_handle,
                 None,
@@ -1864,7 +1855,9 @@ class BoxExecutionMixin:
             )
             return (
                 f"{detail}; direct {motion_mode} skipped in dry-run; "
-                f"{post_detail}; {post_arm_detail}; {body_home_detail}"
+                f"{post_waist_pre_movej_detail}; {optimized_movej_detail}; "
+                f"{post_detail}; {post_arm_detail}; "
+                f"{body_home_detail}"
             )
 
         backend = self._string("direct_motion_backend").strip().lower()
@@ -1886,12 +1879,86 @@ class BoxExecutionMixin:
                     "is not initialized"
                 )
             try:
-                if right_arm_only:
+                direct_arm_velocity = self._float(
+                    "drag_box_tf_post_waist_pre_movej_velocity_percent"
+                    if drag_mode
+                    else "direct_movel_velocity_percent"
+                )
+                post_waist_pre_movej_detail = self._execute_post_waist_pre_movej(
+                    goal_handle,
+                    adapter,
+                    False,
+                    box_layer,
+                    model_label,
+                    drag_mode=drag_mode,
+                    right_arm_only=right_arm_only,
+                    already_completed=preparation_already_completed,
+                )
+                if execute_optimized_movej:
+                    if getattr(adapter, "_ros_movej_transport", None) is None:
+                        raise MissionError(
+                            "post-waist live-TF MoveJ requires the ROS MoveJ transport"
+                        )
+                    live_joint_targets = self._solve_post_waist_live_tf_movej_ik(
+                        goal_handle,
+                        adapter,
+                        left_target,
+                        right_target,
+                        optimized_workspace,
+                        right_arm_only=right_arm_only,
+                    )
+                    right_joint_target = live_joint_targets["right"]
+                    if right_arm_only:
+                        joint_detail = (
+                            "executing the right-arm 7DOF solution re-solved from "
+                            "the post-waist live-TF target through ROS MoveJ; "
+                            "the waist-workspace solution was only the IK seed; "
+                            f"right=[{','.join(f'{value:.3f}' for value in right_joint_target)}]"
+                        )
+                    else:
+                        left_joint_target = live_joint_targets["left"]
+                        joint_detail = (
+                            "executing dual-arm 7DOF solutions re-solved from "
+                            "post-waist live-TF targets through ROS MoveJ; "
+                            "the waist-workspace solutions were only IK seeds; "
+                            f"left=[{','.join(f'{value:.3f}' for value in left_joint_target)}]; "
+                            f"right=[{','.join(f'{value:.3f}' for value in right_joint_target)}]"
+                        )
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "DIRECT_OPTIMIZED_MOVEJ_TARGETS",
+                        joint_detail,
+                    )
+                    if right_arm_only:
+                        motion_result = adapter.execute_single_movej(
+                            "right",
+                            right_joint_target,
+                            direct_arm_velocity,
+                            blend_radius=0,
+                            trajectory_connect=0,
+                            cancel_requested=lambda: goal_handle.is_cancel_requested,
+                            timeout_sec=self._float("direct_sdk_motion_timeout_sec"),
+                        )
+                    else:
+                        motion_result = adapter.execute_dual_movej(
+                            left_joint_target,
+                            right_joint_target,
+                            direct_arm_velocity,
+                            blend_radius=0,
+                            trajectory_connect=0,
+                            cancel_requested=lambda: goal_handle.is_cancel_requested,
+                            timeout_sec=self._float("direct_sdk_motion_timeout_sec"),
+                        )
+                    motion_result = (
+                        f"{post_waist_pre_movej_detail}; {joint_detail}; "
+                        f"{motion_result}"
+                    )
+                elif right_arm_only:
                     motion_result = adapter.execute_single(
                         "right",
                         pose_to_sdk_target(right_target),
                         motion_mode,
-                        self._float("direct_movel_velocity_percent"),
+                        direct_arm_velocity,
                         self._boolean("direct_movel_blocking"),
                         cancel_requested=lambda: goal_handle.is_cancel_requested,
                         timeout_sec=self._float("direct_sdk_motion_timeout_sec"),
@@ -1901,11 +1968,98 @@ class BoxExecutionMixin:
                         pose_to_sdk_target(left_target),
                         pose_to_sdk_target(right_target),
                         motion_mode,
-                        self._float("direct_movel_velocity_percent"),
+                        direct_arm_velocity,
                         self._boolean("direct_movel_blocking"),
                         cancel_requested=lambda: goal_handle.is_cancel_requested,
                         timeout_sec=self._float("direct_sdk_motion_timeout_sec"),
                     )
+                if not execute_optimized_movej:
+                    motion_result = (
+                        f"{post_waist_pre_movej_detail}; {motion_result}"
+                    )
+                if (
+                    tf_mode
+                    and drag_mode
+                    and self._boolean(
+                        "drag_box_tf_calibration_stop_after_initial_right_target_enabled"
+                    )
+                ):
+                    if not right_arm_only:
+                        raise MissionError(
+                            "DragBox right-target calibration requires the "
+                            "right-only initial arm phase"
+                        )
+                    hold_detail = (
+                        "calibration hold reached after the initial right-arm "
+                        "target; force clamp, Drag1/Drag2/Drag3, delayed left "
+                        "join, carry, and home motions were not executed"
+                    )
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "DRAG_RIGHT_TARGET_CALIBRATION_HOLD",
+                        hold_detail,
+                    )
+                    return f"{detail}; {motion_result}; {hold_detail}"
+                if (
+                    tf_mode
+                    and drag_mode
+                    and self._boolean(
+                        "drag_box_tf_calibration_pause_after_initial_right_target_enabled"
+                    )
+                ):
+                    if not right_arm_only:
+                        raise MissionError(
+                            "DragBox continuous calibration requires the right-only "
+                            "initial arm phase"
+                        )
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "DRAG_RIGHT_TARGET_CALIBRATION_WAITING",
+                        "right target reached; action paused before force clamp "
+                        "and Drag1/2/3; left arm remains at avoidance posture",
+                    )
+                    pause_start = time.monotonic()
+                    while not self._boolean(
+                        "drag_box_tf_calibration_continue_after_initial_right_target"
+                    ):
+                        self._check_canceled(goal_handle, "during DragBox calibration pause")
+                        if time.monotonic() - pause_start > self._float(
+                            "drag_box_tf_calibration_pause_timeout_sec"
+                        ):
+                            raise MissionError(
+                                "DragBox calibration pause timed out before operator continuation"
+                            )
+                        time.sleep(0.1)
+                    self._check_canceled(goal_handle, "before DragBox calibration continuation")
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "DRAG_RIGHT_TARGET_CALIBRATION_CONTINUING",
+                        "continuing the same action: right force clamp and Drag1/2/3; "
+                        "left arm stays at avoidance posture until the Drag3 join",
+                    )
+                if (
+                    tf_mode
+                    and not drag_mode
+                    and self._boolean(
+                        "grasp_box_tf_calibration_stop_after_initial_dual_target_enabled"
+                    )
+                ):
+                    if right_arm_only:
+                        raise MissionError(
+                            "GraspBox dual-target calibration requires both "
+                            "arms in the initial target phase"
+                        )
+                    hold_detail = (
+                        "calibration hold reached after the initial dual-arm "
+                        "targets; force clamp, Step1/Step2, carry, and home "
+                        "motions were not executed"
+                    )
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "GRASP_DUAL_TARGET_CALIBRATION_HOLD",
+                        hold_detail,
+                    )
+                    return f"{detail}; {motion_result}; {hold_detail}"
                 post_detail = self._execute_post_movel_sequence(
                     goal_handle,
                     adapter,
@@ -1919,6 +2073,12 @@ class BoxExecutionMixin:
                     model_label=model_label,
                     tf_mode=tf_mode,
                 )
+                if getattr(
+                    self,
+                    "_last_drag_box_tf_left_join_calibration_hold_completed",
+                    False,
+                ):
+                    return f"{detail}; {motion_result}; {post_detail}"
                 post_arm_detail = self._execute_post_arm_movej(
                     goal_handle, False, right_arm_only=post_right_arm_only
                 )

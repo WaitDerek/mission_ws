@@ -5,6 +5,8 @@ import unittest
 
 import yaml
 
+from mission_runtime.parameter_declarations import ParameterDeclarationsMixin
+
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = PACKAGE_ROOT / "config"
@@ -22,6 +24,28 @@ def _digest(parameters):
 
 
 class TestMissionConfigComposition(unittest.TestCase):
+    def test_drag_left_join_joint4_parameters_are_declared(self):
+        class Recorder(ParameterDeclarationsMixin):
+            def __init__(self):
+                self.names = set()
+
+            def declare_parameters(self, *, namespace, parameters):
+                self.names.update(name for name, _default in parameters)
+
+            def _tf_layer_parameter_defaults(self):
+                return []
+
+        recorder = Recorder()
+        recorder._declare_parameters()
+        self.assertIn(
+            "drag_box_left_join_preferred_joint4_deg_bigbox_layer1",
+            recorder.names,
+        )
+        self.assertIn(
+            "drag_box_left_join_joint4_tolerance_deg_bigbox_layer1",
+            recorder.names,
+        )
+
     def test_fragments_are_unique_and_match_manifest(self):
         manifest = yaml.safe_load(
             (FRAGMENT_ROOT / "manifest.yaml").read_text(encoding="utf-8")

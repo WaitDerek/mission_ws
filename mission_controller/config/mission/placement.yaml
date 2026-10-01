@@ -25,41 +25,84 @@ mission_controller:
     - 0
     place_box_test_body_joint_units:
     - -40000
-    - -60000
+    - -80000
     - -40000
     - 0
+    place_box_test_dynamic_table_enabled: true
+    place_box_test_table_height_base_footprint_m: 0.755
+    place_box_test_bigbox_half_height_m: 0.16865
+    place_box_test_smallbox_half_height_m: 0.13980
+    place_box_test_waist_clearance_m: 0.040
+    place_box_test_waist_workspace_enabled: true
+    place_box_test_waist_y_search_half_range_m: 0.100
+    place_box_test_waist_y_search_step_m: 0.020
+    place_box_test_waist_z_max_drop_m: 0.080
+    place_box_test_waist_z_search_step_m: 0.040
+    place_box_test_waist_ik_min_margin_deg: 2.0
+    place_box_test_waist_ik_max_step_deg: 75.0
+    # Retain legacy segmented descent; select it again with mode: segmented.
+    place_box_test_descent_mode: continuous
+    # Measured Link8 Z in base_footprint, captured 2026-09-30 during installation.
+    place_box_test_continuous_left_min_z_footprint_m: 0.975131
+    place_box_test_continuous_right_min_z_footprint_m: 0.966566
+    place_box_test_continuous_max_drop_difference_m: 0.03
+    place_box_test_descent_y_search_enabled: false  # Legacy compatibility; direct MoveL does not search.
+    place_box_test_descent_work_y_step_m: 0.002
+    place_box_test_descent_work_y_max_travel_m: 0.100
+    place_box_test_descent_y_search_half_range_m: 0.100
+    place_box_test_descent_y_search_step_m: 0.001
+    place_box_test_descent_y_max_step_m: 0.002
+    place_box_test_descent_ik_max_joint_step_deg: 10.0
+    place_box_test_descent_z_target_tolerance_m: 0.020
+    place_box_test_descent_z_difference_tolerance_m: 0.005
+    place_box_test_descent_z_check_timeout_sec: 1.0
+    place_box_test_descent_z_feedback_max_age_sec: 0.25
+    place_box_test_descent_z_correction_max_attempts: 3
+    place_box_test_descent_z_correction_step_m: 0.002
+    place_box_test_descent_z_correction_max_travel_m: 0.005
+    place_box_test_table_coarse_step_m: 0.005
+    place_box_test_table_fine_step_m: 0.001
+    place_box_test_table_fine_distance_m: 0.030
+    place_box_test_table_max_overtravel_m: 0.005
+    place_box_test_table_early_contact_tolerance_m: 0.500
+    place_box_test_table_support_delta_fz_n: 3.0
+    place_box_test_table_unloaded_abs_fz_n: 100.0
+    place_box_test_table_support_sign_left: 1.0
+    place_box_test_table_support_sign_right: 1.0
+    place_box_test_post_support_arm_base_descent_m: 0.030
+    place_box_test_post_support_max_abs_work_fz_n: 200.0
     place_box_test_left_target_pose_arm_base:
-    - -0.323464
-    - 0.551264
-    - -0.096540
-    - -0.377
-    - -0.411
-    - -0.603
-    - 0.569
+    - -0.484519
+    - 0.564599
+    - -0.102020
+    - -0.435
+    - -0.446
+    - -0.566
+    - 0.539
     place_box_test_right_target_pose_arm_base:
-    - -0.364445
-    - -0.537010
-    - -0.085777
-    - 0.379
-    - -0.393
-    - 0.573
-    - 0.610
+    - -0.261094
+    - -0.591816
+    - -0.098310
+    - 0.394
+    - -0.409
+    - 0.568
+    - 0.594
     place_box_test_left_target_pose_arm_base_smallbox:
-    - -0.323464
-    - 0.551264
-    - -0.096540
-    - -0.377
-    - -0.411
-    - -0.603
-    - 0.569
+    - -0.484519
+    - 0.564599
+    - -0.102020
+    - -0.435
+    - -0.446
+    - -0.566
+    - 0.539
     place_box_test_right_target_pose_arm_base_smallbox:
-    - -0.364445
-    - -0.537010
-    - -0.085777
-    - 0.379
-    - -0.393
-    - 0.573
-    - 0.610
+    - -0.261094
+    - -0.591816
+    - -0.098310
+    - 0.394
+    - -0.409
+    - 0.568
+    - 0.594
     place_box_test_left_target_pose_arm_base_bigbox:
     - -0.387499
     - 0.568216
@@ -84,11 +127,9 @@ mission_controller:
     place_box_test_right_movel_velocity_percent: 10.0
     place_box_test_arm_motion_mode: movel
     place_box_test_arm_offset_frame_type: 0
-    place_box_test_final_correction_enabled: true
-    place_box_test_final_correction_velocity_percent: 5.0
     place_box_test_timeout_sec: 180.0
     place_box_test_start_body_tolerance_rad: 0.035
-    place_box_test_position_tolerance_m: 0.015
+    place_box_test_position_tolerance_m: 0.020
     place_box_test_orientation_tolerance_rad: 0.1
     place_box_test_stable_samples: 3
     place_box_test_target_consistency_position_tolerance_m: 0.15
@@ -118,6 +159,9 @@ mission_controller:
     place_box_test_post_support_z_equalization_tolerance_m: 0.005
     place_box_test_post_support_z_equalization_timeout_sec: 30.0
     place_box_test_post_release_arm_movej_enabled: true
+    place_box_test_post_release_tool_y_retreat_enabled: true
+    place_box_test_post_release_tool_y_retreat_m: 0.001
+    place_box_test_post_release_tool_y_retreat_timeout_sec: 30.0
     place_box_test_post_release_arm_joint2_angle_deg: 60.0
     place_box_test_post_release_arm_movej_velocity_percent: 12.0
     place_box_test_post_release_arm_movej_position_tolerance_rad: 0.035

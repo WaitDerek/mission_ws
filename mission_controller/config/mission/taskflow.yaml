@@ -1,8 +1,10 @@
 execute_workflow:
   ros__parameters:
     workflow_action_name: /execute_workflow
+    navigation_test_action_name: /execute_navigation_test
     observation_navigation_action_name: /execute_observation_navigation
     navigate_to_point_action_name: /navigate_to_point
+    micro_navigation_action_name: /execute_micro_navigation
     global_observation_action_name: /depalletizing/observe
     grasp_box_tf_action_name: /grasp_box_tf
     execute_drag_box_grasp_tf_action_name: /execute_drag_box_grasp_tf
@@ -10,10 +12,14 @@ execute_workflow:
     place_box_test_action_name: /place_box_test
     fixed_workflow_action_name: /execute_fixed_box_workflow
     fixed_workflow_enabled: true
+    force_carry_workflow_action_name: /execute_force_carry_box_workflow
+    force_carry_workflow_enabled: true
     # Optional Vision-driven ordering for /execute_fixed_box_workflow.
-    # false preserves the deterministic eight-item sequence.
+    # false preserves the deterministic 16-item front-then-back sequence.
     fixed_workflow_global_observation_point_id: 4
-    fixed_workflow_global_observation_pos: [-0.17, -0.59, 1.12]
+    fixed_workflow_global_observation_pos: [-0.47, 0.18, 0.07]
+    fixed_workflow_north_global_observation_point_id: 7
+    fixed_workflow_north_global_observation_pos: [2.66, 0.29, -3.10]
     fixed_workflow_global_observation_left_joints:
       [0.9552012463239765, 0.20020671849626956, -0.023596851486963336,
        -1.6503309808082782, -0.23349014733180137, 0.05307546255314755,
@@ -32,13 +38,23 @@ execute_workflow:
     smallbox_workflow_enabled: true
     fixed_workflow_target_label: 0
     fixed_workflow_place_point_id: 2
-    fixed_workflow_place_pos: [-0.81, -0.77, -1.89]
+    fixed_workflow_place_pos: [-0.78, 1.16, -3.07]
+    # After every successful grasp, retreat 50 cm in base_footprint before map navigation.
+    fixed_workflow_micro_retreat_pos: [-0.50, 0.0, 0.0]
+    # Front-right bigboxes are dragged; front-left smallboxes are grasped directly.
     fixed_workflow_drag_bigbox_point_id: 1
-    fixed_workflow_drag_bigbox_pickup_pos: [0.65, -0.05, 1.24]
-    fixed_workflow_drag_bigbox_layer4_pickup_pos: [0.65, -0.05, 1.24]
+    fixed_workflow_drag_bigbox_pickup_pos: [0.24, -0.24, 0.11]
+    fixed_workflow_drag_bigbox_layer4_pickup_pos: [0.24, -0.24, 0.11]
     fixed_workflow_direct_smallbox_point_id: 3
-    fixed_workflow_direct_smallbox_pickup_pos: [-0.10, 0.20, 1.23]
-    fixed_workflow_direct_smallbox_layer4_pickup_pos: [-0.10, 0.30, 1.23]
+    fixed_workflow_direct_smallbox_pickup_pos: [0.20, 0.50, 0.06]
+    fixed_workflow_direct_smallbox_layer4_pickup_pos: [0.20, 0.50, 0.06]
+    # Back-right bigboxes are dragged; back-left smallboxes are grasped directly.
+    fixed_workflow_north_drag_bigbox_point_id: 5
+    fixed_workflow_north_drag_bigbox_pickup_pos: [1.82, 0.77, -3.03]
+    fixed_workflow_north_drag_bigbox_layer4_pickup_pos: [1.82, 0.77, -3.03]
+    fixed_workflow_north_direct_smallbox_point_id: 6
+    fixed_workflow_north_direct_smallbox_pickup_pos: [1.93, 0.00, -3.02]
+    fixed_workflow_north_direct_smallbox_layer4_pickup_pos: [1.93, 0.00, -3.02]
     acquire_mission_lease_service_name: /mission/acquire_workflow_lease
     release_mission_lease_service_name: /mission/release_workflow_lease
 
@@ -58,13 +74,22 @@ execute_workflow:
     mqtt_connect_timeout_sec: 10.0
     mqtt_navigation_timeout_sec: 300.0
     mqtt_navigation_frame_id: map
+    # Measured chassis behavior: pos[0] moves opposite base_footprint Y;
+    # pos[1] moves along base_footprint X. The existing retreat value is unchanged.
+    mqtt_micro_navigation_robot_id: "realman-001"
+    mqtt_micro_navigation_request_topic: mission/micro_navigation/request
+    mqtt_micro_navigation_result_topic: mission/micro_navigation/result
+    mqtt_micro_navigation_client_id: ""
+    mqtt_micro_navigation_frame_id: base_footprint
+    mqtt_micro_navigation_timeout_sec: 120.0
     mqtt_navigation_points_json: >-
-      {"1":{"x":0.65,"y":-0.05,"yaw":1.24},
-       "2":{"x":-0.81,"y":-0.77,"yaw":-1.89},
-       "3":{"x":-0.10,"y":0.20,"yaw":1.23},
-       "4":{"x":-0.17,"y":-0.59,"yaw":1.12},
-       "5":{"x":3.17,"y":0.759915,"yaw":3.077476},
-       "6":{"x":4.10,"y":-0.13,"yaw":0.01}}
+      {"1":{"x":0.24,"y":-0.24,"yaw":0.11},
+       "2":{"x":-0.78,"y":1.16,"yaw":-3.07},
+       "3":{"x":0.20,"y":0.50,"yaw":0.06},
+       "4":{"x":-0.47,"y":0.18,"yaw":0.07},
+       "5":{"x":1.82,"y":0.77,"yaw":-3.03},
+       "6":{"x":1.93,"y":0.00,"yaw":-3.02},
+       "7":{"x":2.66,"y":0.29,"yaw":-3.10}}
 
     # Platform MQTT {"robot_id":"realman-001","start":true} -> Action goal.
     mqtt_start_enabled: true
@@ -73,7 +98,7 @@ execute_workflow:
     mqtt_trigger_client_id: ""
     mqtt_start_action_wait_timeout_sec: 5.0
 
-    global_observation_camera_side: left
+    global_observation_camera_side: right
     global_observation_max_front_stacks: 2
     global_observation_model_label: ""
     global_observation_confidence_threshold: 0.0
@@ -85,3 +110,8 @@ execute_workflow:
     server_wait_timeout_sec: 10.0
     child_result_timeout_sec: 1200.0
     lease_service_timeout_sec: 5.0
+    # Right-arm mirror of the calibrated global observation posture (radians).
+    fixed_workflow_global_observation_right_joints: [-0.9552012463239765, 0.20020671849626956, 0.023596851486963336, -1.6503309808082782, 0.23349014733180137, -0.05307546255314755, -0.9764593566132677]
+    fixed_workflow_global_observation_right_home_joints: [-0.0, 0.0, -0.0, 0.0, -0.0, -0.0, -0.0]
+    # Before global observation, open only right J2 from live joint feedback.
+    fixed_workflow_global_observation_right_joint2_open_deg: 30.0

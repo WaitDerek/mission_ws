@@ -4,8 +4,9 @@ realbots_global_tf:
     body_feedback_topic: /mcap/body
     left_arm_feedback_topic: /mcap/slave_arm_left
     right_arm_feedback_topic: /mcap/slave_arm_right
-    # The node also accepts a complete JointState stream when one is present.
+    # Normalized output. Optional external input must use a distinct topic.
     joint_state_topic: /joint_states
+    joint_state_input_topic: ""
 
     base_frame: base_footprint
     output_frame: base_footprint
@@ -24,7 +25,8 @@ realbots_global_tf:
     # Preserve the calibrated optical-center offset, then move the published
     # camera-link origin another 2.0 cm along its corrected local -X axis.
     camera_mount_xyz: [0.036325222014028, -0.000878210088295, -0.010083718702881]
-    # Any driver optical frame below this link is not used as a pose frame.
+    # The driver publishes its optical frame below left_arm_depth_cam_link,
+    # but that optical frame is not used as a pose frame.
     # Requested camera-link axis remap, expressed in the currently published
     # camera-link frame:
     #   X_new = -Y_current, Y_new = X_current, Z_new = Z_current.

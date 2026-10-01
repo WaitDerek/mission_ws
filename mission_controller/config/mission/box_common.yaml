@@ -44,6 +44,41 @@ mission_controller:
     - 0.0
     - 0.0
     box_grasp_execution_mode: joint123_then_arms
+    # Search around each configured layer waist target. Exactly two poses are
+    # checked per evaluated arm: the initial MoveJ_P target and the predicted
+    # final target after the waist-carry trajectory returns home. Step/Drag
+    # endpoints and all Cartesian intermediate points are not sampled for IK.
+    waist_workspace_optimization_enabled: true
+    # Compatibility name: this now enables the waist-home final-Pose check.
+    waist_workspace_movel_endpoint_ik_enabled: true
+    # preparation: initial IK uses the calibrated preparation joints and the
+    # waist-home final IK uses the initial solution. zero: every checked pose
+    # is solved independently from the all-zero seven-joint seed; this changes
+    # offline IK only and never commands either arm to zero.
+    waist_workspace_ik_seed_mode: zero
+    # Optional negative-J4 filtering is disabled; normal joint limits remain.
+    box_ik_joint4_negative_required: false
+    waist_workspace_search_mode: coarse_to_fine
+    waist_workspace_candidate_step_deg: 1.0
+    waist_workspace_candidate_delta_deg: 10.0
+    waist_workspace_minimum_margin_deg: 0.1
+    waist_workspace_coarse_step_deg: 5.0
+    waist_workspace_coarse_top_k: 8
+    waist_workspace_candidate_diversity_deg: 5.0
+    waist_workspace_refine_radius_deg: 3.0
+    waist_workspace_refine_step_deg: 2.0
+    waist_workspace_sobol_sample_count: 1024
+    waist_workspace_sobol_seed: 0
+    waist_workspace_joint_min_deg: [-89.0, -149.0, -89.0]
+    waist_workspace_joint_max_deg: [4.0, 149.0, 4.0]
+    waist_workspace_left_arm_joint_min_deg:
+      [-174.0, -14.0, -174.0, -104.0, -169.0, -64.0, -99.0]
+    waist_workspace_left_arm_joint_max_deg:
+      [174.0, 174.0, 174.0, 104.0, 174.0, 19.0, 89.0]
+    waist_workspace_right_arm_joint_min_deg:
+      [-174.0, -14.0, -174.0, -104.0, -169.0, -19.0, -89.0]
+    waist_workspace_right_arm_joint_max_deg:
+      [174.0, 174.0, 174.0, 104.0, 174.0, 64.0, 99.0]
     box_grasp_intermediate_left_joint_positions:
     - 1.3
     - 0.6
@@ -271,7 +306,7 @@ mission_controller:
     box_object_pose_action_name: /object_pose/estimate
     box_object_pose_camera_side: right
     box_object_pose_camera_topic: /object_pose/pose
-    box_object_pose_confidence_threshold: 0.25
+    box_object_pose_confidence_threshold: 0.8
     box_object_pose_instance_index: 0
     box_object_pose_model_label: bigbox
     box_object_pose_raw_topic: /mission/box_object_pose_raw
@@ -406,8 +441,14 @@ mission_controller:
     box_post_movel_step4_movej_velocity_tolerance_rad_sec: 0.01
     box_post_movel_step_count: 2
     box_post_movel_velocity_percent: 12.0
+    # Grasp/Drag bilateral Step2 lift only.
     # TF GraspBox and DragBox dual-arm SDK targets share one arm-base Z value.
     box_tf_equalize_dual_target_z_enabled: true
+    # After bilateral contact, rebuild Step2 from actual Link8 TF. Apply the
+    # configured 0.14 m lift along base_link +Z and preserve the grasp span.
+    box_tf_step2_rigid_base_z_lift_enabled: true
+    box_tf_step2_contact_height_tolerance_m: 0.10
+    box_tf_step2_grasp_span_tolerance_m: 0.002
     box_pre_detection_arm_movej_enabled: true
     box_pre_detection_right_movej_blend_radius: 0
     box_pre_detection_right_movej_command_units_per_degree: 1000.0
@@ -560,65 +601,65 @@ mission_controller:
     - -0.0755
     box_width: 0.357
     joint123_layer1_left_target_correction_pose_box:
-    - 0.064762
-    - -0.049358
-    - 0.060595
+    - 0.0
+    - 0.0
+    - 0.0
     - -0.058164
     - -0.006476
     - 0.081596
     - 0.994946
     joint123_layer1_right_target_correction_pose_box:
-    - 0.081444
-    - -0.049338
-    - -0.020083
+    - 0.0
+    - 0.0
+    - 0.0
     - 0.012614
     - -0.032172
     - 0.081927
     - 0.996039
     joint123_layer2_left_target_correction_pose_box:
-    - 0.064762
-    - -0.049358
-    - 0.060595
+    - 0.0
+    - 0.0
+    - 0.0
     - -0.058164
     - -0.006476
     - 0.081596
     - 0.994946
     joint123_layer2_right_target_correction_pose_box:
-    - 0.081444
-    - -0.049338
-    - -0.020083
+    - 0.0
+    - 0.0
+    - 0.0
     - 0.012614
     - -0.032172
     - 0.081927
     - 0.996039
     joint123_layer3_left_target_correction_pose_box:
-    - 0.064762
-    - -0.049358
-    - 0.060595
+    - 0.0
+    - 0.0
+    - 0.0
     - -0.058164
     - -0.006476
     - 0.081596
     - 0.994946
     joint123_layer3_right_target_correction_pose_box:
-    - 0.081444
-    - -0.049338
-    - -0.020083
+    - 0.0
+    - 0.0
+    - 0.0
     - 0.012614
     - -0.032172
     - 0.081927
     - 0.996039
     joint123_layer4_left_target_correction_pose_box:
-    - 0.064762
-    - -0.049358
-    - 0.060595
+    - 0.0
+    - 0.0
+    - 0.0
     - -0.058164
     - -0.006476
     - 0.081596
     - 0.994946
     joint123_layer4_right_target_correction_pose_box:
-    - 0.081444
-    - -0.049338
-    - -0.020083
+    - 0.0
+    - 0.0
+    - 0.0
     - 0.012614
     - -0.032172
     - 0.081927

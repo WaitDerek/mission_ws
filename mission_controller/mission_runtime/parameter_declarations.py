@@ -3,6 +3,26 @@
 import math
 
 
+_DIRECT_GRASP_POST_WAIST_PRE_MOVEJ_UNITS = {
+    1: {
+        "left": [68910, 40432, -82821, -101837, -82739, -30193, 9473],
+        "right": [-82466, 50035, 86176, -92648, 76926, 38450, -18016],
+    },
+    2: {
+        "left": [28810, 50943, -22412, -94677, -50758, -10833, 33468],
+        "right": [-15865, 32806, 42268, -94310, 40166, 31301, -6061],
+    },
+    3: {
+        "left": [33802, 45067, -26518, -91134, -49283, -18163, 31401],
+        "right": [-30930, 41897, 37382, -91322, 48187, 24447, -24760],
+    },
+    4: {
+        "left": [14473, 45035, -3736, -82846, -49272, -8368, 38850],
+        "right": [-10593, 40398, 16217, -76297, 41544, 24117, -33964],
+    },
+}
+
+
 class ParameterDeclarationsMixin:
     """Declare the existing public Mission parameter surface."""
 
@@ -34,36 +54,81 @@ class ParameterDeclarationsMixin:
                     "release_mission_lease_service_name",
                     "/mission/release_workflow_lease",
                 ),
-                # Small-box placement test taught at body joint1/2/3=-20 deg.
+                # Small-box placement test taught at body joint1/2/3
+                # [-40, -60, -40] deg.
                 # The action requires a preceding /grasp_box_tf goal in the
                 # same controller process so the rigid box->Link7 transforms
                 # remain available after mobile-base transport.
                 ("place_box_test_enabled", True),
                 ("place_box_test_box_type", "smallbox"),
                 ("place_box_test_start_body_joint_units", [0, 0, 0, 0]),
-                ("place_box_test_body_joint_units", [-40000, -60000, -40000, 0]),
+                ("place_box_test_body_joint_units", [-40000, -80000, -40000, 0]),
+                ("place_box_test_dynamic_table_enabled", True),
+                ("place_box_test_table_height_base_footprint_m", 0.755),
+                ("place_box_test_bigbox_half_height_m", 0.16865),
+                ("place_box_test_smallbox_half_height_m", 0.13980),
+                ("place_box_test_waist_clearance_m", 0.040),
+                ("place_box_test_waist_workspace_enabled", True),
+                ("place_box_test_waist_y_search_half_range_m", 0.100),
+                ("place_box_test_waist_y_search_step_m", 0.020),
+                ("place_box_test_waist_z_max_drop_m", 0.080),
+                ("place_box_test_waist_z_search_step_m", 0.040),
+                ("place_box_test_waist_ik_min_margin_deg", 2.0),
+                ("place_box_test_waist_ik_max_step_deg", 75.0),
+                ("place_box_test_table_descent_velocity_percent", 5.0),
+                ("place_box_test_descent_mode", "segmented"),
+                ("place_box_test_continuous_left_min_z_footprint_m", 0.975131),
+                ("place_box_test_continuous_right_min_z_footprint_m", 0.966566),
+                ("place_box_test_continuous_left_velocity_percent", 10.0),
+                ("place_box_test_continuous_right_velocity_percent", 15.0),
+                ("place_box_test_continuous_max_drop_difference_m", 0.03),
+                ("place_box_test_descent_y_search_enabled", False),  # Legacy; direct descent ignores search.
+                ("place_box_test_descent_work_y_step_m", 0.002),
+                ("place_box_test_descent_work_y_max_travel_m", 0.100),
+                ("place_box_test_descent_y_search_half_range_m", 0.100),
+                ("place_box_test_descent_y_search_step_m", 0.001),
+                ("place_box_test_descent_y_max_step_m", 0.002),
+                ("place_box_test_descent_ik_max_joint_step_deg", 10.0),
+                ("place_box_test_descent_z_target_tolerance_m", 0.020),
+                ("place_box_test_descent_z_difference_tolerance_m", 0.005),
+                ("place_box_test_descent_z_check_timeout_sec", 1.0),
+                ("place_box_test_descent_z_feedback_max_age_sec", 0.25),
+                ("place_box_test_descent_z_correction_max_attempts", 3),
+                ("place_box_test_descent_z_correction_step_m", 0.002),
+                ("place_box_test_descent_z_correction_max_travel_m", 0.005),
+                ("place_box_test_table_coarse_step_m", 0.005),
+                ("place_box_test_table_fine_step_m", 0.001),
+                ("place_box_test_table_fine_distance_m", 0.030),
+                ("place_box_test_table_max_overtravel_m", 0.005),
+                ("place_box_test_table_early_contact_tolerance_m", 0.500),
+                ("place_box_test_table_support_delta_fz_n", 3.0),
+                ("place_box_test_table_unloaded_abs_fz_n", 100.0),
+                ("place_box_test_table_support_sign_left", 1.0),
+                ("place_box_test_table_support_sign_right", 1.0),
+                ("place_box_test_post_support_arm_base_descent_m", 0.030),
+                ("place_box_test_post_support_max_abs_work_fz_n", 200.0),
                 (
                     "place_box_test_left_target_pose_arm_base",
                     [
-                        -0.323464,
-                        0.551264,
-                        -0.096540,
-                        -0.377,
-                        -0.411,
-                        -0.603,
-                        0.569,
+                        -0.484519,
+                        0.564599,
+                        -0.102020,
+                        -0.435,
+                        -0.446,
+                        -0.566,
+                        0.539,
                     ],
                 ),
                 (
                     "place_box_test_right_target_pose_arm_base",
                     [
-                        -0.364445,
-                        -0.537010,
-                        -0.085777,
-                        0.379,
-                        -0.393,
-                        0.573,
-                        0.610,
+                        -0.261094,
+                        -0.591816,
+                        -0.098310,
+                        0.394,
+                        -0.409,
+                        0.568,
+                        0.594,
                     ],
                 ),
                 # Explicit per-box-type placement targets. The legacy
@@ -71,25 +136,25 @@ class ParameterDeclarationsMixin:
                 (
                     "place_box_test_left_target_pose_arm_base_smallbox",
                     [
-                        -0.323464,
-                        0.551264,
-                        -0.096540,
-                        -0.377,
-                        -0.411,
-                        -0.603,
-                        0.569,
+                        -0.484519,
+                        0.564599,
+                        -0.102020,
+                        -0.435,
+                        -0.446,
+                        -0.566,
+                        0.539,
                     ],
                 ),
                 (
                     "place_box_test_right_target_pose_arm_base_smallbox",
                     [
-                        -0.364445,
-                        -0.537010,
-                        -0.085777,
-                        0.379,
-                        -0.393,
-                        0.573,
-                        0.610,
+                        -0.261094,
+                        -0.591816,
+                        -0.098310,
+                        0.394,
+                        -0.409,
+                        0.568,
+                        0.594,
                     ],
                 ),
                 (
@@ -124,11 +189,9 @@ class ParameterDeclarationsMixin:
                 ("place_box_test_right_movel_velocity_percent", 10.0),
                 ("place_box_test_arm_motion_mode", "movel"),
                 ("place_box_test_arm_offset_frame_type", 0),
-                ("place_box_test_final_correction_enabled", True),
-                ("place_box_test_final_correction_velocity_percent", 5.0),
                 ("place_box_test_timeout_sec", 180.0),
                 ("place_box_test_start_body_tolerance_rad", 0.035),
-                ("place_box_test_position_tolerance_m", 0.015),
+                ("place_box_test_position_tolerance_m", 0.020),
                 ("place_box_test_orientation_tolerance_rad", 0.10),
                 ("place_box_test_stable_samples", 3),
                 (
@@ -180,8 +243,12 @@ class ParameterDeclarationsMixin:
                     30.0,
                 ),
                 ("place_box_test_post_release_arm_movej_enabled", True),
+                ("place_box_test_post_release_tool_y_retreat_enabled", True),
+                ("place_box_test_post_release_tool_y_retreat_m", 0.001),
+                ("place_box_test_post_release_tool_y_retreat_velocity_percent", 3.0),
+                ("place_box_test_post_release_tool_y_retreat_timeout_sec", 30.0),
                 ("place_box_test_post_release_arm_joint2_angle_deg", 60.0),
-                ("place_box_test_post_release_arm_movej_velocity_percent", 12.0),
+                ("place_box_test_post_release_arm_movej_velocity_percent", 15.0),
                 ("place_box_test_post_release_arm_movej_position_tolerance_rad", 0.035),
                 (
                     "place_box_test_post_release_arm_movej_velocity_tolerance_rad_sec",
@@ -207,7 +274,7 @@ class ParameterDeclarationsMixin:
                 ),
                 (
                     "place_box_test_post_release_arm_home_velocity_percent",
-                    12.0,
+                    15.0,
                 ),
                 (
                     "place_box_test_post_release_arm_home_position_tolerance_rad",
@@ -233,15 +300,59 @@ class ParameterDeclarationsMixin:
                 # frame, then re-expresses the target in each live arm base
                 # after the waist has reached its layer pose.
                 ("grasp_box_tf_freeze_frame", "base_link"),
+                ("grasp_box_tf_left_contact_forward_delta_scale", 1.0),
+                ("grasp_box_tf_right_contact_forward_delta_scale", 1.0),
+                ("drag_box_tf_left_contact_forward_delta_scale", 1.0),
+                ("drag_box_tf_right_contact_forward_delta_scale", 1.0),
                 ("grasp_box_tf_detection_tf_timeout_sec", 5.0),
                 ("grasp_box_tf_runtime_tf_timeout_sec", 5.0),
                 ("grasp_box_tf_require_detection_timestamp", True),
                 ("grasp_box_tf_detection_arm", "right"),
-                ("drag_box_tf_detection_arm", "left"),
-                # After a left-camera DragBox TF detection, move that arm to
-                # its configured safe/standby joint pose before pickup
-                # planning.  The target is independent for model and layer.
+                ("drag_box_tf_detection_arm", "right"),
+                ("grasp_box_tf_horizontal_constraint_enabled", False),
+                ("drag_box_tf_horizontal_constraint_enabled", False),
+                ("grasp_box_tf_contact_height_offset_m", 0.0),
+                ("grasp_box_tf_left_backward_offset_m_layer1", 0.0),
+                ("grasp_box_tf_right_forward_offset_m_layer1", 0.0),
+                ("grasp_box_tf_right_forward_offset_m_layer2", 0.0),
+                ("grasp_box_tf_right_forward_offset_m_layer3", 0.0),
+                ("grasp_box_tf_right_forward_offset_m_layer4", 0.0),
+
+                ("drag_box_tf_contact_height_offset_m", 0.0),
+                ("drag_box_tf_right_backward_offset_m_layer1", 0.0),
+                ("drag_box_tf_right_backward_offset_m_layer2", 0.0),
+                ("drag_box_tf_left_join_forward_offset_m", 0.0),
+                ("drag_box_tf_left_join_forward_offset_m_layer1", -1.0),
+                ("drag_box_tf_right_forward_offset_m_layer3", 0.0),
+                ("drag_box_tf_right_forward_offset_m_layer4", 0.0),
+                ("drag_box_tf_left_join_forward_offset_m_layer3", -1.0),
+                ("drag_box_tf_left_join_forward_offset_m_layer4", -1.0),
+                ("drag_box_tf_left_join_contact_span_m_bigbox", 0.0),
+                ("drag_box_tf_detection_arm_smallbox", "right"),
+                ("drag_box_tf_workflow_reference_base_x_m", 0.110135),
+                ("drag_box_tf_workflow_base_x_tolerance_m", 0.010),
+                # After DragBox TF detection, move the left arm
+                # through its configured avoidance joint sequence before
+                # pickup planning.  The target is independent by model/layer.
                 ("drag_box_tf_post_detection_left_movej_enabled", True),
+                # Left-arm transition poses for the staged DragBox TF
+                # detection-to-avoidance MoveJ sequence.
+                (
+                    "drag_box_tf_post_detection_left_transition_joint_units_bigbox",
+                    [1104, 83030, -93968, -4985, 99573, 5457, 2099],
+                ),
+                (
+                    "drag_box_tf_post_detection_left_transition_joint_units_smallbox",
+                    [1104, 83030, -93968, -4985, 99573, 5457, 2099],
+                ),
+                # DragBox begins with the right arm.  RM75 IK is a seeded
+                # single-solution solver, so bias and constrain the initial
+                # MoveJ_P branch to a negative Joint4 configuration.
+                (
+                    "drag_box_tf_right_initial_ik_joint4_negative_required",
+                    True,
+                ),
+                ("drag_box_tf_right_initial_ik_joint4_seed_deg", -60.0),
                 # Optional post-Step2 carry controller for /grasp_box_tf.
                 # The waist uses MoveJ while both arms receive synchronized,
                 # segmented SDK MoveL endpoints.  Box translation follows the
@@ -328,87 +439,42 @@ class ParameterDeclarationsMixin:
                 ),
                 ("drag_box_tf_body_home_carry_body_stop_enabled", True),
                 ("drag_box_tf_body_home_carry_body_stop_command", "stop"),
-                # After DragBox TF finishes the synchronized waist-home carry,
-                # optionally lift both TCPs along each arm-base frame's +Z.
-                ("drag_box_tf_post_carry_arm_base_z_lift_enabled_bigbox", True),
-                ("drag_box_tf_post_carry_arm_base_z_lift_enabled_smallbox", False),
-                ("drag_box_tf_post_carry_arm_base_z_lift_distance_m", 0.03),
-                (
-                    "drag_box_tf_post_carry_arm_base_z_lift_distance_m_bigbox_layer3",
-                    0.05,
-                ),
-                (
-                    "drag_box_tf_post_carry_arm_base_z_lift_distance_m_bigbox_layer4",
-                    0.05,
-                ),
-                (
-                    "drag_box_tf_post_carry_arm_base_z_lift_velocity_percent",
-                    12.0,
-                ),
-                ("drag_box_tf_post_carry_arm_base_z_lift_timeout_sec", 60.0),
-                # Optional force-limited Step1 clamping.  The signal is the
-                # per-task baseline-subtracted raw wrench force-X count; all
-                # thresholds are counts, not Newtons.  Disabled is the safe
-                # default and preserves the existing position-only behavior.
+                # Native SDK Tool-Y force-position clamping for TF workflows.
                 ("grasp_box_tf_force_clamp_mode", "closed_loop"),
-                ("grasp_box_tf_force_clamp_baseline_duration_sec", 0.75),
-                ("grasp_box_tf_force_clamp_baseline_min_samples", 50),
-                ("grasp_box_tf_force_clamp_baseline_timeout_sec", 3.0),
-                ("grasp_box_tf_force_clamp_filter_samples", 20),
-                ("grasp_box_tf_force_clamp_contact_threshold_left_counts", 3000.0),
-                ("grasp_box_tf_force_clamp_contact_threshold_right_counts", 3000.0),
-                ("grasp_box_tf_force_clamp_clamped_threshold_left_counts", 8000.0),
-                ("grasp_box_tf_force_clamp_clamped_threshold_right_counts", 8000.0),
-                ("grasp_box_tf_force_clamp_hold_threshold_left_counts", 7000.0),
-                ("grasp_box_tf_force_clamp_hold_threshold_right_counts", 7000.0),
-                ("grasp_box_tf_force_clamp_emergency_threshold_left_counts", 50000.0),
-                ("grasp_box_tf_force_clamp_emergency_threshold_right_counts", 50000.0),
-                ("grasp_box_tf_force_clamp_force_sign_left", -1.0),
-                ("grasp_box_tf_force_clamp_force_sign_right", -1.0),
-                ("grasp_box_tf_force_clamp_arm_velocity_tolerance_rad_sec", 0.02),
-                ("grasp_box_tf_force_clamp_search_step_m", 0.0015),
-                ("grasp_box_tf_force_clamp_fine_step_m", 0.0005),
-                ("grasp_box_tf_force_clamp_max_distance_left_m", 0.20),
-                ("grasp_box_tf_force_clamp_max_distance_right_m", 0.20),
-                ("grasp_box_tf_force_clamp_movel_velocity_percent", 5.0),
+                ("grasp_box_tf_force_clamp_sdk_target_force_left_n", -2.0),
+                ("grasp_box_tf_force_clamp_sdk_target_force_right_n", 2.0),
+                ("grasp_box_tf_force_carry_target_force_left_n", -75.0),
+                ("grasp_box_tf_force_carry_target_force_right_n", 75.0),
+                ("grasp_box_tf_force_clamp_sdk_speed_mm_s", 3.0),
+                ("grasp_box_tf_force_clamp_sdk_max_travel_left_m", 0.20),
+                ("grasp_box_tf_force_clamp_sdk_max_travel_right_m", 0.20),
+                ("grasp_box_tf_force_clamp_sdk_control_period_sec", 0.02),
+                ("grasp_box_tf_force_clamp_sdk_baseline_stability_window_sec", 0.3),
+                ("grasp_box_tf_force_clamp_sdk_baseline_stability_max_span_n", 0.4),
+                ("grasp_box_tf_force_clamp_sdk_baseline_stability_timeout_sec", 5.0),
                 ("grasp_box_tf_force_clamp_motion_timeout_sec", 15.0),
                 ("grasp_box_tf_force_clamp_timeout_sec", 60.0),
                 ("grasp_box_tf_force_clamp_sensor_max_age_sec", 0.2),
-                ("grasp_box_tf_force_clamp_contact_required_duration_sec", 0.1),
-                ("grasp_box_tf_force_clamp_clamped_required_duration_sec", 0.1),
-                ("grasp_box_tf_force_clamp_hold_wait_sec", 0.3),
-                ("grasp_box_tf_force_clamp_hold_required_duration_sec", 0.2),
-                ("grasp_box_tf_force_clamp_max_correction_count", 2),
                 ("grasp_box_tf_force_clamp_stop_after_clamp_confirmed", False),
                 ("drag_box_tf_force_clamp_mode", "closed_loop"),
-                ("drag_box_tf_force_clamp_baseline_duration_sec", 0.75),
-                ("drag_box_tf_force_clamp_baseline_min_samples", 50),
-                ("drag_box_tf_force_clamp_baseline_timeout_sec", 3.0),
-                ("drag_box_tf_force_clamp_filter_samples", 20),
-                ("drag_box_tf_force_clamp_contact_threshold_left_counts", 3000.0),
-                ("drag_box_tf_force_clamp_contact_threshold_right_counts", 3000.0),
-                ("drag_box_tf_force_clamp_clamped_threshold_left_counts", 8000.0),
-                ("drag_box_tf_force_clamp_clamped_threshold_right_counts", 8000.0),
-                ("drag_box_tf_force_clamp_hold_threshold_left_counts", 7000.0),
-                ("drag_box_tf_force_clamp_hold_threshold_right_counts", 7000.0),
-                ("drag_box_tf_force_clamp_emergency_threshold_left_counts", 50000.0),
-                ("drag_box_tf_force_clamp_emergency_threshold_right_counts", 50000.0),
-                ("drag_box_tf_force_clamp_force_sign_left", -1.0),
-                ("drag_box_tf_force_clamp_force_sign_right", -1.0),
-                ("drag_box_tf_force_clamp_arm_velocity_tolerance_rad_sec", 0.02),
-                ("drag_box_tf_force_clamp_search_step_m", 0.0015),
-                ("drag_box_tf_force_clamp_fine_step_m", 0.0005),
-                ("drag_box_tf_force_clamp_max_distance_left_m", 0.20),
-                ("drag_box_tf_force_clamp_max_distance_right_m", 0.20),
-                ("drag_box_tf_force_clamp_movel_velocity_percent", 5.0),
+                ("drag_box_tf_force_clamp_sdk_target_force_left_n", -2.0),
+                ("drag_box_tf_force_clamp_sdk_target_force_right_n", 2.0),
+                ("drag_box_tf_force_carry_post_drag3_target_force_left_n", -75.0),
+                ("drag_box_tf_force_carry_post_drag3_target_force_right_n", 75.0),
+                ("drag_box_tf_force_clamp_sdk_speed_mm_s", 3.0),
+                ("drag_box_tf_force_clamp_sdk_max_travel_left_m", 0.20),
+                ("drag_box_tf_force_clamp_sdk_max_travel_right_m", 0.20),
+                ("drag_box_tf_force_clamp_sdk_control_period_sec", 0.02),
+                ("drag_box_tf_force_clamp_sdk_baseline_stability_window_sec", 0.3),
+                ("drag_box_tf_force_clamp_sdk_baseline_stability_max_span_n", 0.4),
+                ("drag_box_tf_force_clamp_sdk_baseline_stability_timeout_sec", 5.0),
+                ("drag_box_tf_force_clamp_initial_right_post_stop_confirm_sec", 0.5),
+                ("drag_box_tf_force_clamp_initial_right_post_stop_min_delta_n", 1.0),
+                ("drag_box_tf_force_clamp_initial_right_contact_consecutive_samples", 1),
+                ("drag_box_tf_force_clamp_initial_right_max_attempts", 3),
                 ("drag_box_tf_force_clamp_motion_timeout_sec", 15.0),
                 ("drag_box_tf_force_clamp_timeout_sec", 60.0),
                 ("drag_box_tf_force_clamp_sensor_max_age_sec", 0.2),
-                ("drag_box_tf_force_clamp_contact_required_duration_sec", 0.1),
-                ("drag_box_tf_force_clamp_clamped_required_duration_sec", 0.1),
-                ("drag_box_tf_force_clamp_hold_wait_sec", 0.3),
-                ("drag_box_tf_force_clamp_hold_required_duration_sec", 0.2),
-                ("drag_box_tf_force_clamp_max_correction_count", 2),
                 ("drag_box_tf_force_clamp_stop_after_clamp_confirmed", False),
                 # Canonical object axes after pose normalization are X=down,
                 # Y=forward, Z=right. Grasp from the two object-Z side faces.
@@ -443,7 +509,7 @@ class ParameterDeclarationsMixin:
                 # geometric calibration values until smallbox is calibrated.
                 ("box_object_pose_model_label", "smallbox"),
                 ("box_object_pose_instance_index", 0),
-                ("box_object_pose_confidence_threshold", 0.25),
+                ("box_object_pose_confidence_threshold", 0.8),
                 ("box_object_pose_result_timeout_sec", 120.0),
                 # Hold the confirmed detection posture before and after each
                 # FoundationPose request so RGB-D frames and robot TF settle.
@@ -465,6 +531,170 @@ class ParameterDeclarationsMixin:
                 ("direct_sdk_connect_level", 3),
                 ("direct_sdk_motion_timeout_sec", 120.0),
                 ("box_grasp_execution_mode", "arms_only"),
+                # Endpoint-only offline IK search around the configured
+                # per-action/per-layer waist target.
+                ("waist_workspace_optimization_enabled", False),
+                ("drag_box_tf_fixed_waist_enabled_bigbox_layer1", False),
+                ("drag_box_tf_fixed_waist_enabled_bigbox_layer2", False),
+                ("waist_workspace_movel_endpoint_ik_enabled", True),
+                ("waist_workspace_ik_seed_mode", "zero"),
+                ("box_ik_joint4_negative_required", True),
+                ("waist_workspace_search_mode", "coarse_to_fine"),
+                ("waist_workspace_candidate_step_deg", 1.0),
+                ("waist_workspace_candidate_delta_deg", 10.0),
+                ("waist_workspace_minimum_margin_deg", 0.1),
+                ("waist_workspace_coarse_step_deg", 5.0),
+                ("waist_workspace_coarse_top_k", 8),
+                ("waist_workspace_candidate_diversity_deg", 5.0),
+                ("waist_workspace_refine_radius_deg", 3.0),
+                ("waist_workspace_refine_step_deg", 2.0),
+                ("waist_workspace_sobol_sample_count", 1024),
+                ("waist_workspace_sobol_seed", 0),
+                (
+                    "waist_workspace_joint_min_deg",
+                    [-89.0, -149.0, -89.0],
+                ),
+                (
+                    "waist_workspace_joint_max_deg",
+                    [4.0, 149.0, 4.0],
+                ),
+                (
+                    "waist_workspace_left_arm_joint_min_deg",
+                    [
+                        -174.0,
+                        -14.0,
+                        -174.0,
+                        -104.0,
+                        -169.0,
+                        -64.0,
+                        -99.0,
+                    ],
+                ),
+                (
+                    "waist_workspace_left_arm_joint_max_deg",
+                    [
+                        174.0,
+                        174.0,
+                        174.0,
+                        104.0,
+                        174.0,
+                        19.0,
+                        89.0,
+                    ],
+                ),
+                (
+                    "waist_workspace_right_arm_joint_min_deg",
+                    [
+                        -174.0,
+                        -14.0,
+                        -174.0,
+                        -104.0,
+                        -169.0,
+                        -19.0,
+                        -89.0,
+                    ],
+                ),
+                (
+                    "waist_workspace_right_arm_joint_max_deg",
+                    [
+                        174.0,
+                        174.0,
+                        174.0,
+                        104.0,
+                        174.0,
+                        64.0,
+                        99.0,
+                    ],
+                ),
+                # Once FoundationPose is frozen, direct GraspBox starts waist
+                # IK in a background worker and concurrently moves both arms
+                # to this layer-specific posture before moving the waist.
+                # Bigbox and smallbox remain independent calibration surfaces
+                # even while their initial taught values are identical.
+                ("grasp_box_tf_post_waist_pre_movej_enabled", True),
+                # Calibration-only hold point. The interactive dual-arm
+                # calibrator enables it temporarily and always restores it.
+                (
+                    "grasp_box_tf_calibration_stop_after_initial_dual_target_enabled",
+                    False,
+                ),
+                (
+                    "grasp_box_tf_post_waist_pre_movej_command_units_per_degree",
+                    1000.0,
+                ),
+                ("grasp_box_tf_post_waist_pre_movej_velocity_percent", 15.0),
+                ("grasp_box_tf_post_waist_pre_movej_timeout_sec", 120.0),
+                *[
+                    (
+                        "grasp_box_tf_post_waist_pre_movej_"
+                        f"{arm}_joint_units_{model}_layer{layer}",
+                        list(
+                            _DIRECT_GRASP_POST_WAIST_PRE_MOVEJ_UNITS[layer][arm]
+                        ),
+                    )
+                    for model in ("bigbox", "smallbox")
+                    for layer in range(1, 5)
+                    for arm in ("left", "right")
+                ],
+                # DragBox owns a separate interface. It is deliberately
+                # disabled and its zero arrays mean "not calibrated"; it never
+                # falls back to the direct-grasp postures above.
+                ("drag_box_tf_post_waist_pre_movej_enabled", False),
+                # DragBox keeps its left-arm avoidance profile, but prepares
+                # the right arm with the matching GraspBox model/layer target.
+                ("drag_box_tf_right_grasp_preparation_enabled", True),
+                # Calibration-only hold point. Normal DragBox execution must
+                # leave this false; the interactive calibrator enables it
+                # temporarily and restores it when the script exits.
+                (
+                    "drag_box_tf_calibration_stop_after_initial_right_target_enabled",
+                    False,
+                ),
+                (
+                    "drag_box_tf_calibration_stop_after_left_join_enabled",
+                    False,
+                ),
+                (
+                    "drag_box_tf_calibration_left_join_joint_override_enabled",
+                    False,
+                ),
+                (
+                    "drag_box_tf_calibration_left_join_joint_target_deg",
+                    [
+                        -62.412,
+                        25.861,
+                        24.668,
+                        -40.876,
+                        -35.381,
+                        -8.514,
+                        -3.713,
+                    ],
+                ),
+                (
+                    "drag_box_tf_calibration_pause_after_initial_right_target_enabled",
+                    False,
+                ),
+                (
+                    "drag_box_tf_calibration_continue_after_initial_right_target",
+                    False,
+                ),
+                ("drag_box_tf_calibration_pause_timeout_sec", 1800.0),
+                (
+                    "drag_box_tf_post_waist_pre_movej_command_units_per_degree",
+                    1000.0,
+                ),
+                ("drag_box_tf_post_waist_pre_movej_velocity_percent", 10.0),
+                ("drag_box_tf_post_waist_pre_movej_timeout_sec", 120.0),
+                *[
+                    (
+                        "drag_box_tf_post_waist_pre_movej_"
+                        f"{arm}_joint_units_{model}_layer{layer}",
+                        [0, 0, 0, 0, 0, 0, 0],
+                    )
+                    for model in ("bigbox", "smallbox")
+                    for layer in range(1, 5)
+                    for arm in ("left", "right")
+                ],
                 ("box_joint1_command_service_name", "/robot/command"),
                 ("box_joint1_feedback_topic", "/mcap/body"),
                 ("box_joint1_name", "joint1"),
@@ -552,43 +782,60 @@ class ParameterDeclarationsMixin:
                 ),
                 ("direct_movel_box_relative_model_label", "smallbox"),
                 ("direct_movel_motion_mode", "movej_p"),
-                ("direct_movel_velocity_percent", 12.0),
+                ("direct_movel_velocity_percent", 15.0),
                 ("direct_movel_blocking", True),
                 ("box_post_movel_enabled", False),
                 ("box_post_movel_velocity_percent", 12.0),
-                # TF Step/Drag Cartesian translations may use either the
-                # absolute rm_movel primitive or the relative
-                # rm_movel_offset primitive.  Offset commands are converted
-                # from the FoundationPose box frame into each arm work frame.
-                ("grasp_box_tf_post_movel_sdk_motion_mode", "movel_offset"),
-                ("drag_box_tf_post_movel_sdk_motion_mode", "movel_offset"),
+                ("box_post_lift_left_velocity_percent", 10.0),
+                ("box_post_lift_right_velocity_percent", 15.0),
+                # TF Step/Drag Cartesian translations use absolute rm_movel
+                # targets by default.  rm_movel_offset remains selectable for
+                # controlled compatibility testing.
+                ("grasp_box_tf_post_movel_sdk_motion_mode", "movel"),
+                ("drag_box_tf_post_movel_sdk_motion_mode", "movel"),
                 # For TF GraspBox/DragBox dual-arm Cartesian commands, force
                 # both arm-base target poses to use the same numeric Z value.
                 ("box_tf_equalize_dual_target_z_enabled", True),
+                # Step2 is rebuilt from actual bilateral Link8 TF and lifted
+                # along base_link +Z.  This preserves grasp span and equal
+                # physical height instead of equalizing unrelated arm-base Z.
+                ("box_tf_step2_rigid_base_z_lift_enabled", True),
+                ("box_tf_step2_contact_height_tolerance_m", 0.10),
+                ("box_tf_step2_grasp_span_tolerance_m", 0.002),
                 ("drag_box_post_movel_enabled", True),
                 # DragBox moves the right arm through Drag3 first, then joins
                 # the left arm at its cumulative target before Step2.
                 ("drag_box_left_arm_enabled", True),
                 ("drag_box_left_join_mode", "after_drag3"),
-                ("drag_box_left_join_motion_mode", "movej_p"),
+                ("drag_box_left_join_motion_mode", "staged_ik_movej"),
                 ("drag_box_left_join_velocity_percent", 10.0),
                 ("drag_box_left_join_timeout_sec", 60.0),
+                ("drag_box_left_join_ik_max_attempts", 113),
+                ("drag_box_left_join_ik_random_seed_attempts", 100),
+                ("drag_box_left_join_joint4_preference_enabled", True),
+                ("drag_box_left_join_joint4_negative_required", True),
+                ("drag_box_left_join_preferred_joint4_deg_bigbox_layer1", -50.0),
+                ("drag_box_left_join_joint4_tolerance_deg_bigbox_layer1", 15.0),
+                (
+                    "drag_box_left_join_ik_seed_joint_deg",
+                    [
+                        -62.412,
+                        25.861,
+                        24.668,
+                        -40.876,
+                        -35.381,
+                        -8.514,
+                        -3.713,
+                    ],
+                ),
                 # Reconstruct the moved box from the actual right Link7 TF
                 # after Drag3, then derive the delayed left join and rigid
                 # dual-arm Step2 from that one common box frame.
                 ("drag_box_tf_reanchor_after_drag3_enabled", True),
-                # Before the delayed left-arm MoveJ_P join, move the left arm
-                # to a configured posture. Values are RealMan command units
-                # (1000 units = 1 degree).
-                ("drag_box_left_join_pre_movej_enabled", True),
-                (
-                    "drag_box_left_join_pre_movej_joint_units",
-                    [-22817, 92009, -98469, -100366, -81197, 5123, 9078],
-                ),
                 ("drag_box_post_movel_step_drag1_left_xyz", [0.0, 0.0, 0.0]),
                 ("drag_box_post_movel_step_drag1_right_xyz", [0.14, 0.0, 0.0]),
                 ("drag_box_post_movel_step_drag2_left_xyz", [0.0, 0.0, 0.10]),
-                ("drag_box_post_movel_step_drag2_right_xyz", [0.0, 0.0, 0.10]),
+                ("drag_box_post_movel_step_drag2_right_xyz", [0.0, 0.0, 0.15]),
                 ("drag_box_post_movel_step_drag3_left_xyz", [0.0, 0.0, 0.0]),
                 ("drag_box_post_movel_step_drag3_right_xyz", [-0.14, 0.0, 0.0]),
                 ("box_post_movel_step4_motion_mode", "movej"),
@@ -604,7 +851,7 @@ class ParameterDeclarationsMixin:
                     [0, 40000, 0, 0, 0, 0, 0],
                 ),
                 ("box_post_movel_step4_movej_command_units_per_degree", 1000.0),
-                ("box_post_movel_step4_movej_velocity", 10),
+                ("box_post_movel_step4_movej_velocity", 15),
                 ("box_post_movel_step4_movej_blend_radius", 0),
                 ("box_post_movel_step4_movej_trajectory_connect", 0),
                 ("box_post_movel_step4_movej_timeout_sec", 40.0),
@@ -639,7 +886,7 @@ class ParameterDeclarationsMixin:
                     [0, 40000, 0, 0, 0, 0, 0],
                 ),
                 ("box_post_arm_movej_command_units_per_degree", 1000.0),
-                ("box_post_arm_movej_velocity", 10),
+                ("box_post_arm_movej_velocity", 15),
                 ("box_post_arm_movej_blend_radius", 0),
                 ("box_post_arm_movej_trajectory_connect", 0),
                 ("box_post_arm_movej_timeout_sec", 40.0),
@@ -759,7 +1006,7 @@ class ParameterDeclarationsMixin:
                     [True, True, True, True],
                 ),
                 ("box_pre_detection_right_movej_command_units_per_degree", 1000.0),
-                ("box_pre_detection_right_movej_velocity", 10),
+                ("box_pre_detection_right_movej_velocity", 15),
                 ("box_pre_detection_right_movej_blend_radius", 0),
                 ("box_pre_detection_right_movej_trajectory_connect", 0),
                 ("box_pre_detection_right_movej_timeout_sec", 40.0),
@@ -892,7 +1139,7 @@ class ParameterDeclarationsMixin:
                 ("box_pre_target_arm_movej_enabled", True),
                 ("box_pre_target_arm_movej_two_stage_enabled", True),
                 ("box_pre_target_arm_movej_stage1_joint2_units", 40000),
-                ("box_preparation_movej_velocity", 10),
+                ("box_preparation_movej_velocity", 15),
                 ("box_pre_target_arm_movej_left_device", 0),
                 ("box_pre_target_arm_movej_right_device", 1),
                 (
@@ -904,7 +1151,7 @@ class ParameterDeclarationsMixin:
                     [0, 40000, 0, 0, 0, 0, 0],
                 ),
                 ("box_pre_target_arm_movej_command_units_per_degree", 1000.0),
-                ("box_pre_target_arm_movej_velocity", 10),
+                ("box_pre_target_arm_movej_velocity", 15),
                 ("box_pre_target_arm_movej_blend_radius", 0),
                 ("box_pre_target_arm_movej_trajectory_connect", 0),
                 ("box_pre_target_arm_movej_timeout_sec", 40.0),
@@ -1144,11 +1391,11 @@ class ParameterDeclarationsMixin:
                 ),
                 (
                     "left_fixture_center_in_link8_xyz",
-                    [-0.12, -0.08, 0.05],
+                    [-0.12, -0.10, 0.05],
                 ),
                 (
                     "right_fixture_center_in_link8_xyz",
-                    [-0.12, 0.08, 0.05],
+                    [-0.12, 0.10, 0.05],
                 ),
                 ("box_detection_attempts", 2),
                 ("box_width", 0.357),

@@ -37,6 +37,11 @@ setup(
             "mission_controller = mission_runtime.mission_controller:main",
             "execute_workflow = mission_runtime.taskflow.node:main",
             "realbots_global_tf = mission_runtime.global_tf_publisher:main",
+            "calibrate_drag_right_target = mission_runtime.drag_right_target_calibration:main",
+            "calibrate_grasp_dual_target = mission_runtime.grasp_dual_target_calibration:main",
+            "calibrate_drag_left_after_pull = mission_runtime.drag_left_after_pull_calibration:main",
+            "calibrate_tf_box_targets = mission_runtime.tf_box_target_calibration:main",
+            "calibrate_drag_bigbox_all_layers = mission_runtime.drag_bigbox_batch_calibration:main",
         ],
     },
 )

@@ -3,6 +3,8 @@ from typing import Optional
 
 import rclpy
 from geometry_msgs.msg import PoseStamped
+from visualization_msgs.msg import MarkerArray
+from .arm_target_visualization import TARGET_TOPIC
 from mission_interfaces.action import (
     ExecuteAdaptiveBoxGrasp,
     ExecuteBoxGrasp,
@@ -62,7 +64,9 @@ from .box_support import BoxSupportMixin
 from .adaptive_box_actions import AdaptiveBoxActionsMixin
 from .adaptive_box_support import AdaptiveBoxSupportMixin
 from .action_runtime import ActionRuntimeMixin
+from .action_audit import ActionAuditMixin, ActionAuditStore
 from .realman_sdk_adapter import RealManSdkAdapter
+from .ros_arm_movej import RosArmMoveJ
 from .parameters import MissionParametersMixin
 from .taskflow.lease import WorkflowLeaseManager
 
@@ -80,6 +84,7 @@ __all__ = [
 
 
 class MissionController(
+    ActionAuditMixin,
     ActionRuntimeMixin,
     MissionParametersMixin,
     BoxSupportMixin,
@@ -90,6 +95,7 @@ class MissionController(
 ):
     def __init__(self) -> None:
         super().__init__("mission_controller")
+        self._action_audit = ActionAuditStore(self.get_name(), self.get_logger())
         self._declare_parameters()
         self._validate_parameters()
         self.tf_buffer = Buffer(
@@ -111,6 +117,9 @@ class MissionController(
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self._arm_target_marker_publisher = self.create_publisher(
+            MarkerArray, TARGET_TOPIC, visualization_qos
         )
         feedback_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -288,6 +297,16 @@ class MissionController(
                 connect_level=self._integer("direct_sdk_connect_level"),
                 logger=self.get_logger(),
             )
+            self.direct_sdk_adapter._ros_movej_transport = RosArmMoveJ(
+                self,
+                service_name=self._string("box_joint1_command_service_name"),
+                left_feedback_topic=self._string("box_post_arm_left_feedback_topic"),
+                right_feedback_topic=self._string("box_post_arm_right_feedback_topic"),
+                callback_group=self.client_group,
+                client=self.body_command_client,
+                stop_arm=self.direct_sdk_adapter.stop_arm,
+                stop_all=self.direct_sdk_adapter.stop_all,
+            )
         self.state_lock = threading.Lock()
         self.mission_lease_manager = WorkflowLeaseManager()
         self.active_arm_joints_goal_handle = None
@@ -307,12 +326,18 @@ class MissionController(
             callback_group=self.server_group,
         )
 
+        audit_execute = self._audit_execute_callback
+        audit_goal = self._audit_goal_callback
         self.adaptive_box_grasp_action_server = ActionServer(
             self,
             ExecuteAdaptiveBoxGrasp,
             self._string("execute_adaptive_box_grasp_action_name"),
-            execute_callback=self._execute_adaptive_box_grasp,
-            goal_callback=self._adaptive_box_grasp_goal_callback,
+            execute_callback=audit_execute(
+                "execute_adaptive_box_grasp", self._execute_adaptive_box_grasp
+            ),
+            goal_callback=audit_goal(
+                "execute_adaptive_box_grasp", self._adaptive_box_grasp_goal_callback
+            ),
             cancel_callback=self._cancel_callback,
             callback_group=self.server_group,
         )
@@ -321,8 +346,8 @@ class MissionController(
             self,
             ExecuteBoxGrasp,
             self._string("execute_box_grasp_action_name"),
-            execute_callback=self._execute_box_grasp,
-            goal_callback=self._box_grasp_goal_callback,
+            execute_callback=audit_execute("execute_box_grasp", self._execute_box_grasp),
+            goal_callback=audit_goal("execute_box_grasp", self._box_grasp_goal_callback),
             cancel_callback=self._cancel_callback,
             callback_group=self.server_group,
         )
@@ -332,8 +357,8 @@ class MissionController(
             self,
             ExecuteBoxGrasp,
             self._string("grasp_box_tf_action_name"),
-            execute_callback=self._execute_grasp_box_tf,
-            goal_callback=self._grasp_box_tf_goal_callback,
+            execute_callback=audit_execute("grasp_box_tf", self._execute_grasp_box_tf),
+            goal_callback=audit_goal("grasp_box_tf", self._grasp_box_tf_goal_callback),
             cancel_callback=self._cancel_callback,
             callback_group=self.server_group,
         )
@@ -341,8 +366,8 @@ class MissionController(
             self,
             ExecuteDragBoxGrasp,
             self._string("execute_drag_box_grasp_action_name"),
-            execute_callback=self._execute_drag_box_grasp,
-            goal_callback=self._drag_box_grasp_goal_callback,
+            execute_callback=audit_execute("execute_drag_box_grasp", self._execute_drag_box_grasp),
+            goal_callback=audit_goal("execute_drag_box_grasp", self._drag_box_grasp_goal_callback),
             cancel_callback=self._cancel_callback,
             callback_group=self.server_group,
         )
@@ -350,8 +375,12 @@ class MissionController(
             self,
             ExecuteDragBoxGrasp,
             self._string("execute_drag_box_grasp_tf_action_name"),
-            execute_callback=self._execute_drag_box_grasp_tf,
-            goal_callback=self._drag_box_grasp_tf_goal_callback,
+            execute_callback=audit_execute(
+                "execute_drag_box_grasp_tf", self._execute_drag_box_grasp_tf
+            ),
+            goal_callback=audit_goal(
+                "execute_drag_box_grasp_tf", self._drag_box_grasp_tf_goal_callback
+            ),
             cancel_callback=self._cancel_callback,
             callback_group=self.server_group,
         )
@@ -359,8 +388,8 @@ class MissionController(
             self,
             ExecuteBoxPlace,
             self._string("execute_box_place_action_name"),
-            execute_callback=self._execute_box_place,
-            goal_callback=self._box_place_goal_callback,
+            execute_callback=audit_execute("execute_box_place", self._execute_box_place),
+            goal_callback=audit_goal("execute_box_place", self._box_place_goal_callback),
             cancel_callback=self._cancel_callback,
             callback_group=self.server_group,
         )
@@ -368,8 +397,8 @@ class MissionController(
             self,
             PlaceBoxTest,
             self._string("place_box_test_action_name"),
-            execute_callback=self._execute_place_box_test,
-            goal_callback=self._place_box_test_goal_callback,
+            execute_callback=audit_execute("place_box_test", self._execute_place_box_test),
+            goal_callback=audit_goal("place_box_test", self._place_box_test_goal_callback),
             cancel_callback=self._cancel_callback,
             callback_group=self.server_group,
         )
@@ -584,7 +613,7 @@ class MissionController(
                 drag_mode=drag_mode,
             )
             detection_arm = self._box_detection_arm(
-                tf_mode=tf_mode, drag_mode=drag_mode
+                tf_mode=tf_mode, drag_mode=drag_mode, model_label=model_label
             )
             if self._boolean(f"box_pre_detection_{detection_arm}_movej_enabled"):
                 self._box_layer_pre_detection_arm_movej_joint_units(

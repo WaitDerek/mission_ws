@@ -1,11 +1,14 @@
 """Compatibility composition for box-support responsibilities."""
 
 from . import box_carry as _box_carry
+from . import box_drag_join as _box_drag_join
 from . import box_execution as _box_execution
 from . import box_force_clamp as _box_force_clamp
 from . import box_geometry as _box_geometry
 from . import box_perception as _box_perception
+from . import box_placement as _box_placement
 from . import box_preparation as _box_preparation
+from . import box_waist_planning as _box_waist_planning
 from .box_carry import BoxCarryMixin
 from .box_execution import BoxExecutionMixin
 from .box_force_clamp import BoxForceClampMixin
@@ -33,9 +36,12 @@ for _module in (
     _box_geometry,
     _box_preparation,
     _box_carry,
+    _box_drag_join,
+    _box_placement,
     _box_execution,
     _box_force_clamp,
     _box_perception,
+    _box_waist_planning,
 ):
     _module.BoxSupportMixin = BoxSupportMixin
 del _module

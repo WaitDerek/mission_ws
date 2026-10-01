@@ -26,8 +26,8 @@ mission_controller:
     left_ee_frame: left_arm_8_Link
     left_fixture_center_in_link8_xyz:
     - -0.12
-    - -0.08
-    - 0.05
+    - -0.10
+    - 0.04
     left_link8_frame: left_arm_8_Link
     pickup_task_action_name: /pickup_task
     pickup_task_result_timeout_sec: 120.0
@@ -44,8 +44,8 @@ mission_controller:
     right_ee_frame: right_arm_8_Link
     right_fixture_center_in_link8_xyz:
     - -0.12
-    - 0.08
-    - 0.05
+    - 0.10
+    - 0.04
     right_link8_frame: right_arm_8_Link
     use_sim_time: false
     verify_arm_joint_targets: true

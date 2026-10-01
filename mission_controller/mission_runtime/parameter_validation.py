@@ -7,6 +7,12 @@ class ParameterValidationMixin:
     """Validate calibrated inputs before Action servers accept goals."""
 
     def _validate_parameters(self) -> None:
+        for prefix in ("grasp_box_tf", "drag_box_tf"):
+            for arm in ("left", "right"):
+                name = f"{prefix}_{arm}_contact_forward_delta_scale"
+                value = self._float(name)
+                if not math.isfinite(value) or value < 0.0:
+                    raise ValueError(f"{name} must be finite and >= 0")
         for name in (
             "execute_adaptive_box_grasp_action_name",
             "execute_box_grasp_action_name",
@@ -19,6 +25,7 @@ class ParameterValidationMixin:
             "box_object_pose_camera_side",
             "grasp_box_tf_detection_arm",
             "drag_box_tf_detection_arm",
+            "drag_box_tf_detection_arm_smallbox",
             "box_object_pose_topic",
             "box_object_pose_camera_topic",
             "box_object_pose_raw_topic",
@@ -96,6 +103,13 @@ class ParameterValidationMixin:
                 raise ValueError(
                     f"parameter '{name}' must be 'movel' or 'movel_offset'"
                 )
+        for name in (
+            "box_tf_step2_contact_height_tolerance_m",
+            "box_tf_step2_grasp_span_tolerance_m",
+        ):
+            value = self._float(name)
+            if not math.isfinite(value) or value <= 0.0:
+                raise ValueError(f"parameter '{name}' must be finite and positive")
 
         left_join_mode = self._string("drag_box_left_join_mode").strip().lower()
         if left_join_mode not in ("immediate", "after_drag3"):
@@ -106,10 +120,19 @@ class ParameterValidationMixin:
         left_join_motion_mode = (
             self._string("drag_box_left_join_motion_mode").strip().lower()
         )
-        if left_join_motion_mode not in ("movel", "movej_p"):
+        if left_join_motion_mode not in ("movel", "movej_p", "staged_ik_movej"):
             raise ValueError(
                 "parameter 'drag_box_left_join_motion_mode' must be "
-                "'movel' or 'movej_p'"
+                "'movel', 'movej_p', or 'staged_ik_movej'"
+            )
+        if self._integer("drag_box_left_join_ik_max_attempts") <= 0:
+            raise ValueError(
+                "parameter 'drag_box_left_join_ik_max_attempts' must be positive"
+            )
+        if self._integer("drag_box_left_join_ik_random_seed_attempts") < 0:
+            raise ValueError(
+                "parameter 'drag_box_left_join_ik_random_seed_attempts' "
+                "must be non-negative"
             )
 
         execution_mode = self._string("box_grasp_execution_mode").lower()
@@ -123,6 +146,134 @@ class ParameterValidationMixin:
                 "parameter 'box_grasp_execution_mode' must be 'arms_only' "
                 "or 'joint1_then_arms' or "
                 "'joint1_then_arms_keep_position' or 'joint123_then_arms'"
+            )
+
+        for name, expected_size in (
+            ("waist_workspace_joint_min_deg", 3),
+            ("waist_workspace_joint_max_deg", 3),
+            ("waist_workspace_left_arm_joint_min_deg", 7),
+            ("waist_workspace_left_arm_joint_max_deg", 7),
+            ("waist_workspace_right_arm_joint_min_deg", 7),
+            ("waist_workspace_right_arm_joint_max_deg", 7),
+        ):
+            values = self._float_array(name)
+            if len(values) != expected_size or not all(
+                math.isfinite(value) for value in values
+            ):
+                raise ValueError(
+                    f"parameter '{name}' must contain {expected_size} finite values"
+                )
+        for prefix in (
+            "waist_workspace_joint",
+            "waist_workspace_left_arm_joint",
+            "waist_workspace_right_arm_joint",
+        ):
+            lower = self._float_array(f"{prefix}_min_deg")
+            upper = self._float_array(f"{prefix}_max_deg")
+            if any(lo >= hi for lo, hi in zip(lower, upper)):
+                raise ValueError(
+                    f"parameters '{prefix}_min_deg/max_deg' contain invalid limits"
+                )
+        for action_prefix in ("grasp_box_tf", "drag_box_tf"):
+            prefix = f"{action_prefix}_post_waist_pre_movej"
+            for model in ("bigbox", "smallbox"):
+                for layer in range(1, 5):
+                    for arm in ("left", "right"):
+                        parameter_name = (
+                            f"{prefix}_{arm}_joint_units_{model}_layer{layer}"
+                        )
+                        values = self._float_array(parameter_name)
+                        if len(values) != 7 or not all(
+                            math.isfinite(value) for value in values
+                        ):
+                            raise ValueError(
+                                f"parameter '{parameter_name}' must contain "
+                                "seven finite joint values"
+                            )
+        candidate_step = self._float("waist_workspace_candidate_step_deg")
+        candidate_delta = self._float("waist_workspace_candidate_delta_deg")
+        minimum_margin = self._float("waist_workspace_minimum_margin_deg")
+        coarse_step = self._float("waist_workspace_coarse_step_deg")
+        coarse_top_k = self._integer("waist_workspace_coarse_top_k")
+        candidate_diversity = self._float(
+            "waist_workspace_candidate_diversity_deg"
+        )
+        refine_radius = self._float("waist_workspace_refine_radius_deg")
+        refine_step = self._float("waist_workspace_refine_step_deg")
+        sobol_sample_count = self._integer(
+            "waist_workspace_sobol_sample_count"
+        )
+        sobol_seed = self._integer("waist_workspace_sobol_seed")
+        ik_seed_mode = self._string("waist_workspace_ik_seed_mode").strip().lower()
+        search_mode = self._string("waist_workspace_search_mode").strip().lower()
+        if search_mode not in ("exhaustive", "coarse_to_fine", "sobol_refine"):
+            raise ValueError(
+                "parameter 'waist_workspace_search_mode' must be "
+                "'exhaustive', 'coarse_to_fine', or 'sobol_refine'"
+            )
+        if not math.isfinite(candidate_step) or candidate_step <= 0.0:
+            raise ValueError(
+                "parameter 'waist_workspace_candidate_step_deg' must be positive"
+            )
+        if not math.isfinite(candidate_delta) or candidate_delta < 0.0:
+            raise ValueError(
+                "parameter 'waist_workspace_candidate_delta_deg' must be non-negative"
+            )
+        if not math.isfinite(minimum_margin) or minimum_margin < 0.0:
+            raise ValueError(
+                "parameter 'waist_workspace_minimum_margin_deg' must be non-negative"
+            )
+        if not math.isfinite(coarse_step) or coarse_step <= 0.0:
+            raise ValueError(
+                "parameter 'waist_workspace_coarse_step_deg' must be positive"
+            )
+        if coarse_top_k <= 0:
+            raise ValueError(
+                "parameter 'waist_workspace_coarse_top_k' must be positive"
+            )
+        if not math.isfinite(candidate_diversity) or candidate_diversity < 0.0:
+            raise ValueError(
+                "parameter 'waist_workspace_candidate_diversity_deg' "
+                "must be non-negative"
+            )
+        if not math.isfinite(refine_radius) or refine_radius < 0.0:
+            raise ValueError(
+                "parameter 'waist_workspace_refine_radius_deg' must be non-negative"
+            )
+        if not math.isfinite(refine_step) or refine_step <= 0.0:
+            raise ValueError(
+                "parameter 'waist_workspace_refine_step_deg' must be positive"
+            )
+        if sobol_sample_count <= 0:
+            raise ValueError(
+                "parameter 'waist_workspace_sobol_sample_count' must be positive"
+            )
+        if sobol_seed < 0:
+            raise ValueError(
+                "parameter 'waist_workspace_sobol_seed' must be non-negative"
+            )
+        if ik_seed_mode not in ("preparation", "zero"):
+            raise ValueError(
+                "parameter 'waist_workspace_ik_seed_mode' must be "
+                "'preparation' or 'zero'"
+            )
+        drag_right_joint4_seed = self._float(
+            "drag_box_tf_right_initial_ik_joint4_seed_deg"
+        )
+        if not math.isfinite(drag_right_joint4_seed):
+            raise ValueError(
+                "parameter 'drag_box_tf_right_initial_ik_joint4_seed_deg' "
+                "must be finite"
+            )
+        if (
+            self._boolean(
+                "drag_box_tf_right_initial_ik_joint4_negative_required"
+            )
+            and drag_right_joint4_seed >= 0.0
+        ):
+            raise ValueError(
+                "parameter 'drag_box_tf_right_initial_ik_joint4_seed_deg' "
+                "must be negative when the negative-Joint4 requirement is enabled"
             )
 
         target_mode = self._string("direct_movel_target_mode").lower()
@@ -139,7 +290,11 @@ class ParameterValidationMixin:
             "right",
         ):
             raise ValueError("camera_detection_arm must be 'left' or 'right'")
-        for name in ("grasp_box_tf_detection_arm", "drag_box_tf_detection_arm"):
+        for name in (
+            "grasp_box_tf_detection_arm",
+            "drag_box_tf_detection_arm",
+            "drag_box_tf_detection_arm_smallbox",
+        ):
             if self._string(name).strip().lower() not in ("left", "right"):
                 raise ValueError(f"{name} must be 'left' or 'right'")
         if target_mode == "camera_offset_box_orientation" and not self._boolean(
@@ -292,7 +447,8 @@ class ParameterValidationMixin:
             ("box_layer_pre_detection_left_movej_joint_units_smallbox", 28),
             ("box_pre_target_arm_movej_left_joint_units", 7),
             ("box_pre_target_arm_movej_right_joint_units", 7),
-            ("drag_box_left_join_pre_movej_joint_units", 7),
+            ("drag_box_left_join_ik_seed_joint_deg", 7),
+            ("drag_box_tf_calibration_left_join_joint_target_deg", 7),
             ("box_body_home_joint_units", 4),
             ("box_step2_waist_endpoint_sync_home_joint_units", 4),
             ("grasp_box_tf_body_home_carry_joint_units", 4),
@@ -454,6 +610,12 @@ class ParameterValidationMixin:
             "drag_box_left_join_velocity_percent",
             "drag_box_left_join_timeout_sec",
             "direct_sdk_motion_timeout_sec",
+            "grasp_box_tf_post_waist_pre_movej_command_units_per_degree",
+            "grasp_box_tf_post_waist_pre_movej_velocity_percent",
+            "grasp_box_tf_post_waist_pre_movej_timeout_sec",
+            "drag_box_tf_post_waist_pre_movej_command_units_per_degree",
+            "drag_box_tf_post_waist_pre_movej_velocity_percent",
+            "drag_box_tf_post_waist_pre_movej_timeout_sec",
             "box_width",
             "box_height",
             "arm_joint_target_tolerance",
@@ -507,7 +669,6 @@ class ParameterValidationMixin:
             "grasp_box_tf_body_home_carry_left_movel_velocity_percent",
             "grasp_box_tf_body_home_carry_right_movel_velocity_percent",
             "grasp_box_tf_body_home_carry_final_correction_velocity_percent",
-            "grasp_box_tf_force_clamp_movel_velocity_percent",
             "drag_box_tf_body_home_carry_timeout_sec",
             "drag_box_tf_body_home_carry_tf_timeout_sec",
             "drag_box_tf_body_home_carry_position_tolerance_m",
@@ -516,15 +677,33 @@ class ParameterValidationMixin:
             "drag_box_tf_body_home_carry_left_movel_velocity_percent",
             "drag_box_tf_body_home_carry_right_movel_velocity_percent",
             "drag_box_tf_body_home_carry_final_correction_velocity_percent",
-            "drag_box_tf_post_carry_arm_base_z_lift_distance_m",
-            "drag_box_tf_post_carry_arm_base_z_lift_distance_m_bigbox_layer3",
-            "drag_box_tf_post_carry_arm_base_z_lift_distance_m_bigbox_layer4",
-            "drag_box_tf_post_carry_arm_base_z_lift_velocity_percent",
-            "drag_box_tf_post_carry_arm_base_z_lift_timeout_sec",
-            "drag_box_tf_force_clamp_movel_velocity_percent",
             "place_box_test_left_movel_velocity_percent",
             "place_box_test_right_movel_velocity_percent",
-            "place_box_test_final_correction_velocity_percent",
+            "place_box_test_table_height_base_footprint_m",
+            "place_box_test_bigbox_half_height_m",
+            "place_box_test_smallbox_half_height_m",
+            "place_box_test_waist_clearance_m",
+            "place_box_test_waist_y_search_step_m",
+            "place_box_test_waist_z_search_step_m",
+            "place_box_test_waist_ik_max_step_deg",
+            "place_box_test_descent_y_search_step_m",
+            "place_box_test_descent_y_max_step_m",
+            "place_box_test_descent_ik_max_joint_step_deg",
+            "place_box_test_descent_z_target_tolerance_m",
+            "place_box_test_descent_z_difference_tolerance_m",
+            "place_box_test_descent_z_check_timeout_sec",
+            "place_box_test_descent_z_feedback_max_age_sec",
+            "place_box_test_descent_z_correction_step_m",
+            "place_box_test_descent_z_correction_max_travel_m",
+            "place_box_test_table_descent_velocity_percent",
+            "place_box_test_table_coarse_step_m",
+            "place_box_test_table_fine_step_m",
+            "place_box_test_table_fine_distance_m",
+            "place_box_test_table_max_overtravel_m",
+            "place_box_test_table_early_contact_tolerance_m",
+            "place_box_test_table_support_delta_fz_n",
+            "place_box_test_table_unloaded_abs_fz_n",
+            "place_box_test_post_support_max_abs_work_fz_n",
             "place_box_test_timeout_sec",
             "place_box_test_start_body_tolerance_rad",
             "place_box_test_position_tolerance_m",
@@ -543,6 +722,9 @@ class ParameterValidationMixin:
             "place_box_test_post_support_z_equalization_tolerance_m",
             "place_box_test_post_support_z_equalization_timeout_sec",
             "place_box_test_post_release_arm_joint2_angle_deg",
+            "place_box_test_post_release_tool_y_retreat_m",
+            "place_box_test_post_release_tool_y_retreat_velocity_percent",
+            "place_box_test_post_release_tool_y_retreat_timeout_sec",
             "place_box_test_post_release_arm_movej_velocity_percent",
             "place_box_test_post_release_arm_movej_position_tolerance_rad",
             "place_box_test_post_release_arm_movej_velocity_tolerance_rad_sec",
@@ -564,20 +746,20 @@ class ParameterValidationMixin:
             "adaptive_lift_velocity_percent",
             "box_post_movel_velocity_percent",
             "drag_box_left_join_velocity_percent",
+            "grasp_box_tf_post_waist_pre_movej_velocity_percent",
+            "drag_box_tf_post_waist_pre_movej_velocity_percent",
             "grasp_box_tf_body_home_carry_left_movel_velocity_percent",
             "grasp_box_tf_body_home_carry_right_movel_velocity_percent",
             "grasp_box_tf_body_home_carry_final_correction_velocity_percent",
-            "grasp_box_tf_force_clamp_movel_velocity_percent",
             "drag_box_tf_body_home_carry_left_movel_velocity_percent",
             "drag_box_tf_body_home_carry_right_movel_velocity_percent",
             "drag_box_tf_body_home_carry_final_correction_velocity_percent",
-            "drag_box_tf_post_carry_arm_base_z_lift_velocity_percent",
-            "drag_box_tf_force_clamp_movel_velocity_percent",
             "place_box_test_left_movel_velocity_percent",
             "place_box_test_right_movel_velocity_percent",
-            "place_box_test_final_correction_velocity_percent",
+            "place_box_test_table_descent_velocity_percent",
             "place_box_test_post_support_z_equalization_velocity_percent",
             "place_box_test_post_release_arm_movej_velocity_percent",
+            "place_box_test_post_release_tool_y_retreat_velocity_percent",
             "place_box_test_post_release_arm_home_velocity_percent",
         ):
             if self._float(name) > 100.0:
@@ -736,74 +918,112 @@ class ParameterValidationMixin:
                 raise ValueError(f"{prefix}_carrier_frame must not be empty")
         for prefix in ("grasp_box_tf_force_clamp", "drag_box_tf_force_clamp"):
             mode = self._string(f"{prefix}_mode").strip().lower()
-            if mode not in ("disabled", "monitor_only", "closed_loop"):
+            if mode not in ("disabled", "closed_loop"):
                 raise ValueError(
-                    f"{prefix}_mode must be disabled, monitor_only, or closed_loop"
+                    f"{prefix}_mode must be disabled or closed_loop"
                 )
+            left_target_n = self._float(
+                f"{prefix}_sdk_target_force_left_n"
+            )
+            right_target_n = self._float(
+                f"{prefix}_sdk_target_force_right_n"
+            )
+            if not math.isfinite(left_target_n) or left_target_n >= 0.0:
+                raise ValueError(
+                    f"{prefix}_sdk_target_force_left_n must be finite and negative"
+                )
+            if not math.isfinite(right_target_n) or right_target_n <= 0.0:
+                raise ValueError(
+                    f"{prefix}_sdk_target_force_right_n must be finite and positive"
+                )
+            sdk_speed = self._float(f"{prefix}_sdk_speed_mm_s")
+            if not math.isfinite(sdk_speed) or not 0.1 <= sdk_speed <= 10.0:
+                raise ValueError(
+                    f"{prefix}_sdk_speed_mm_s must be in [0.1, 10.0]"
+                )
+            sdk_period = self._float(f"{prefix}_sdk_control_period_sec")
+            if not math.isfinite(sdk_period) or not 0.01 <= sdk_period <= 0.1:
+                raise ValueError(
+                    f"{prefix}_sdk_control_period_sec must be in [0.01, 0.1]"
+                )
+            baseline_window = self._float(
+                f"{prefix}_sdk_baseline_stability_window_sec"
+            )
+            baseline_max_span = self._float(
+                f"{prefix}_sdk_baseline_stability_max_span_n"
+            )
+            baseline_timeout = self._float(
+                f"{prefix}_sdk_baseline_stability_timeout_sec"
+            )
+            if not math.isfinite(baseline_window) or baseline_window < sdk_period:
+                raise ValueError(
+                    f"{prefix}_sdk_baseline_stability_window_sec "
+                    "must be at least one SDK control period"
+                )
+            if not math.isfinite(baseline_max_span) or baseline_max_span <= 0.0:
+                raise ValueError(
+                    f"{prefix}_sdk_baseline_stability_max_span_n "
+                    "must be finite and positive"
+                )
+            if baseline_max_span >= min(abs(left_target_n), right_target_n):
+                raise ValueError(
+                    f"{prefix}_sdk_baseline_stability_max_span_n "
+                    "must be below both contact thresholds"
+                )
+            if not math.isfinite(baseline_timeout) or baseline_timeout <= baseline_window:
+                raise ValueError(
+                    f"{prefix}_sdk_baseline_stability_timeout_sec "
+                    "must exceed the stability window"
+                )
+            if prefix == "drag_box_tf_force_clamp":
+                confirm_sec = self._float(
+                    "drag_box_tf_force_clamp_initial_right_post_stop_confirm_sec"
+                )
+                min_delta_n = self._float(
+                    "drag_box_tf_force_clamp_initial_right_post_stop_min_delta_n"
+                )
+                if not math.isfinite(confirm_sec) or not 2 * sdk_period <= confirm_sec <= 2.0:
+                    raise ValueError(
+                        "drag_box_tf_force_clamp_initial_right_post_stop_confirm_sec "
+                        "must be at least two SDK periods and at most 2 seconds"
+                    )
+                if not math.isfinite(min_delta_n) or not 0.0 < min_delta_n <= right_target_n:
+                    raise ValueError(
+                        "drag_box_tf_force_clamp_initial_right_post_stop_min_delta_n "
+                        "must be above zero and no greater than the right contact target"
+                    )
+                contact_samples = self._integer(
+                    "drag_box_tf_force_clamp_initial_right_contact_consecutive_samples"
+                )
+                if not 1 <= contact_samples <= 10:
+                    raise ValueError(
+                        "drag_box_tf_force_clamp_initial_right_contact_consecutive_samples "
+                        "must be in [1, 10]"
+                    )
+                retry_attempts = self._integer(
+                    "drag_box_tf_force_clamp_initial_right_max_attempts"
+                )
+                if not 1 <= retry_attempts <= 3:
+                    raise ValueError(
+                        "drag_box_tf_force_clamp_initial_right_max_attempts "
+                        "must be in [1, 3]"
+                    )
             for arm in ("left", "right"):
-                contact_value = self._float(
-                    f"{prefix}_contact_threshold_{arm}_counts"
+                max_travel = self._float(
+                    f"{prefix}_sdk_max_travel_{arm}_m"
                 )
-                clamped_value = self._float(
-                    f"{prefix}_clamped_threshold_{arm}_counts"
-                )
-                hold_value = self._float(f"{prefix}_hold_threshold_{arm}_counts")
-                emergency_value = self._float(
-                    f"{prefix}_emergency_threshold_{arm}_counts"
-                )
-                for suffix in (
-                    "contact_threshold",
-                    "clamped_threshold",
-                    "hold_threshold",
-                    "emergency_threshold",
-                ):
-                    name = f"{prefix}_{suffix}_{arm}_counts"
-                    if not math.isfinite(self._float(name)) or self._float(name) < 0.0:
-                        raise ValueError(f"{name} must be finite and nonnegative")
-                if not contact_value <= clamped_value <= emergency_value:
+                if not math.isfinite(max_travel) or max_travel <= 0.0:
                     raise ValueError(
-                        f"{prefix} {arm} thresholds must satisfy "
-                        "contact <= clamped <= emergency"
-                    )
-                if hold_value > clamped_value:
-                    raise ValueError(
-                        f"{prefix}_hold_threshold_{arm}_counts must not exceed "
-                        f"{prefix}_clamped_threshold_{arm}_counts"
-                    )
-                sign = self._float(f"{prefix}_force_sign_{arm}")
-                if not math.isfinite(sign) or abs(sign) <= 1e-12:
-                    raise ValueError(f"{prefix}_force_sign_{arm} must be nonzero")
-                max_distance = self._float(f"{prefix}_max_distance_{arm}_m")
-                if not math.isfinite(max_distance) or max_distance <= 0.0:
-                    raise ValueError(
-                        f"{prefix}_max_distance_{arm}_m must be finite and positive"
+                        f"{prefix}_sdk_max_travel_{arm}_m must be positive"
                     )
             for suffix in (
-                "baseline_duration_sec",
-                "baseline_timeout_sec",
-                "arm_velocity_tolerance_rad_sec",
-                "search_step_m",
-                "fine_step_m",
-                "movel_velocity_percent",
                 "motion_timeout_sec",
                 "timeout_sec",
                 "sensor_max_age_sec",
-                "contact_required_duration_sec",
-                "clamped_required_duration_sec",
-                "hold_wait_sec",
-                "hold_required_duration_sec",
             ):
                 name = f"{prefix}_{suffix}"
                 if not math.isfinite(self._float(name)) or self._float(name) <= 0.0:
                     raise ValueError(f"{name} must be finite and positive")
-            if self._float(f"{prefix}_movel_velocity_percent") > 100.0:
-                raise ValueError(f"{prefix}_movel_velocity_percent must be in (0, 100]")
-            if self._integer(f"{prefix}_baseline_min_samples") <= 0:
-                raise ValueError(f"{prefix}_baseline_min_samples must be positive")
-            if self._integer(f"{prefix}_filter_samples") <= 0:
-                raise ValueError(f"{prefix}_filter_samples must be positive")
-            if self._integer(f"{prefix}_max_correction_count") < 0:
-                raise ValueError(f"{prefix}_max_correction_count must be nonnegative")
         if self._string("place_box_test_box_type").strip().lower() not in (
             "smallbox",
             "bigbox",
@@ -811,6 +1031,50 @@ class ParameterValidationMixin:
             raise ValueError("place_box_test_box_type must be 'smallbox' or 'bigbox'")
         if self._integer("place_box_test_segments") <= 0:
             raise ValueError("place_box_test_segments must be positive")
+        for name in (
+            "place_box_test_waist_y_search_half_range_m",
+            "place_box_test_waist_z_max_drop_m",
+            "place_box_test_waist_ik_min_margin_deg",
+            "place_box_test_post_support_arm_base_descent_m",
+        ):
+            if not math.isfinite(self._float(name)) or self._float(name) < 0.0:
+                raise ValueError(f"{name} must be finite and non-negative")
+        from .place_descent_search import DescentYSettings
+        y_step = self._float("place_box_test_descent_work_y_step_m")
+        y_limit = self._float("place_box_test_descent_work_y_max_travel_m")
+        if not (math.isfinite(y_step) and math.isfinite(y_limit)
+                and 0 <= y_step <= 0.005 and y_step <= y_limit <= 0.100):
+            raise ValueError("placement Work-Y requires 0 <= step <= 0.005m and step <= travel <= 0.100m")
+        if not 1 <= self._integer("place_box_test_descent_z_correction_max_attempts") <= 5:
+            raise ValueError("descent Z correction attempts must be within [1,5]")
+        if not (0 < self._float("place_box_test_descent_z_correction_step_m")
+                <= self._float("place_box_test_descent_z_correction_max_travel_m") <= 0.010):
+            raise ValueError("descent Z correction step must be <= travel budget <= 0.010m")
+        DescentYSettings(
+            self._float("place_box_test_descent_y_search_half_range_m"),
+            self._float("place_box_test_descent_y_search_step_m"),
+            self._float("place_box_test_descent_y_max_step_m"),
+            self._float("place_box_test_waist_ik_min_margin_deg"),
+            self._float("place_box_test_descent_ik_max_joint_step_deg"),
+        ).validate()
+        if self._float("place_box_test_post_release_tool_y_retreat_m") > 0.005:
+            raise ValueError(
+                "place_box_test_post_release_tool_y_retreat_m must not exceed 0.005m"
+            )
+        if self._float("place_box_test_post_support_arm_base_descent_m") > 0.030:
+            raise ValueError(
+                "place_box_test_post_support_arm_base_descent_m must not exceed 0.030m"
+            )
+        if self._float("place_box_test_table_fine_step_m") > self._float(
+            "place_box_test_table_coarse_step_m"
+        ):
+            raise ValueError("place_box_test fine descent step must not exceed coarse step")
+        for arm in ("left", "right"):
+            sign = self._float(f"place_box_test_table_support_sign_{arm}")
+            if not math.isfinite(sign) or abs(sign) != 1.0:
+                raise ValueError(
+                    f"place_box_test_table_support_sign_{arm} must be +1 or -1"
+                )
         if not 1 <= self._integer("place_box_test_body_velocity") <= 100:
             raise ValueError("place_box_test_body_velocity must be in [1, 100]")
         for name in (
@@ -908,6 +1172,13 @@ class ParameterValidationMixin:
         box_confidence = self._float("box_object_pose_confidence_threshold")
         if not 0.0 <= box_confidence <= 1.0:
             raise ValueError("box_object_pose_confidence_threshold must be in [0, 1]")
+        if not math.isfinite(self._float("drag_box_tf_workflow_reference_base_x_m")):
+            raise ValueError("drag_box_tf_workflow_reference_base_x_m must be finite")
+        tolerance = self._float("drag_box_tf_workflow_base_x_tolerance_m")
+        if not math.isfinite(tolerance) or tolerance < 0.0:
+            raise ValueError(
+                "drag_box_tf_workflow_base_x_tolerance_m must be nonnegative and finite"
+            )
         if self._boolean("box_mission_enabled"):
             for name in (
                 "box_grasp_left_observation_joint_positions",

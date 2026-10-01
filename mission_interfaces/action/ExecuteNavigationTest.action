@@ -1,0 +1,30 @@
+# Pure navigation: visit configured map points 1..7 in order.
+# Cancel stops this sequence. The existing MQTT gateway does not send a
+# chassis stop command; use the platform stop control to stop an active move.
+string request_id
+bool start
+# 0 means one round; otherwise repeat 1..7 this many times.
+uint32 rounds
+bool dry_run
+---
+bool success
+string workflow_id
+string message
+string final_stage
+uint32 completed_rounds
+uint32 completed_navigation_count
+# Zero on success; otherwise the point being attempted (if any).
+int32 failed_point_id
+int32[] attempted_point_ids
+float64[] leg_elapsed_sec
+float64 total_elapsed_sec
+---
+string workflow_id
+string stage
+uint32 current_round
+uint32 total_rounds
+int32 point_id
+float64[] target_pos
+uint32 completed_navigation_count
+float64 elapsed_sec
+string detail

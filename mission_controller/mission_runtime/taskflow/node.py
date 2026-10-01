@@ -13,7 +13,9 @@ from mission_interfaces.action import (
     ExecuteBoxPlace,
     ExecuteDragBoxGrasp,
     ExecuteFixedBoxWorkflow,
+    ExecuteMicroNavigation,
     ExecuteObservationNavigation,
+    ExecuteNavigationTest,
     ExecuteWorkflow,
     NavigateToPoint,
     PlaceBoxTest,
@@ -26,6 +28,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 
+from .navigation_test import NavigationTestMixin
 from .identifiers import new_workflow_id
 from .lease import WorkflowLeaseManager
 from .mqtt_navigation import (
@@ -43,6 +46,7 @@ from .observation_navigation import (
 from .ros_operations import ObservationGoalConfig, RosWorkflowOperations
 from .state_machine import DepalletizingWorkflowEngine
 from .fixed_model import (
+    FixedWorkflowOutcome,
     build_fixed_box_tasks,
     build_observed_box_tasks,
     build_smallbox_tasks,
@@ -50,11 +54,14 @@ from .fixed_model import (
 from .fixed_operations import FixedRosWorkflowOperations
 from .fixed_state_machine import FixedBoxWorkflowEngine
 from ..realman_sdk_adapter import RealManSdkAdapter
+from ..ros_arm_movej import RosArmMoveJ
+from ..action_audit import ActionAuditMixin, ActionAuditStore
 
 
-class DepalletizingWorkflowNode(Node):
+class DepalletizingWorkflowNode(NavigationTestMixin, ActionAuditMixin, Node):
     def __init__(self) -> None:
         super().__init__("execute_workflow")
+        self._action_audit = ActionAuditStore(self.get_name(), self.get_logger())
         self._declare_parameters()
         self._validate_parameters()
         self._workflow_lock = threading.Lock()
@@ -110,8 +117,8 @@ class DepalletizingWorkflowNode(Node):
             self._string("fixed_workflow_arm_joints_action_name"),
             callback_group=self._client_group,
         )
-        # Global-observation posture changes use the same direct Python SDK
-        # path as the box motion code, so they do not depend on /move_arm_j.
+        # Global-observation posture changes share the ROS MoveJ command path
+        # with box motions; SDK remains available for stop and other motions.
         self._fixed_sdk_adapter = RealManSdkAdapter(
             sdk_root=self._string("fixed_workflow_arm_joints_sdk_root"),
             left_ip=self._string("fixed_workflow_arm_joints_sdk_left_ip"),
@@ -119,6 +126,12 @@ class DepalletizingWorkflowNode(Node):
             port=self._integer("fixed_workflow_arm_joints_sdk_port"),
             connect_level=self._integer("fixed_workflow_arm_joints_sdk_connect_level"),
             logger=self.get_logger(),
+        )
+        self._fixed_sdk_adapter._ros_movej_transport = RosArmMoveJ(
+            self,
+            callback_group=self._client_group,
+            stop_arm=self._fixed_sdk_adapter.stop_arm,
+            stop_all=self._fixed_sdk_adapter.stop_all,
         )
         self._acquire_lease_client = self.create_client(
             AcquireMissionLease,
@@ -130,21 +143,36 @@ class DepalletizingWorkflowNode(Node):
             self._string("release_mission_lease_service_name"),
             callback_group=self._client_group,
         )
+        audit_execute = self._audit_execute_callback
+        audit_goal = self._audit_goal_callback
         self._action_server = ActionServer(
             self,
             ExecuteWorkflow,
             self._string("workflow_action_name"),
-            execute_callback=self._execute,
-            goal_callback=self._goal_callback,
+            execute_callback=audit_execute("execute_workflow", self._execute),
+            goal_callback=audit_goal("execute_workflow", self._goal_callback),
             cancel_callback=self._cancel_callback,
+            callback_group=self._server_group,
+        )
+        self._navigation_test_action_server = ActionServer(
+            self,
+            ExecuteNavigationTest,
+            self._string("navigation_test_action_name"),
+            execute_callback=audit_execute("execute_navigation_test", self._execute_navigation_test),
+            goal_callback=audit_goal("execute_navigation_test", self._navigation_test_goal_callback),
+            cancel_callback=self._navigation_test_cancel_callback,
             callback_group=self._server_group,
         )
         self._observation_navigation_action_server = ActionServer(
             self,
             ExecuteObservationNavigation,
             self._string("observation_navigation_action_name"),
-            execute_callback=self._execute_observation_navigation,
-            goal_callback=self._observation_navigation_goal_callback,
+            execute_callback=audit_execute(
+                "execute_observation_navigation", self._execute_observation_navigation
+            ),
+            goal_callback=audit_goal(
+                "execute_observation_navigation", self._observation_navigation_goal_callback
+            ),
             cancel_callback=self._cancel_callback,
             callback_group=self._server_group,
         )
@@ -152,8 +180,21 @@ class DepalletizingWorkflowNode(Node):
             self,
             NavigateToPoint,
             self._string("navigate_to_point_action_name"),
-            execute_callback=self._execute_navigate_to_point,
-            goal_callback=self._navigate_to_point_goal_callback,
+            execute_callback=audit_execute("navigate_to_point", self._execute_navigate_to_point),
+            goal_callback=audit_goal("navigate_to_point", self._navigate_to_point_goal_callback),
+            cancel_callback=self._navigate_to_point_cancel_callback,
+            callback_group=self._server_group,
+        )
+        self._micro_navigation_action_server = ActionServer(
+            self,
+            ExecuteMicroNavigation,
+            self._string("micro_navigation_action_name"),
+            execute_callback=audit_execute(
+                "execute_micro_navigation", self._execute_micro_navigation
+            ),
+            goal_callback=audit_goal(
+                "execute_micro_navigation", self._micro_navigation_goal_callback
+            ),
             cancel_callback=self._navigate_to_point_cancel_callback,
             callback_group=self._server_group,
         )
@@ -163,8 +204,26 @@ class DepalletizingWorkflowNode(Node):
                 self,
                 ExecuteFixedBoxWorkflow,
                 self._string("fixed_workflow_action_name"),
-                execute_callback=self._execute_fixed_box_workflow,
-                goal_callback=self._fixed_goal_callback,
+                execute_callback=audit_execute(
+                    "execute_fixed_box_workflow", self._execute_fixed_box_workflow
+                ),
+                goal_callback=audit_goal("execute_fixed_box_workflow", self._fixed_goal_callback),
+                cancel_callback=self._fixed_cancel_callback,
+                callback_group=self._server_group,
+            )
+        self._force_carry_action_server = None
+        if self._boolean("force_carry_workflow_enabled"):
+            self._force_carry_action_server = ActionServer(
+                self,
+                ExecuteFixedBoxWorkflow,
+                self._string("force_carry_workflow_action_name"),
+                execute_callback=audit_execute(
+                    "execute_force_carry_box_workflow",
+                    self._execute_force_carry_box_workflow,
+                ),
+                goal_callback=audit_goal(
+                    "execute_force_carry_box_workflow", self._fixed_goal_callback
+                ),
                 cancel_callback=self._fixed_cancel_callback,
                 callback_group=self._server_group,
             )
@@ -174,8 +233,10 @@ class DepalletizingWorkflowNode(Node):
                 self,
                 ExecuteFixedBoxWorkflow,
                 self._string("smallbox_workflow_action_name"),
-                execute_callback=self._execute_smallbox_workflow,
-                goal_callback=self._smallbox_goal_callback,
+                execute_callback=audit_execute(
+                    "execute_smallbox_workflow", self._execute_smallbox_workflow
+                ),
+                goal_callback=audit_goal("execute_smallbox_workflow", self._smallbox_goal_callback),
                 cancel_callback=self._fixed_cancel_callback,
                 callback_group=self._server_group,
             )
@@ -219,11 +280,13 @@ class DepalletizingWorkflowNode(Node):
             namespace="",
             parameters=[
                 ("workflow_action_name", "/execute_workflow"),
+                ("navigation_test_action_name", "/execute_navigation_test"),
                 (
                     "observation_navigation_action_name",
                     "/execute_observation_navigation",
                 ),
                 ("navigate_to_point_action_name", "/navigate_to_point"),
+                ("micro_navigation_action_name", "/execute_micro_navigation"),
                 ("global_observation_action_name", "/depalletizing/observe"),
                 ("grasp_box_tf_action_name", "/grasp_box_tf"),
                 (
@@ -234,13 +297,20 @@ class DepalletizingWorkflowNode(Node):
                 ("place_box_test_action_name", "/place_box_test"),
                 ("fixed_workflow_action_name", "/execute_fixed_box_workflow"),
                 ("fixed_workflow_enabled", True),
+                ("force_carry_workflow_action_name", "/execute_force_carry_box_workflow"),
+                ("force_carry_workflow_enabled", True),
                 ("smallbox_workflow_action_name", "/execute_smallbox_workflow"),
                 ("smallbox_workflow_enabled", True),
                 ("fixed_workflow_target_label", 0),
                 ("fixed_workflow_global_observation_point_id", 4),
                 (
                     "fixed_workflow_global_observation_pos",
-                    [-0.17, -0.59, 1.12],
+                    [-0.47, 0.18, 0.07],
+                ),
+                ("fixed_workflow_north_global_observation_point_id", 7),
+                (
+                    "fixed_workflow_north_global_observation_pos",
+                    [2.66, 0.29, -3.10],
                 ),
                 (
                     "fixed_workflow_global_observation_left_joints",
@@ -262,8 +332,11 @@ class DepalletizingWorkflowNode(Node):
                     "fixed_workflow_arm_joints_action_name",
                     "/move_arm_j",
                 ),
+                ("fixed_workflow_global_observation_right_joints", [-0.9552012463239765, 0.20020671849626956, 0.023596851486963336, -1.6503309808082782, 0.23349014733180137, -0.05307546255314755, -0.9764593566132677]),
+                ("fixed_workflow_global_observation_right_home_joints", [-0.0, 0.0, -0.0, 0.0, -0.0, -0.0, -0.0]),
+                ("fixed_workflow_global_observation_right_joint2_open_deg", 30.0),
                 ("fixed_workflow_arm_joints_duration", 0.0),
-                ("fixed_workflow_arm_joints_speed_percent", 10.0),
+                ("fixed_workflow_arm_joints_speed_percent", 15.0),
                 ("fixed_workflow_arm_joints_timeout_sec", 120.0),
                 (
                     "fixed_workflow_arm_joints_sdk_root",
@@ -274,24 +347,43 @@ class DepalletizingWorkflowNode(Node):
                 ("fixed_workflow_arm_joints_sdk_port", 8080),
                 ("fixed_workflow_arm_joints_sdk_connect_level", 3),
                 ("fixed_workflow_place_point_id", 2),
-                ("fixed_workflow_place_pos", [-0.81, -0.77, -1.89]),
+                ("fixed_workflow_place_pos", [-0.78, 1.16, -3.07]),
+                ("fixed_workflow_micro_retreat_pos", [-0.50, 0.0, 0.0]),
                 ("fixed_workflow_drag_bigbox_point_id", 1),
                 (
                     "fixed_workflow_drag_bigbox_pickup_pos",
-                    [0.65, -0.05, 1.24],
+                    [0.24, -0.24, 0.11],
                 ),
                 (
                     "fixed_workflow_drag_bigbox_layer4_pickup_pos",
-                    [0.65, -0.05, 1.24],
+                    [0.24, -0.24, 0.11],
                 ),
                 ("fixed_workflow_direct_smallbox_point_id", 3),
                 (
                     "fixed_workflow_direct_smallbox_pickup_pos",
-                    [-0.10, 0.20, 1.23],
+                    [0.20, 0.50, 0.06],
                 ),
                 (
                     "fixed_workflow_direct_smallbox_layer4_pickup_pos",
-                    [-0.10, 0.30, 1.23],
+                    [0.20, 0.50, 0.06],
+                ),
+                ("fixed_workflow_north_drag_bigbox_point_id", 5),
+                (
+                    "fixed_workflow_north_drag_bigbox_pickup_pos",
+                    [1.82, 0.77, -3.03],
+                ),
+                (
+                    "fixed_workflow_north_drag_bigbox_layer4_pickup_pos",
+                    [1.82, 0.77, -3.03],
+                ),
+                ("fixed_workflow_north_direct_smallbox_point_id", 6),
+                (
+                    "fixed_workflow_north_direct_smallbox_pickup_pos",
+                    [1.93, 0.00, -3.02],
+                ),
+                (
+                    "fixed_workflow_north_direct_smallbox_layer4_pickup_pos",
+                    [1.93, 0.00, -3.02],
                 ),
                 (
                     "acquire_mission_lease_service_name",
@@ -314,13 +406,25 @@ class DepalletizingWorkflowNode(Node):
                 ("mqtt_connect_timeout_sec", 10.0),
                 ("mqtt_navigation_timeout_sec", 300.0),
                 ("mqtt_navigation_frame_id", "map"),
+                ("mqtt_micro_navigation_robot_id", "realman-001"),
+                (
+                    "mqtt_micro_navigation_request_topic",
+                    "mission/micro_navigation/request",
+                ),
+                (
+                    "mqtt_micro_navigation_result_topic",
+                    "mission/micro_navigation/result",
+                ),
+                ("mqtt_micro_navigation_client_id", ""),
+                ("mqtt_micro_navigation_frame_id", "base_footprint"),
+                ("mqtt_micro_navigation_timeout_sec", 120.0),
                 ("mqtt_navigation_points_json", "{}"),
                 ("mqtt_start_enabled", False),
                 ("mqtt_start_topic", "mission/workflow/start"),
                 ("mqtt_status_topic", "mission/workflow/status"),
                 ("mqtt_trigger_client_id", ""),
                 ("mqtt_start_action_wait_timeout_sec", 5.0),
-                ("global_observation_camera_side", "left"),
+                ("global_observation_camera_side", "right"),
                 ("global_observation_max_front_stacks", 2),
                 ("global_observation_model_label", ""),
                 ("global_observation_confidence_threshold", 0.0),
@@ -342,14 +446,17 @@ class DepalletizingWorkflowNode(Node):
             )
         for name in (
             "workflow_action_name",
+            "navigation_test_action_name",
             "observation_navigation_action_name",
             "navigate_to_point_action_name",
+            "micro_navigation_action_name",
             "global_observation_action_name",
             "grasp_box_tf_action_name",
             "execute_drag_box_grasp_tf_action_name",
             "execute_box_place_action_name",
             "place_box_test_action_name",
             "fixed_workflow_action_name",
+            "force_carry_workflow_action_name",
             "smallbox_workflow_action_name",
         ):
             if not self._string(name):
@@ -358,9 +465,12 @@ class DepalletizingWorkflowNode(Node):
             self._string(name)
             for name in (
                 "workflow_action_name",
+                "navigation_test_action_name",
                 "observation_navigation_action_name",
                 "navigate_to_point_action_name",
+                "micro_navigation_action_name",
                 "fixed_workflow_action_name",
+                "force_carry_workflow_action_name",
                 "smallbox_workflow_action_name",
             )
         )
@@ -369,21 +479,32 @@ class DepalletizingWorkflowNode(Node):
         for name in (
             "fixed_workflow_place_pos",
             "fixed_workflow_global_observation_pos",
+            "fixed_workflow_north_global_observation_pos",
+            "fixed_workflow_micro_retreat_pos",
             "fixed_workflow_drag_bigbox_pickup_pos",
             "fixed_workflow_drag_bigbox_layer4_pickup_pos",
             "fixed_workflow_direct_smallbox_pickup_pos",
             "fixed_workflow_direct_smallbox_layer4_pickup_pos",
+            "fixed_workflow_north_drag_bigbox_pickup_pos",
+            "fixed_workflow_north_drag_bigbox_layer4_pickup_pos",
+            "fixed_workflow_north_direct_smallbox_pickup_pos",
+            "fixed_workflow_north_direct_smallbox_layer4_pickup_pos",
         ):
             self._parse_custom_navigation_pos(self._float_array(name))
         for name in (
             "fixed_workflow_global_observation_left_joints",
             "fixed_workflow_global_observation_left_home_joints",
+            "fixed_workflow_global_observation_right_joints",
+            "fixed_workflow_global_observation_right_home_joints",
         ):
             values = self._float_array(name)
             if len(values) != 7:
                 raise ValueError(f"{name} must contain exactly 7 joint values")
             if not all(math.isfinite(float(value)) for value in values):
                 raise ValueError(f"{name} must contain finite joint values")
+        joint2_open = self._float("fixed_workflow_global_observation_right_joint2_open_deg")
+        if not math.isfinite(joint2_open) or not -14.0 <= joint2_open <= 174.0:
+            raise ValueError("global observation right J2 must be in [-14, 174] degrees")
         if self._float("fixed_workflow_arm_joints_duration") < 0.0:
             raise ValueError("fixed_workflow_arm_joints_duration cannot be negative")
         if not 1.0 <= self._float("fixed_workflow_arm_joints_speed_percent") <= 100.0:
@@ -404,8 +525,11 @@ class DepalletizingWorkflowNode(Node):
         for name in (
             "fixed_workflow_place_point_id",
             "fixed_workflow_global_observation_point_id",
+            "fixed_workflow_north_global_observation_point_id",
             "fixed_workflow_drag_bigbox_point_id",
             "fixed_workflow_direct_smallbox_point_id",
+            "fixed_workflow_north_drag_bigbox_point_id",
+            "fixed_workflow_north_direct_smallbox_point_id",
         ):
             if not 1 <= self._integer(name) <= 16:
                 raise ValueError(f"{name} must be in [1,16]")
@@ -430,6 +554,7 @@ class DepalletizingWorkflowNode(Node):
             "lease_service_timeout_sec",
             "mqtt_connect_timeout_sec",
             "mqtt_navigation_timeout_sec",
+            "mqtt_micro_navigation_timeout_sec",
             "mqtt_start_action_wait_timeout_sec",
         ):
             if self._float(name) <= 0.0:
@@ -462,6 +587,20 @@ class DepalletizingWorkflowNode(Node):
             parse_navigation_points_json(
                 self._string("mqtt_navigation_points_json")
             )
+        if not self._string("mqtt_micro_navigation_robot_id"):
+            raise ValueError("mqtt_micro_navigation_robot_id must not be empty")
+        for name in (
+            "mqtt_micro_navigation_request_topic",
+            "mqtt_micro_navigation_result_topic",
+        ):
+            if not self._string(name):
+                raise ValueError(f"{name} must not be empty")
+        if self._string("mqtt_micro_navigation_request_topic") == self._string(
+            "mqtt_micro_navigation_result_topic"
+        ):
+            raise ValueError("MQTT micro-navigation request and result topics must differ")
+        if not self._string("mqtt_micro_navigation_frame_id").lstrip("/"):
+            raise ValueError("mqtt_micro_navigation_frame_id must not be empty")
         if self._boolean("mqtt_start_enabled"):
             for name in ("mqtt_start_topic", "mqtt_status_topic"):
                 if not self._string(name):
@@ -815,6 +954,27 @@ class DepalletizingWorkflowNode(Node):
                 return GoalResponse.REJECT
         return self._reserve_goal("navigate_to_point", request.request_id)
 
+    def _micro_navigation_goal_callback(self, request) -> GoalResponse:
+        try:
+            self._parse_custom_navigation_pos(request.pos)
+        except ValueError as exc:
+            self.get_logger().warning(
+                f"rejecting micro_navigation goal: {exc}"
+            )
+            return GoalResponse.REJECT
+        with self._workflow_lock:
+            if self._workflow_reserved:
+                self.get_logger().warning(
+                    "rejecting micro_navigation goal: another workflow is active"
+                )
+                return GoalResponse.REJECT
+            self._workflow_reserved = True
+        response = self._reserve_goal("micro_navigation", request.request_id)
+        if response != GoalResponse.ACCEPT:
+            with self._workflow_lock:
+                self._workflow_reserved = False
+        return response
+
     def _navigate_to_point_cancel_callback(self, _goal_handle) -> CancelResponse:
         gateway = self._active_navigation_gateway
         if gateway is not None:
@@ -829,14 +989,16 @@ class DepalletizingWorkflowNode(Node):
             return GoalResponse.REJECT
         if not 1 <= int(request.start_item_index) <= FixedBoxWorkflowEngine.TOTAL_ITEMS:
             self.get_logger().warning(
-                "rejecting fixed box workflow goal: start_item_index must be in [1,8]"
+                "rejecting fixed box workflow goal: start_item_index must be in "
+                f"[1,{FixedBoxWorkflowEngine.TOTAL_ITEMS}]"
             )
             return GoalResponse.REJECT
         stop = int(request.stop_after_item_index)
         if stop and not int(request.start_item_index) <= stop <= FixedBoxWorkflowEngine.TOTAL_ITEMS:
             self.get_logger().warning(
                 "rejecting fixed box workflow goal: stop_after_item_index must "
-                "be 0 or in [start_item_index,8]"
+                "be 0 or in [start_item_index,"
+                f"{FixedBoxWorkflowEngine.TOTAL_ITEMS}]"
             )
             return GoalResponse.REJECT
         with self._workflow_lock:
@@ -886,7 +1048,12 @@ class DepalletizingWorkflowNode(Node):
             self._cancel_event.clear()
         return GoalResponse.ACCEPT
 
-    def _execute_fixed_box_workflow(self, goal_handle):
+    def _execute_force_carry_box_workflow(self, goal_handle):
+        return self._execute_fixed_box_workflow(
+            goal_handle, force_carry_profile=True
+        )
+
+    def _execute_fixed_box_workflow(self, goal_handle, *, force_carry_profile=False):
         request = goal_handle.request
         workflow_id = new_workflow_id()
         lease_token = ""
@@ -910,12 +1077,43 @@ class DepalletizingWorkflowNode(Node):
                 )
             else:
                 lease_token = acquired.lease_token
+                operation_options = (
+                    {"force_carry_profile": True} if force_carry_profile else {}
+                )
                 operations = self._make_fixed_operations(
-                    goal_handle, workflow_id, bool(request.dry_run)
+                    goal_handle, workflow_id, bool(request.dry_run), **operation_options
                 )
                 with self._workflow_lock:
                     self._active_operations = operations
-                if bool(request.use_global_observation):
+                def make_engine(tasks):
+                    return FixedBoxWorkflowEngine(
+                        operations,
+                        tasks,
+                        place_point_id=self._integer("fixed_workflow_place_point_id"),
+                        place_pos=tuple(self._float_array("fixed_workflow_place_pos")),
+                        micro_retreat_pos=tuple(
+                            self._float_array("fixed_workflow_micro_retreat_pos")
+                        ),
+                        progress_callback=lambda stage, task, detail: self._publish_fixed_progress(
+                            goal_handle, workflow_id, stage, task, detail
+                        ),
+                    )
+                requested_start = int(request.start_item_index)
+                requested_stop = int(request.stop_after_item_index)
+                if bool(request.use_global_observation) and (
+                    requested_start < 1
+                    or requested_start > FixedBoxWorkflowEngine.TOTAL_ITEMS
+                    or requested_stop < 0
+                    or requested_stop > FixedBoxWorkflowEngine.TOTAL_ITEMS
+                    or (requested_stop and requested_stop < requested_start)
+                ):
+                    outcome = self._fixed_failure_outcome(
+                        workflow_id,
+                        "VALIDATING",
+                        "global observation item indexes must be within [1,16], "
+                        "with stop_after_item_index=0 or >= start_item_index",
+                    )
+                elif bool(request.use_global_observation):
                     if bool(request.dry_run):
                         outcome = self._fixed_failure_outcome(
                             workflow_id,
@@ -923,156 +1121,125 @@ class DepalletizingWorkflowNode(Node):
                             "use_global_observation requires dry_run=false",
                         )
                     else:
-                        observation_point = str(
-                            self._integer(
-                                "fixed_workflow_global_observation_point_id"
-                            )
-                        )
-                        observation_pos = tuple(
-                            self._float_array("fixed_workflow_global_observation_pos")
-                        )
-                        self._publish_fixed_progress(
-                            goal_handle,
-                            workflow_id,
-                            "GLOBAL_OBSERVATION_NAVIGATION",
-                            None,
-                            "requesting navigation to global observation point "
-                            f"{observation_point} with pos={list(observation_pos)}",
-                        )
-                        navigation = operations.navigate(
-                            NavigationRequest(
-                                workflow_id=workflow_id,
-                                step_id=f"{workflow_id}:global-observation",
-                                point_id=observation_point,
-                                pos=observation_pos,
-                            )
-                        )
-                        if not navigation.success:
-                            outcome = self._fixed_failure_outcome(
+                        task_groups = []
+                        completed_count = 0
+                        last_completed_index = 0
+                        for face in (
+                            (
+                                "FRONT",
+                                "front",
+                                "fixed_workflow_global_observation_point_id",
+                                "fixed_workflow_global_observation_pos",
+                                "fixed_workflow_drag_bigbox_point_id",
+                                "fixed_workflow_drag_bigbox_pickup_pos",
+                                "fixed_workflow_drag_bigbox_layer4_pickup_pos",
+                                "fixed_workflow_direct_smallbox_point_id",
+                                "fixed_workflow_direct_smallbox_pickup_pos",
+                                "fixed_workflow_direct_smallbox_layer4_pickup_pos",
+                            ),
+                            (
+                                "BACK",
+                                "back",
+                                "fixed_workflow_north_global_observation_point_id",
+                                "fixed_workflow_north_global_observation_pos",
+                                "fixed_workflow_north_drag_bigbox_point_id",
+                                "fixed_workflow_north_drag_bigbox_pickup_pos",
+                                "fixed_workflow_north_drag_bigbox_layer4_pickup_pos",
+                                "fixed_workflow_north_direct_smallbox_point_id",
+                                "fixed_workflow_north_direct_smallbox_pickup_pos",
+                                "fixed_workflow_north_direct_smallbox_layer4_pickup_pos",
+                            ),
+                        ):
+                            start_index = 1 + sum(len(group) for group in task_groups)
+                            face_tasks, face_outcome = self._observe_fixed_face(
+                                goal_handle,
                                 workflow_id,
-                                "GLOBAL_OBSERVATION_NAVIGATION",
-                                navigation.message,
+                                operations,
+                                stage_label=face[0],
+                                pickup_zone=face[1],
+                                start_index=start_index,
+                                observation_point_parameter=face[2],
+                                observation_pos_parameter=face[3],
+                                drag_point_parameter=face[4],
+                                drag_pos_parameter=face[5],
+                                drag_layer4_pos_parameter=face[6],
+                                direct_point_parameter=face[7],
+                                direct_pos_parameter=face[8],
+                                direct_layer4_pos_parameter=face[9],
                             )
-                        else:
-                            left_observation_joints = self._float_array(
-                                "fixed_workflow_global_observation_left_joints"
-                            )
+                            if face_outcome is not None:
+                                outcome = FixedWorkflowOutcome(
+                                    False,
+                                    workflow_id,
+                                    completed_count,
+                                    last_completed_index,
+                                    face_outcome.final_stage,
+                                    face_outcome.message,
+                                )
+                                break
+                            task_groups.append(face_tasks)
+                            tasks = tuple(task for group in task_groups for task in group)
+                            self._fixed_total_item_count = len(tasks)
                             self._publish_fixed_progress(
                                 goal_handle,
                                 workflow_id,
-                                "GLOBAL_OBSERVATION_LEFT_ARM_MOVEJ",
+                                f"GLOBAL_OBSERVATION_{face[0]}_PLAN_READY",
                                 None,
-                                "moving left arm to global observation joint target "
-                                f"{left_observation_joints}",
+                                f"{face[1]} Vision plan accepted: "
+                                f"{len(face_tasks)} detected items; cumulative={len(tasks)}",
                             )
-                            arm_move = operations.move_left_joints(
-                                left_observation_joints,
-                                "global observation left-arm MoveJ",
-                            )
-                            if arm_move.success:
-                                self._publish_fixed_progress(
-                                    goal_handle,
-                                    workflow_id,
-                                    "GLOBAL_OBSERVATION",
-                                    None,
-                                    "calling Vision GlobalObservation Action",
+                            segment_start = max(requested_start, start_index)
+                            segment_stop = min(requested_stop or len(tasks), len(tasks))
+                            if segment_start <= segment_stop:
+                                last_segment = face[0] == "BACK" or (
+                                    requested_stop > 0 and requested_stop <= len(tasks)
                                 )
-                                observation = operations.observe(observation_point)
-                                self._publish_fixed_progress(
-                                    goal_handle,
+                                segment_outcome = make_engine(tasks).run(
                                     workflow_id,
-                                    "GLOBAL_OBSERVATION_LEFT_ARM_HOME",
-                                    None,
-                                    "returning left arm to zero joints after global observation",
-                                )
-                                home_move = operations.move_left_joints(
-                                    self._float_array(
-                                        "fixed_workflow_global_observation_left_home_joints"
+                                    lease_token,
+                                    start_item_index=segment_start,
+                                    stop_after_item_index=segment_stop,
+                                    completion_stage=(
+                                        "COMPLETE" if last_segment else "FRONT_COMPLETE"
                                     ),
-                                    "global observation left-arm zero reset",
                                 )
-                            else:
-                                observation = None
-                                home_move = None
-                            if not arm_move.success:
-                                outcome = self._fixed_failure_outcome(
-                                    workflow_id,
-                                    "GLOBAL_OBSERVATION_LEFT_ARM_MOVEJ",
-                                    arm_move.message,
+                                completed_count += segment_outcome.completed_box_count
+                                last_completed_index = (
+                                    segment_outcome.last_completed_item_index
+                                    or last_completed_index
                                 )
-                            elif home_move is not None and not home_move.success:
-                                outcome = self._fixed_failure_outcome(
-                                    workflow_id,
-                                    "GLOBAL_OBSERVATION_LEFT_ARM_HOME",
-                                    home_move.message,
-                                )
-                            elif (
-                                not observation.success
-                                or observation.plan is None
-                                or not observation.plan.actionable
-                            ):
-                                outcome = self._fixed_failure_outcome(
-                                    workflow_id,
-                                    "GLOBAL_OBSERVATION",
-                                    observation.message
-                                    or "Vision returned no actionable plan",
-                                )
-                            else:
-                                try:
-                                    tasks = build_observed_box_tasks(
-                                        observation.plan,
-                                        drag_point_id=self._integer(
-                                            "fixed_workflow_drag_bigbox_point_id"
-                                        ),
-                                        drag_pickup_pos=self._float_array(
-                                            "fixed_workflow_drag_bigbox_pickup_pos"
-                                        ),
-                                        drag_layer4_pickup_pos=self._float_array(
-                                            "fixed_workflow_drag_bigbox_layer4_pickup_pos"
-                                        ),
-                                        direct_point_id=self._integer(
-                                            "fixed_workflow_direct_smallbox_point_id"
-                                        ),
-                                        direct_pickup_pos=self._float_array(
-                                            "fixed_workflow_direct_smallbox_pickup_pos"
-                                        ),
-                                        direct_layer4_pickup_pos=self._float_array(
-                                            "fixed_workflow_direct_smallbox_layer4_pickup_pos"
-                                        ),
-                                        drag_action_name=self._string(
-                                            "execute_drag_box_grasp_tf_action_name"
-                                        ),
-                                        direct_action_name=self._string(
-                                            "grasp_box_tf_action_name"
-                                        ),
-                                    )
-                                except (TypeError, ValueError) as exc:
-                                    outcome = self._fixed_failure_outcome(
+                                if not segment_outcome.success:
+                                    outcome = FixedWorkflowOutcome(
+                                        False,
                                         workflow_id,
-                                        "GLOBAL_OBSERVATION",
-                                        f"invalid Vision task plan: {exc}",
+                                        completed_count,
+                                        last_completed_index,
+                                        segment_outcome.final_stage,
+                                        segment_outcome.message,
+                                        segment_outcome.trace,
                                     )
-                                else:
-                                    if len(tasks) > FixedBoxWorkflowEngine.TOTAL_ITEMS:
-                                        outcome = self._fixed_failure_outcome(
-                                            workflow_id,
-                                            "GLOBAL_OBSERVATION",
-                                            "Vision plan contains more than 8 items",
-                                        )
-                                    else:
-                                        self._publish_fixed_progress(
-                                            goal_handle,
-                                            workflow_id,
-                                            "GLOBAL_OBSERVATION_PLAN_READY",
-                                            None,
-                                            "Vision plan accepted: "
-                                            f"{len(tasks)} items; "
-                                            + ", ".join(
-                                                f"{task.box_type}/L{task.box_layer}/"
-                                                f"{'drag' if task.grasp_action == self._string('execute_drag_box_grasp_tf_action_name') else 'direct'}"
-                                                for task in tasks
-                                            ),
-                                        )
+                                    break
+                            if requested_stop > 0 and requested_stop <= len(tasks):
+                                # The requested range is complete; skip unused faces.
+                                break
+                        if outcome is None:
+                            if requested_start > len(tasks) or requested_stop > len(tasks):
+                                outcome = self._fixed_failure_outcome(
+                                    workflow_id,
+                                    "VALIDATING",
+                                    f"requested item range exceeds {len(tasks)} Vision-detected boxes",
+                                    completed=completed_count,
+                                    last_completed=last_completed_index,
+                                )
+                            else:
+                                outcome = FixedWorkflowOutcome(
+                                    True,
+                                    workflow_id,
+                                    completed_count,
+                                    last_completed_index,
+                                    "COMPLETE",
+                                    f"global observation workflow completed: {completed_count} boxes",
+                                )
                 else:
                     tasks = build_fixed_box_tasks(
                         drag_point_id=self._integer("fixed_workflow_drag_bigbox_point_id"),
@@ -1091,6 +1258,24 @@ class DepalletizingWorkflowNode(Node):
                         direct_layer4_pickup_pos=self._float_array(
                             "fixed_workflow_direct_smallbox_layer4_pickup_pos"
                         ),
+                        north_drag_point_id=self._integer(
+                            "fixed_workflow_north_drag_bigbox_point_id"
+                        ),
+                        north_drag_pickup_pos=self._float_array(
+                            "fixed_workflow_north_drag_bigbox_pickup_pos"
+                        ),
+                        north_drag_layer4_pickup_pos=self._float_array(
+                            "fixed_workflow_north_drag_bigbox_layer4_pickup_pos"
+                        ),
+                        north_direct_point_id=self._integer(
+                            "fixed_workflow_north_direct_smallbox_point_id"
+                        ),
+                        north_direct_pickup_pos=self._float_array(
+                            "fixed_workflow_north_direct_smallbox_pickup_pos"
+                        ),
+                        north_direct_layer4_pickup_pos=self._float_array(
+                            "fixed_workflow_north_direct_smallbox_layer4_pickup_pos"
+                        ),
                         drag_action_name=self._string(
                             "execute_drag_box_grasp_tf_action_name"
                         ),
@@ -1098,17 +1283,7 @@ class DepalletizingWorkflowNode(Node):
                     )
                 if outcome is None:
                     self._fixed_total_item_count = len(tasks)
-                    engine = FixedBoxWorkflowEngine(
-                        operations,
-                        tasks,
-                        place_point_id=self._integer("fixed_workflow_place_point_id"),
-                        place_pos=tuple(
-                            self._float_array("fixed_workflow_place_pos")
-                        ),
-                        progress_callback=lambda stage, task, detail: self._publish_fixed_progress(
-                            goal_handle, workflow_id, stage, task, detail
-                        ),
-                    )
+                    engine = make_engine(tasks)
                     outcome = engine.run(
                         workflow_id,
                         lease_token,
@@ -1275,10 +1450,197 @@ class DepalletizingWorkflowNode(Node):
             goal_handle.abort()
         return result
 
-    def _make_fixed_operations(self, goal_handle, workflow_id: str, dry_run: bool):
+    def _observe_fixed_face(
+        self,
+        goal_handle,
+        workflow_id: str,
+        operations,
+        *,
+        stage_label: str,
+        pickup_zone: str,
+        start_index: int,
+        observation_point_parameter: str,
+        observation_pos_parameter: str,
+        drag_point_parameter: str,
+        drag_pos_parameter: str,
+        drag_layer4_pos_parameter: str,
+        direct_point_parameter: str,
+        direct_pos_parameter: str,
+        direct_layer4_pos_parameter: str,
+    ):
+        """Observe one robot face and translate its Vision plan into tasks."""
+        stage_prefix = f"GLOBAL_OBSERVATION_{stage_label}"
+        observation_point = str(self._integer(observation_point_parameter))
+        observation_pos = tuple(self._float_array(observation_pos_parameter))
+        self._publish_fixed_progress(
+            goal_handle,
+            workflow_id,
+            f"{stage_prefix}_NAVIGATION",
+            None,
+            f"requesting {pickup_zone} global observation point "
+            f"{observation_point} with pos={list(observation_pos)}",
+        )
+        navigation = operations.navigate(
+            NavigationRequest(
+                workflow_id=workflow_id,
+                step_id=f"{workflow_id}:global-observation:{pickup_zone}",
+                point_id=observation_point,
+                pos=observation_pos,
+            )
+        )
+        if not navigation.success:
+            return (), self._fixed_failure_outcome(
+                workflow_id, f"{stage_prefix}_NAVIGATION", navigation.message
+            )
+
+        observation_arm = self._string("global_observation_camera_side").strip().lower()
+        move_observation_joints = getattr(operations, f"move_{observation_arm}_joints")
+        observation_joints = self._float_array(
+            f"fixed_workflow_global_observation_{observation_arm}_joints"
+        )
+        if observation_arm == "right":
+            joint2_open = self._float("fixed_workflow_global_observation_right_joint2_open_deg")
+            joint2_stage = f"{stage_prefix}_RIGHT_ARM_JOINT2_OPEN"
+            self._publish_fixed_progress(
+                goal_handle, workflow_id, joint2_stage, None,
+                f"opening right J2 to {joint2_open:g}deg; other six joints hold measured values",
+            )
+            preparation = operations.prepare_right_observation_joint2(
+                joint2_open, f"{pickup_zone} global observation right J2 preparation"
+            )
+            if not preparation.success:
+                return (), self._fixed_failure_outcome(
+                    workflow_id, joint2_stage, preparation.message
+                )
+
+        self._publish_fixed_progress(
+            goal_handle,
+            workflow_id,
+            f"{stage_prefix}_{observation_arm.upper()}_ARM_MOVEJ",
+            None,
+            f"moving {observation_arm} arm to {pickup_zone} global observation joint target "
+            f"{observation_joints}",
+        )
+        arm_move = move_observation_joints(
+            observation_joints,
+            f"{pickup_zone} global observation {observation_arm}-arm MoveJ",
+        )
+        if not arm_move.success:
+            return (), self._fixed_failure_outcome(
+                workflow_id, f"{stage_prefix}_{observation_arm.upper()}_ARM_MOVEJ", arm_move.message
+            )
+
+        self._publish_fixed_progress(
+            goal_handle,
+            workflow_id,
+            stage_prefix,
+            None,
+            f"calling Vision GlobalObservation Action for {pickup_zone} face",
+        )
+        observation = operations.observe(observation_point)
+        empty_observation = False
+        no_tote_message = "viewpoint precheck failed: status=none; " \
+            "recommended_viewpoint=hold; YOLO did not detect a tote"
+        if not observation.success and no_tote_message in observation.message:
+            self._publish_fixed_progress(
+                goal_handle,
+                workflow_id,
+                f"{stage_prefix}_EMPTY_RECHECK",
+                None,
+                f"{pickup_zone} Vision reported no tote; repeating observation once",
+            )
+            observation = operations.observe(observation_point)
+            empty_observation = (
+                not observation.success
+                and no_tote_message in observation.message
+            )
+        self._publish_fixed_progress(
+            goal_handle,
+            workflow_id,
+            f"{stage_prefix}_{observation_arm.upper()}_ARM_HOME",
+            None,
+            f"returning {observation_arm} arm to zero joints after {pickup_zone} observation",
+        )
+        home_move = move_observation_joints(
+            self._float_array(f"fixed_workflow_global_observation_{observation_arm}_home_joints"),
+            f"{pickup_zone} global observation {observation_arm}-arm zero reset",
+        )
+        if not home_move.success:
+            return (), self._fixed_failure_outcome(
+                workflow_id, f"{stage_prefix}_{observation_arm.upper()}_ARM_HOME", home_move.message
+            )
+        if empty_observation:
+            self._publish_fixed_progress(
+                goal_handle,
+                workflow_id,
+                f"{stage_prefix}_PLAN_READY",
+                None,
+                f"{pickup_zone} has no detected boxes in two Vision observations",
+            )
+            return (), None
+        if (
+            not observation.success
+            or observation.plan is None
+            or not observation.plan.actionable
+        ):
+            return (), self._fixed_failure_outcome(
+                workflow_id,
+                stage_prefix,
+                observation.message or "Vision returned no actionable plan",
+            )
+
+        try:
+            tasks = build_observed_box_tasks(
+                observation.plan,
+                drag_point_id=self._integer(drag_point_parameter),
+                drag_pickup_pos=self._float_array(drag_pos_parameter),
+                drag_layer4_pickup_pos=self._float_array(
+                    drag_layer4_pos_parameter
+                ),
+                direct_point_id=self._integer(direct_point_parameter),
+                direct_pickup_pos=self._float_array(direct_pos_parameter),
+                direct_layer4_pickup_pos=self._float_array(
+                    direct_layer4_pos_parameter
+                ),
+                start_index=start_index,
+                pickup_zone=pickup_zone,
+                drag_action_name=self._string(
+                    "execute_drag_box_grasp_tf_action_name"
+                ),
+                direct_action_name=self._string("grasp_box_tf_action_name"),
+            )
+        except (TypeError, ValueError) as exc:
+            return (), self._fixed_failure_outcome(
+                workflow_id, stage_prefix, f"invalid Vision task plan: {exc}"
+            )
+        if len(tasks) > 8:
+            return (), self._fixed_failure_outcome(
+                workflow_id,
+                stage_prefix,
+                f"{pickup_zone} Vision plan exceeds the eight-box face capacity; "
+                f"received {len(tasks)}",
+            )
+        self._publish_fixed_progress(
+            goal_handle,
+            workflow_id,
+            f"{stage_prefix}_PLAN_READY",
+            None,
+            f"{pickup_zone} Vision plan accepted: "
+            + ", ".join(
+                f"{task.box_type}/L{task.box_layer}/"
+                f"{'drag' if task.grasp_action == self._string('execute_drag_box_grasp_tf_action_name') else 'direct'}"
+                for task in tasks
+            ),
+        )
+        return tasks, None
+
+    def _make_fixed_operations(
+        self, goal_handle, workflow_id: str, dry_run: bool, *, force_carry_profile=False
+    ):
         return FixedRosWorkflowOperations(
             node=self,
             navigation_gateway=self._make_navigation_gateway(),
+            micro_navigation_gateway=self._make_micro_navigation_gateway(),
             direct_grasp_client=self._direct_grasp_client,
             drag_grasp_client=self._drag_grasp_client,
             place_test_client=self._fixed_place_client,
@@ -1305,6 +1667,7 @@ class DepalletizingWorkflowNode(Node):
             ),
             target_label=self._integer("fixed_workflow_target_label"),
             dry_run=dry_run,
+            force_carry_profile=force_carry_profile,
             server_wait_timeout_sec=self._float("server_wait_timeout_sec"),
             result_timeout_sec=self._float("child_result_timeout_sec"),
             child_feedback_callback=lambda stage, detail: self._publish_fixed_child_feedback(
@@ -1375,6 +1738,7 @@ class DepalletizingWorkflowNode(Node):
         feedback.box_layer = box_layer
         feedback.detail = str(detail)
         goal_handle.publish_feedback(feedback)
+        self._audit_feedback(goal_handle, feedback)
 
     def _publish_fixed_child_feedback(
         self, goal_handle, workflow_id: str, stage: str, detail: str
@@ -1402,6 +1766,7 @@ class DepalletizingWorkflowNode(Node):
         feedback.box_layer = box_layer
         feedback.detail = str(detail)
         goal_handle.publish_feedback(feedback)
+        self._audit_feedback(goal_handle, feedback)
 
     def _publish_smallbox_child_feedback(
         self, goal_handle, workflow_id: str, stage: str, detail: str
@@ -1571,6 +1936,7 @@ class DepalletizingWorkflowNode(Node):
             message.stage = stage
             message.detail = detail
             goal_handle.publish_feedback(message)
+            self._audit_feedback(goal_handle, message)
 
         try:
             if request.use_custom_pos:
@@ -1641,7 +2007,10 @@ class DepalletizingWorkflowNode(Node):
                 navigation_result.status,
                 navigation_result.message,
             )
-            if goal_handle.is_cancel_requested or navigation_result.status == "canceled":
+            if (
+                goal_handle.is_cancel_requested
+                or navigation_result.status == "canceled"
+            ):
                 feedback("CANCELED", result.message)
                 goal_handle.canceled()
             elif result.success:
@@ -1662,6 +2031,85 @@ class DepalletizingWorkflowNode(Node):
             if gateway is not None:
                 gateway.close()
             self.mission_lease_manager.release_goal()
+
+    def _execute_micro_navigation(self, goal_handle):
+        request = goal_handle.request
+        result = ExecuteMicroNavigation.Result()
+        gateway = None
+
+        def feedback(stage: str, detail: str) -> None:
+            message = ExecuteMicroNavigation.Feedback()
+            message.stage = stage
+            message.detail = detail
+            goal_handle.publish_feedback(message)
+            self._audit_feedback(goal_handle, message)
+
+        try:
+            custom_pos = self._parse_custom_navigation_pos(request.pos)
+            target = NavigationPoint(*custom_pos)
+            result.pos = [target.x, target.y, target.yaw]
+            frame_id = self._string("mqtt_micro_navigation_frame_id").lstrip("/")
+            feedback(
+                "VALIDATING",
+                f"relative {frame_id} pos="
+                f"[{target.x:g},{target.y:g},{target.yaw:g}]",
+            )
+
+            if request.dry_run:
+                result.success = True
+                result.message = (
+                    f"dry-run micro navigation in {frame_id}: "
+                    f"pos=[{target.x:g},{target.y:g},{target.yaw:g}]"
+                )
+                feedback("DRY_RUN_COMPLETE", result.message)
+                goal_handle.succeed()
+                return result
+
+            feedback("CONNECTING", "connecting to MQTT micro-navigation broker")
+            gateway = self._make_micro_navigation_gateway()
+            self._active_navigation_gateway = gateway
+            feedback(
+                "WAITING_FOR_MICRO_NAVIGATION",
+                f"requesting relative {frame_id} pos="
+                f"[{target.x:g},{target.y:g},{target.yaw:g}]",
+            )
+            navigation_result = gateway.navigate(
+                NavigationRequest(
+                    workflow_id="standalone-micro-navigation",
+                    step_id=str(request.request_id).strip() or "micro-navigation",
+                    point_id="micro",
+                    pos=custom_pos,
+                ),
+                lambda: bool(goal_handle.is_cancel_requested),
+            )
+            result.success = bool(navigation_result.success)
+            result.message = self._navigation_result_message(
+                navigation_result.status,
+                navigation_result.message,
+            )
+            if goal_handle.is_cancel_requested or navigation_result.status == "canceled":
+                feedback("CANCELED", result.message)
+                goal_handle.canceled()
+            elif result.success:
+                feedback("SUCCEEDED", result.message)
+                goal_handle.succeed()
+            else:
+                feedback("FAILED", result.message)
+                goal_handle.abort()
+            return result
+        except Exception as exc:  # noqa: BLE001
+            result.success = False
+            result.message = f"unexpected micro-navigation error: {exc}"
+            feedback("FAILED", result.message)
+            goal_handle.abort()
+            return result
+        finally:
+            self._active_navigation_gateway = None
+            if gateway is not None:
+                gateway.close()
+            self.mission_lease_manager.release_goal()
+            with self._workflow_lock:
+                self._workflow_reserved = False
 
     def _goal_callback(self, request) -> GoalResponse:
         if not request.start:
@@ -1850,6 +2298,25 @@ class DepalletizingWorkflowNode(Node):
             ),
         )
 
+    def _make_micro_navigation_gateway(self):
+        return MqttNavigationGateway(
+            host=self._string("mqtt_host"),
+            port=self._integer("mqtt_port"),
+            request_topic=self._string("mqtt_micro_navigation_request_topic"),
+            result_topic=self._string("mqtt_micro_navigation_result_topic"),
+            client_id=self._string("mqtt_micro_navigation_client_id"),
+            qos=self._integer("mqtt_qos"),
+            keepalive_sec=self._integer("mqtt_keepalive_sec"),
+            connect_timeout_sec=self._float("mqtt_connect_timeout_sec"),
+            navigation_timeout_sec=self._float(
+                "mqtt_micro_navigation_timeout_sec"
+            ),
+            robot_id=self._string("mqtt_micro_navigation_robot_id"),
+            frame_id=self._string("mqtt_micro_navigation_frame_id"),
+            point_poses={},
+            include_point_id=False,
+        )
+
     def _publish_progress(self, goal_handle, progress) -> None:
         self.get_logger().info(
             "workflow transition "
@@ -1868,6 +2335,7 @@ class DepalletizingWorkflowNode(Node):
         feedback.total_order_items = progress.total_order_items
         feedback.detail = progress.detail
         goal_handle.publish_feedback(feedback)
+        self._audit_feedback(goal_handle, feedback)
 
     def _publish_observation_navigation_progress(
         self, goal_handle, progress
@@ -1889,6 +2357,7 @@ class DepalletizingWorkflowNode(Node):
         feedback.total_order_items = progress.total_order_items
         feedback.detail = progress.detail
         goal_handle.publish_feedback(feedback)
+        self._audit_feedback(goal_handle, feedback)
 
     def _publish_child_feedback(
         self, goal_handle, workflow_id: str, stage: str, detail: str
@@ -1898,6 +2367,7 @@ class DepalletizingWorkflowNode(Node):
         feedback.stage = f"CHILD_{stage}"
         feedback.detail = detail
         goal_handle.publish_feedback(feedback)
+        self._audit_feedback(goal_handle, feedback)
 
     def _publish_observation_navigation_child_feedback(
         self, goal_handle, workflow_id: str, stage: str, detail: str
@@ -1907,6 +2377,7 @@ class DepalletizingWorkflowNode(Node):
         feedback.stage = f"CHILD_{stage}"
         feedback.detail = detail
         goal_handle.publish_feedback(feedback)
+        self._audit_feedback(goal_handle, feedback)
 
     def _acquire_lease(self, workflow_id: str):
         request = AcquireMissionLease.Request()

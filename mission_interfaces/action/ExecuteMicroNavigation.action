@@ -1,0 +1,13 @@
+# Execute one relative chassis adjustment through the MQTT micro-navigation bridge.
+string request_id
+# Relative target [x, y, yaw] expressed in base_footprint; metres and radians.
+float64[] pos
+# Validate and report the request without publishing to MQTT.
+bool dry_run
+---
+bool success
+string message
+float64[] pos
+---
+string stage
+string detail

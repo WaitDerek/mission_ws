@@ -13,9 +13,8 @@ from .common import MissionCanceled, MissionError
 class BoxActionsMixin:
     """Mission-level box pickup and placement orchestration."""
 
-    @staticmethod
     def _publish_box_grasp_feedback(
-        goal_handle, stage: str, detail: str
+        self, goal_handle, stage: str, detail: str
     ) -> None:
         request = getattr(goal_handle, "request", None)
         feedback_type = (
@@ -27,24 +26,25 @@ class BoxActionsMixin:
         feedback.stage = stage
         feedback.detail = detail
         goal_handle.publish_feedback(feedback)
+        self._audit_feedback(goal_handle, feedback)
 
-    @staticmethod
     def _publish_box_place_feedback(
-        goal_handle, stage: str, detail: str
+        self, goal_handle, stage: str, detail: str
     ) -> None:
         feedback = ExecuteBoxPlace.Feedback()
         feedback.stage = stage
         feedback.detail = detail
         goal_handle.publish_feedback(feedback)
+        self._audit_feedback(goal_handle, feedback)
 
-    @staticmethod
     def _publish_place_box_test_feedback(
-        goal_handle, stage: str, detail: str
+        self, goal_handle, stage: str, detail: str
     ) -> None:
         feedback = PlaceBoxTest.Feedback()
         feedback.stage = stage
         feedback.detail = detail
         goal_handle.publish_feedback(feedback)
+        self._audit_feedback(goal_handle, feedback)
 
     def _execute_box_grasp(self, goal_handle) -> ExecuteBoxGrasp.Result:
         return self._execute_box_grasp_with_action_type(
@@ -423,6 +423,12 @@ class BoxActionsMixin:
                     )
                 else:
                     release_basis = (
+                        "force-carry configured waist target reached; direct release profile"
+                        if bool(getattr(request, "force_carry_profile", False))
+                        else
+                        "dynamic table height and bilateral SDK Work-Fz support confirmed"
+                        if self._boolean("place_box_test_dynamic_table_enabled")
+                        else
                         "placement target and bilateral force-Z table support confirmed"
                         if self._boolean("place_box_test_force_unload_enabled")
                         else "placement target confirmed"

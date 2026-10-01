@@ -13,15 +13,15 @@ from .common import MissionCanceled, MissionError
 class AdaptiveBoxActionsMixin:
     """Freeze targets, execute native MoveL, and lift without dual_arm."""
 
-    @staticmethod
     def _publish_adaptive_feedback(
-        goal_handle, stage: str, progress: float, detail: str
+        self, goal_handle, stage: str, progress: float, detail: str
     ) -> None:
         feedback = ExecuteAdaptiveBoxGrasp.Feedback()
         feedback.stage = stage
         feedback.progress = float(max(0.0, min(1.0, progress)))
         feedback.detail = detail
         goal_handle.publish_feedback(feedback)
+        self._audit_feedback(goal_handle, feedback)
 
     @staticmethod
     def _adaptive_error_code(stage: str) -> int:

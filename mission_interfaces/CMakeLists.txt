@@ -15,6 +15,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ExecuteBoxPlace.action"
   "action/ExecuteDragBoxGrasp.action"
   "action/ExecuteFixedBoxWorkflow.action"
+  "action/ExecuteMicroNavigation.action"
+  "action/ExecuteNavigationTest.action"
   "action/ExecuteObservationNavigation.action"
   "action/ExecuteWorkflow.action"
   "action/MoveBaseDistance.action"

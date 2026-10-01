@@ -73,10 +73,11 @@ def parse_navigation_points_json(payload: str) -> dict[str, NavigationPoint]:
 
 
 class MqttNavigationGateway:
-    """Publish a configured target pose and wait for the matching result.
+    """Publish a target pose and wait for the matching robot result.
 
-    Request payloads include the logical point ID and map pose.  The wire
-    protocol groups the pose values as ``pos: [x, y, yaw]``, for example
+    Standard navigation payloads include the logical point ID and map pose.
+    Micro-navigation disables the point ID and uses a robot-relative frame.
+    Both protocols group pose values as ``pos: [x, y, yaw]``, for example
     ``{"robot_id":"realman-001","point_id":5,"frame_id":"map","pos":[1.0,2.0,0.0]}``.
     Results use the platform robot-level protocol:
     ``{"robot_id":"realman-001","success":true,"message":"arrived"}``.
@@ -97,6 +98,7 @@ class MqttNavigationGateway:
         robot_id: str = "realman-001",
         frame_id: str = "map",
         point_poses: Mapping[str, NavigationPoint] | None = None,
+        include_point_id: bool = True,
         client: Any | None = None,
     ) -> None:
         self._host = str(host).strip()
@@ -110,6 +112,7 @@ class MqttNavigationGateway:
         self._robot_id = str(robot_id).strip()
         self._frame_id = str(frame_id).strip().lstrip("/")
         self._point_poses = dict(point_poses or {})
+        self._include_point_id = bool(include_point_id)
         self._validate_configuration()
 
         self._connected = threading.Event()
@@ -354,15 +357,23 @@ class MqttNavigationGateway:
                 self._pending_point_id = point_id
                 self._response = None
                 self._response_ready.clear()
+            if self._include_point_id:
+                payload = {
+                    "robot_id": self._robot_id,
+                    "point_id": int(point_id),
+                    "frame_id": self._frame_id,
+                    "pos": [target.x, target.y, target.yaw],
+                }
+            else:
+                payload = {
+                    "robot_id": self._robot_id,
+                    "frame_id": self._frame_id,
+                    "pos": [target.x, target.y, target.yaw],
+                }
             publish_info = self._client.publish(
                 self._request_topic,
                 payload=json.dumps(
-                    {
-                        "robot_id": self._robot_id,
-                        "point_id": int(point_id),
-                        "frame_id": self._frame_id,
-                        "pos": [target.x, target.y, target.yaw],
-                    },
+                    payload,
                     ensure_ascii=False,
                     separators=(",", ":"),
                 ),

@@ -40,19 +40,22 @@ class FixedRosWorkflowOperations:
         arm_joints_action_name: str = "/move_arm_j",
         arm_joints_duration: float = 0.0,
         sdk_adapter=None,
-        arm_joints_speed_percent: float = 10.0,
+        arm_joints_speed_percent: float = 15.0,
         arm_joints_timeout_sec: float = 120.0,
         cancel_event: threading.Event,
         direct_action_name: str,
         drag_action_name: str,
         target_label: int,
         dry_run: bool,
+        force_carry_profile: bool = False,
         server_wait_timeout_sec: float,
         result_timeout_sec: float,
+        micro_navigation_gateway=None,
         child_feedback_callback: Callable[[str, str], None] | None = None,
     ) -> None:
         self._node = node
         self._navigation_gateway = navigation_gateway
+        self._micro_navigation_gateway = micro_navigation_gateway
         self._direct_grasp_client = direct_grasp_client
         self._drag_grasp_client = drag_grasp_client
         self._place_test_client = place_test_client
@@ -69,6 +72,7 @@ class FixedRosWorkflowOperations:
         self._drag_action_name = str(drag_action_name)
         self._target_label = int(target_label)
         self._dry_run = bool(dry_run)
+        self._force_carry_profile = bool(force_carry_profile)
         self._server_wait_timeout_sec = float(server_wait_timeout_sec)
         self._result_timeout_sec = float(result_timeout_sec)
         self._child_feedback_callback = child_feedback_callback
@@ -81,6 +85,8 @@ class FixedRosWorkflowOperations:
     def cancel_active(self) -> None:
         self._cancel_event.set()
         self._navigation_gateway.cancel_active()
+        if self._micro_navigation_gateway is not None:
+            self._micro_navigation_gateway.cancel_active()
         with self._active_lock:
             goal_handle = self._active_child_goal_handle
         if goal_handle is not None:
@@ -93,6 +99,8 @@ class FixedRosWorkflowOperations:
 
     def close(self) -> None:
         self._navigation_gateway.close()
+        if self._micro_navigation_gateway is not None:
+            self._micro_navigation_gateway.close()
         if self._sdk_adapter is not None:
             try:
                 self._sdk_adapter.close()
@@ -113,6 +121,22 @@ class FixedRosWorkflowOperations:
         result = self._navigation_gateway.navigate(request, self.is_cancel_requested)
         return StepResult(result.success, result.message or result.status)
 
+    def micro_navigate(self, request: NavigationRequest) -> StepResult:
+        if self.is_cancel_requested():
+            return StepResult(False, "fixed workflow micro navigation canceled")
+        if self._dry_run:
+            return StepResult(
+                True,
+                "fixed workflow micro navigation skipped in dry-run: "
+                f"pos={list(request.pos or ())}",
+            )
+        if self._micro_navigation_gateway is None:
+            return StepResult(False, "fixed workflow micro-navigation is unavailable")
+        result = self._micro_navigation_gateway.navigate(
+            request, self.is_cancel_requested
+        )
+        return StepResult(result.success, result.message or result.status)
+
     def grasp(self, action_name: str, request_id: str, task: FixedBoxTask) -> StepResult:
         if action_name == self._drag_action_name:
             client = self._drag_grasp_client
@@ -127,6 +151,7 @@ class FixedRosWorkflowOperations:
         goal.box_layer = int(task.box_layer)
         goal.box_type = str(task.box_type)
         goal.dry_run = self._dry_run
+        goal.force_carry_profile = self._force_carry_profile
         call = self._call_action(
             client,
             goal,
@@ -181,29 +206,59 @@ class FixedRosWorkflowOperations:
         except ObservationValidationError as exc:
             return ObservationResult(False, message=str(exc))
 
-    def move_left_joints(
-        self, left_joints: list[float] | tuple[float, ...], description: str
+    def move_left_joints(self, joints, description: str) -> StepResult:
+        return self._move_arm_joints("left", joints, description)
+
+    def move_right_joints(self, joints, description: str) -> StepResult:
+        return self._move_arm_joints("right", joints, description)
+
+    def prepare_right_observation_joint2(
+        self, joint2_deg: float, description: str
     ) -> StepResult:
+        """Open only right J2 from measured joints before the full observation pose."""
+        if not math.isfinite(joint2_deg) or not -14.0 <= joint2_deg <= 174.0:
+            return StepResult(False, "right observation J2 is outside [-14, 174] degrees")
+        if self._dry_run:
+            return StepResult(True, f"{description}: J2={joint2_deg:g}deg; skipped in dry-run")
+        transport = getattr(self._sdk_adapter, "_ros_movej_transport", None)
+        if transport is None:
+            return StepResult(False, "right J2 preparation requires measured ROS arm feedback")
+        try:
+            joints = transport.current_joint_positions(
+                "right", timeout_sec=5.0, cancel_requested=self.is_cancel_requested
+            )
+        except Exception as exc:
+            return StepResult(False, f"{description}: {exc}")
+        joints[1] = math.radians(joint2_deg)
+        return self.move_right_joints(joints, description)
+
+    def _move_arm_joints(
+        self, arm: str, joints: list[float] | tuple[float, ...], description: str
+    ) -> StepResult:
+        if arm not in ("left", "right"):
+            return StepResult(False, f"unsupported observation arm: {arm}")
+        if self._dry_run:
+            return StepResult(True, f"{description} skipped in dry-run")
         if self._sdk_adapter is not None:
             try:
-                # Mission joint-state values are radians; RealMan's rm_movej
-                # API expects seven joint angles in degrees.
-                joint_degrees = [math.degrees(float(value)) for value in left_joints]
+                # Mission joint-state values are radians; the MoveJ adapter
+                # accepts degrees before encoding ROS joint command units.
+                joint_degrees = [math.degrees(float(value)) for value in joints]
                 message = self._sdk_adapter.execute_single_movej(
-                    arm="left",
+                    arm=arm,
                     joint_degrees=joint_degrees,
                     speed_percent=self._arm_joints_speed_percent,
                     cancel_requested=self.is_cancel_requested,
                     timeout_sec=self._arm_joints_timeout_sec,
                 )
             except Exception as exc:  # noqa: BLE001
-                return StepResult(False, f"{description} Python SDK MoveJ failed: {exc}")
+                return StepResult(False, f"{description} ROS MoveJ failed: {exc}")
             return StepResult(True, message)
         if self._arm_joints_client is None:
-            return StepResult(False, "left-arm MoveJ client is unavailable")
+            return StepResult(False, f"{arm}-arm MoveJ client is unavailable")
         goal = MoveArmJoints.Goal()
-        goal.left_joints = [float(value) for value in left_joints]
-        goal.right_joints = []
+        goal.left_joints = [float(value) for value in joints] if arm == "left" else []
+        goal.right_joints = [float(value) for value in joints] if arm == "right" else []
         goal.dry_run = self._dry_run
         goal.duration = self._arm_joints_duration
         call = self._call_action(
@@ -224,6 +279,7 @@ class FixedRosWorkflowOperations:
         goal.box_type = str(box_type)
         goal.release_after_place = True
         goal.dry_run = self._dry_run
+        goal.force_carry_profile = self._force_carry_profile
         call = self._call_action(self._place_test_client, goal, "/place_box_test")
         if not call.success:
             return StepResult(False, call.message)

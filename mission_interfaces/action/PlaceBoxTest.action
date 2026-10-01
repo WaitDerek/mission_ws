@@ -3,6 +3,8 @@ string request_id
 string box_type
 bool release_after_place
 bool dry_run
+# Dedicated full workflow: waist bend, release, Joint2=40deg, then home.
+bool force_carry_profile
 
 ---
 

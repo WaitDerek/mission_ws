@@ -1,4 +1,4 @@
-"""Data model for the deterministic eight-box workflow."""
+"""Data model for the deterministic front-then-back 16-box workflow."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ class FixedBoxTask:
     grasp_action: str
     box_type: str
     box_layer: int
+    pickup_zone: str = "front"
 
 
 @dataclass(frozen=True)
@@ -44,10 +45,61 @@ def build_fixed_box_tasks(
     direct_point_id: int,
     direct_pickup_pos: tuple[float, float, float] | list[float],
     direct_layer4_pickup_pos: tuple[float, float, float] | list[float] | None = None,
+    north_drag_point_id: int,
+    north_drag_pickup_pos: tuple[float, float, float] | list[float],
+    north_drag_layer4_pickup_pos: (
+        tuple[float, float, float] | list[float] | None
+    ) = None,
+    north_direct_point_id: int,
+    north_direct_pickup_pos: tuple[float, float, float] | list[float],
+    north_direct_layer4_pickup_pos: (
+        tuple[float, float, float] | list[float] | None
+    ) = None,
     drag_action_name: str = DRAG_GRASP_ACTION,
     direct_action_name: str = DIRECT_GRASP_ACTION,
 ) -> tuple[FixedBoxTask, ...]:
-    """Build the user-defined order while keeping every layer explicit."""
+    """Build eight front tasks followed by the same eight-task back order."""
+    front = _build_fixed_face_tasks(
+        start_index=1,
+        pickup_zone="front",
+        drag_point_id=drag_point_id,
+        drag_pickup_pos=drag_pickup_pos,
+        drag_layer4_pickup_pos=drag_layer4_pickup_pos,
+        direct_point_id=direct_point_id,
+        direct_pickup_pos=direct_pickup_pos,
+        direct_layer4_pickup_pos=direct_layer4_pickup_pos,
+        drag_action_name=drag_action_name,
+        direct_action_name=direct_action_name,
+    )
+    back = _build_fixed_face_tasks(
+        start_index=9,
+        pickup_zone="back",
+        drag_point_id=north_drag_point_id,
+        drag_pickup_pos=north_drag_pickup_pos,
+        drag_layer4_pickup_pos=north_drag_layer4_pickup_pos,
+        direct_point_id=north_direct_point_id,
+        direct_pickup_pos=north_direct_pickup_pos,
+        direct_layer4_pickup_pos=north_direct_layer4_pickup_pos,
+        drag_action_name=drag_action_name,
+        direct_action_name=direct_action_name,
+    )
+    return front + back
+
+
+def _build_fixed_face_tasks(
+    *,
+    start_index: int,
+    pickup_zone: str,
+    drag_point_id: int,
+    drag_pickup_pos: tuple[float, float, float] | list[float],
+    drag_layer4_pickup_pos: tuple[float, float, float] | list[float] | None,
+    direct_point_id: int,
+    direct_pickup_pos: tuple[float, float, float] | list[float],
+    direct_layer4_pickup_pos: tuple[float, float, float] | list[float] | None,
+    drag_action_name: str,
+    direct_action_name: str,
+) -> tuple[FixedBoxTask, ...]:
+    """Build one face in the established big/small interleaved layer order."""
     drag_point = str(int(drag_point_id))
     direct_point = str(int(direct_point_id))
     drag_pos = _pos(drag_pickup_pos)
@@ -62,22 +114,29 @@ def build_fixed_box_tasks(
         if direct_layer4_pickup_pos is not None
         else direct_pos
     )
-    return (
-        FixedBoxTask(1, drag_point, drag_pos, drag_action_name, "bigbox", 1),
-        FixedBoxTask(2, drag_point, drag_pos, drag_action_name, "bigbox", 2),
-        FixedBoxTask(3, direct_point, direct_pos, direct_action_name, "smallbox", 1),
-        FixedBoxTask(4, drag_point, drag_pos, drag_action_name, "bigbox", 3),
-        FixedBoxTask(5, direct_point, direct_pos, direct_action_name, "smallbox", 2),
-        FixedBoxTask(6, drag_point, drag_layer4_pos, drag_action_name, "bigbox", 4),
-        FixedBoxTask(7, direct_point, direct_pos, direct_action_name, "smallbox", 3),
+    task_specs = (
+        (drag_point, drag_pos, drag_action_name, "bigbox", 1),
+        (drag_point, drag_pos, drag_action_name, "bigbox", 2),
+        (direct_point, direct_pos, direct_action_name, "smallbox", 1),
+        (drag_point, drag_pos, drag_action_name, "bigbox", 3),
+        (direct_point, direct_pos, direct_action_name, "smallbox", 2),
+        (drag_point, drag_layer4_pos, drag_action_name, "bigbox", 4),
+        (direct_point, direct_pos, direct_action_name, "smallbox", 3),
+        (direct_point, direct_layer4_pos, direct_action_name, "smallbox", 4),
+    )
+    return tuple(
         FixedBoxTask(
-            8,
-            direct_point,
-            direct_layer4_pos,
-            direct_action_name,
-            "smallbox",
-            4,
-        ),
+            start_index + offset,
+            point_id,
+            position,
+            action_name,
+            box_type,
+            layer,
+            pickup_zone,
+        )
+        for offset, (point_id, position, action_name, box_type, layer) in enumerate(
+            task_specs
+        )
     )
 
 
@@ -118,6 +177,8 @@ def build_observed_box_tasks(
     direct_point_id: int,
     direct_pickup_pos: tuple[float, float, float] | list[float],
     direct_layer4_pickup_pos: tuple[float, float, float] | list[float] | None = None,
+    start_index: int = 1,
+    pickup_zone: str = "observed",
     drag_action_name: str = DRAG_GRASP_ACTION,
     direct_action_name: str = DIRECT_GRASP_ACTION,
 ) -> tuple[FixedBoxTask, ...]:
@@ -137,7 +198,7 @@ def build_observed_box_tasks(
         else direct_pos
     )
     tasks = []
-    for item_index, observed in enumerate(plan.tasks, start=1):
+    for item_index, observed in enumerate(plan.tasks, start=int(start_index)):
         stack_index = int(observed.stack_index)
         if stack_index not in (0, 1):
             raise ValueError(
@@ -169,6 +230,7 @@ def build_observed_box_tasks(
                 action_name,
                 str(observed.box_type),
                 layer,
+                str(pickup_zone),
             )
         )
     return tuple(tasks)

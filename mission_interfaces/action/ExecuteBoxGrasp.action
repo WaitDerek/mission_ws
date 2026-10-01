@@ -4,6 +4,8 @@ int32 target_label
 int32 box_layer
 string box_type
 bool dry_run
+# Used only by the dedicated force-carry full workflow. Standalone goals default false.
+bool force_carry_profile
 
 ---
 

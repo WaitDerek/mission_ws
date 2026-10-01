@@ -168,6 +168,48 @@ class TestMqttNavigationGateway(unittest.TestCase):
         )
         gateway.close()
 
+    def test_micro_navigation_omits_point_id_and_uses_relative_frame(self):
+        client = _FakeClient()
+        gateway = _gateway(
+            client,
+            request_topic="mission/micro_navigation/request",
+            result_topic="mission/micro_navigation/result",
+            frame_id="base_footprint",
+            point_poses={},
+            include_point_id=False,
+        )
+        thread, results = _navigate_in_thread(
+            gateway, "micro", pos=(0.05, -0.02, 0.1)
+        )
+        self._wait_for_publish(client)
+
+        client.emit(
+            json.dumps(
+                {"robot_id": "realman-001", "success": True, "message": "arrived"}
+            ),
+            topic="mission/micro_navigation/result",
+        )
+        thread.join(timeout=1.0)
+
+        self.assertFalse(thread.is_alive())
+        self.assertTrue(results[0].success)
+        self.assertEqual(
+            client.published,
+            [
+                (
+                    "mission/micro_navigation/request",
+                    '{"robot_id":"realman-001","frame_id":"base_footprint","pos":[0.05,-0.02,0.1]}',
+                    1,
+                    False,
+                )
+            ],
+        )
+        self.assertEqual(
+            client.subscriptions,
+            [("mission/micro_navigation/result", 1)],
+        )
+        gateway.close()
+
     def test_json_failure_is_returned_to_workflow(self):
         client = _FakeClient()
         gateway = _gateway(client)

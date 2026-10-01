@@ -1,4 +1,4 @@
-"""Pure serial state machine for the fixed eight-box workflow."""
+"""Pure serial state machine for the fixed 16-box workflow."""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ class FixedWorkflowOperations(Protocol):
 
     def navigate(self, request: NavigationRequest) -> StepResult: ...
 
+    def micro_navigate(self, request: NavigationRequest) -> StepResult: ...
+
     def grasp(self, action_name: str, request_id: str, task: FixedBoxTask) -> StepResult: ...
 
     def place(self, request_id: str, box_type: str) -> StepResult: ...
@@ -26,7 +28,7 @@ FixedProgressCallback = Callable[[str, Optional[FixedBoxTask], str], None]
 class FixedBoxWorkflowEngine:
     """Execute one item completely before starting the next item."""
 
-    TOTAL_ITEMS = 8
+    TOTAL_ITEMS = 16
 
     def __init__(
         self,
@@ -35,6 +37,7 @@ class FixedBoxWorkflowEngine:
         *,
         place_point_id: int,
         place_pos: tuple[float, float, float],
+        micro_retreat_pos: tuple[float, float, float] | None = None,
         progress_callback: FixedProgressCallback | None = None,
     ) -> None:
         if not tasks:
@@ -50,6 +53,13 @@ class FixedBoxWorkflowEngine:
         self._place_pos = tuple(float(value) for value in place_pos)
         if len(self._place_pos) != 3:
             raise ValueError("fixed workflow placement pose requires [x, y, yaw]")
+        self._micro_retreat_pos = (
+            None
+            if micro_retreat_pos is None
+            else tuple(float(value) for value in micro_retreat_pos)
+        )
+        if self._micro_retreat_pos is not None and len(self._micro_retreat_pos) != 3:
+            raise ValueError("fixed workflow micro retreat requires [x, y, yaw]")
         self._progress_callback = progress_callback or (lambda *_args: None)
         self._trace: list[str] = []
         self._completed = 0
@@ -63,6 +73,7 @@ class FixedBoxWorkflowEngine:
         *,
         start_item_index: int = 1,
         stop_after_item_index: int = 0,
+        completion_stage: str = "COMPLETE",
     ) -> FixedWorkflowOutcome:
         final_stage = "INITIALIZING"
         try:
@@ -73,7 +84,7 @@ class FixedBoxWorkflowEngine:
             self._check_cancel(final_stage)
             for task in self._tasks[start_item_index - 1 : stop]:
                 self._run_item(task, identifiers)
-            final_stage = "COMPLETE"
+            final_stage = completion_stage
             self._publish(final_stage, None, "fixed workflow completed")
             return FixedWorkflowOutcome(
                 True,
@@ -114,7 +125,8 @@ class FixedBoxWorkflowEngine:
         self._publish(
             pickup_stage,
             task,
-            f"requesting pickup navigation point {task.pickup_point_id} "
+            f"requesting {task.pickup_zone} pickup navigation point "
+            f"{task.pickup_point_id} "
             f"with pos=[{task.pickup_pos[0]:g},{task.pickup_pos[1]:g},{task.pickup_pos[2]:g}]",
         )
         self._require(
@@ -136,12 +148,37 @@ class FixedBoxWorkflowEngine:
         self._publish(
             grasp_stage,
             task,
-            f"calling {task.grasp_action} for {task.box_type} layer {task.box_layer}",
+            f"calling {task.grasp_action} for {task.pickup_zone} "
+            f"{task.box_type} layer {task.box_layer}",
         )
         self._require(
             self._operations.grasp(task.grasp_action, grasp_request, task),
             grasp_stage,
         )
+
+        if self._micro_retreat_pos is not None:
+            retreat_stage = f"MICRO_RETREAT_{task.item_index}"
+            retreat_step, _ = identifiers.request_id(
+                retreat_stage, "micro", task.item_index
+            )
+            self._publish(
+                retreat_stage,
+                task,
+                "requesting post-grasp base_footprint micro retreat "
+                f"pos=[{self._micro_retreat_pos[0]:g},"
+                f"{self._micro_retreat_pos[1]:g},{self._micro_retreat_pos[2]:g}]",
+            )
+            self._require(
+                self._operations.micro_navigate(
+                    NavigationRequest(
+                        workflow_id=self._workflow_id,
+                        step_id=retreat_step,
+                        point_id="micro",
+                        pos=self._micro_retreat_pos,
+                    )
+                ),
+                retreat_stage,
+            )
 
         place_nav_stage = f"NAVIGATE_PLACE_{task.item_index}"
         place_step, _ = identifiers.request_id(
@@ -178,7 +215,9 @@ class FixedBoxWorkflowEngine:
         self._publish(
             f"ITEM_{task.item_index}_COMPLETE",
             task,
-            "pickup, grasp, placement navigation, and placement completed",
+            "pickup, grasp, "
+            + ("micro retreat, " if self._micro_retreat_pos is not None else "")
+            + "placement navigation, and placement completed",
         )
 
     def _publish(self, stage: str, task: FixedBoxTask | None, detail: str) -> None:

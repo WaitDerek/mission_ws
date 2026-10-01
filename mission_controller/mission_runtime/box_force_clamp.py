@@ -1,30 +1,15 @@
-"""Force-limited box-clamping helpers for the TF grasp paths.
-
-The force controller deliberately lives beside the normal post-grasp
-trajectory code.  It only participates when a TF path explicitly selects
-``closed_loop``; the legacy/adaptive paths and the default TF configuration
-remain unchanged.  The sensor signal is the calibrated change in the raw
-Link7 wrench force-X value::
-
-    S = force_sign * (filtered_Fx - baseline_Fx)
-
-The default sign is -1 because a push in the measured convention lowers Fx.
-All movement directions are expressed in the FoundationPose box frame and
-converted to each arm base by the existing geometry helper.
-"""
+"""Native RealMan SDK Tool-Y force clamping for TF box workflows."""
 
 from __future__ import annotations
 
 import math
-import statistics
 import time
-from collections import deque
-from typing import Optional, Sequence
+from typing import Optional
 
 from geometry_msgs.msg import Pose
 
 from .common import MissionCanceled, MissionError
-from .realman_sdk_adapter import RealManSdkCanceled, RealManSdkError, pose_to_sdk_target
+from .realman_sdk_adapter import RealManSdkCanceled, RealManSdkError
 
 
 # Bound to the composed compatibility facade by box_support.py.
@@ -32,7 +17,27 @@ BoxSupportMixin = None
 
 
 class BoxForceClampMixin:
-    """Closed-loop, wrench-triggered Step1 clamping for TF workflows."""
+    """Apply mirrored Tool-Y force control and preserve later TF targets."""
+
+    def _force_carry_clamp_target_override(
+        self, *, force_carry_profile: bool, drag_mode: bool, label: str
+    ) -> Optional[dict[str, float]]:
+        """Read the dedicated profile targets when its bilateral clamp starts."""
+        if not force_carry_profile:
+            return None
+        if not drag_mode:
+            return {
+                arm: self._float(f"grasp_box_tf_force_carry_target_force_{arm}_n")
+                for arm in ("left", "right")
+            }
+        if label != "step1_left":
+            return None
+        return {
+            arm: self._float(
+                f"drag_box_tf_force_carry_post_drag3_target_force_{arm}_n"
+            )
+            for arm in ("left", "right")
+        }
 
     @staticmethod
     def _force_clamp_parameter_prefix(*, tf_mode: bool, drag_mode: bool):
@@ -44,33 +49,18 @@ class BoxForceClampMixin:
         if not parameter_prefix:
             return "disabled"
         mode = self._string(f"{parameter_prefix}_mode").strip().lower()
-        if mode not in ("disabled", "monitor_only", "closed_loop"):
+        if mode not in ("disabled", "closed_loop"):
             raise MissionError(
-                f"{parameter_prefix}_mode must be disabled, monitor_only, or closed_loop"
+                f"{parameter_prefix}_mode must be disabled or closed_loop"
             )
         return mode
 
-    def _new_force_clamp_session(self, parameter_prefix: str) -> dict:
-        arms = ("left", "right")
-        filter_size = max(1, self._integer(f"{parameter_prefix}_filter_samples"))
+    @staticmethod
+    def _new_force_clamp_session(parameter_prefix: str) -> dict:
         return {
             "prefix": parameter_prefix,
-            "baseline_fx": {},
-            "baseline_sequences": {},
-            "windows": {arm: deque(maxlen=filter_size) for arm in arms},
-            "travelled_m": {arm: 0.0 for arm in arms},
-            "corrections": {arm: 0 for arm in arms},
+            "travelled_m": {"left": 0.0, "right": 0.0},
         }
-
-    def _force_clamp_wrench_snapshot(self, arm: str):
-        with self.joint_state_lock:
-            wrench = getattr(self, "latest_slave_arm_wrenches", {}).get(arm)
-            sequence = getattr(self, "latest_slave_arm_wrench_sequences", {}).get(
-                arm, 0
-            )
-            stamp = getattr(self, "latest_slave_arm_wrench_times", {}).get(arm, 0.0)
-        age = time.monotonic() - stamp if stamp > 0.0 else math.inf
-        return wrench, sequence, age
 
     def _force_clamp_pose_snapshot(self, arm: str):
         with self.joint_state_lock:
@@ -86,461 +76,190 @@ class BoxForceClampMixin:
             BoxSupportMixin._endpoint_sync_pose_values_to_transform(values)
         ), sequence, age
 
-    def _force_clamp_velocity_is_zero(self, arm: str, tolerance: float) -> bool:
-        with self.joint_state_lock:
-            velocities = getattr(self, "latest_slave_arm_velocities", {}).get(arm, [])
-        return bool(velocities) and all(abs(float(value)) <= tolerance for value in velocities)
-
-    def _force_clamp_ensure_baseline(
-        self,
-        goal_handle,
-        session: dict,
-        arms: Sequence[str],
-    ) -> None:
-        """Collect only missing baselines, retaining DragBox's right baseline."""
-        missing_arms = [arm for arm in arms if arm not in session["baseline_fx"]]
-        if not missing_arms:
-            return
-        prefix = session["prefix"]
-        duration = self._float(f"{prefix}_baseline_duration_sec")
-        minimum = self._integer(f"{prefix}_baseline_min_samples")
-        timeout = self._float(f"{prefix}_baseline_timeout_sec")
-        sensor_max_age = self._float(f"{prefix}_sensor_max_age_sec")
-        velocity_tolerance = self._float(f"{prefix}_arm_velocity_tolerance_rad_sec")
-        deadline = time.monotonic() + timeout
-        started = None
-        collected = {arm: [] for arm in missing_arms}
-        last_detail = "no wrench feedback"
-        while time.monotonic() < deadline:
-            self._check_canceled(goal_handle, "while collecting force baseline")
-            now = time.monotonic()
-            if started is None and all(
-                self._force_clamp_velocity_is_zero(arm, velocity_tolerance)
-                for arm in missing_arms
-            ):
-                started = now
-            if started is not None:
-                for arm in missing_arms:
-                    wrench, sequence, age = self._force_clamp_wrench_snapshot(arm)
-                    if wrench is None or age > sensor_max_age:
-                        last_detail = f"{arm}=missing/stale wrench age={age:.3f}s"
-                        continue
-                    if sequence <= session["baseline_sequences"].get(arm, -1):
-                        continue
-                    fx = float(wrench[0])
-                    if not math.isfinite(fx):
-                        continue
-                    collected[arm].append(fx)
-                    session["baseline_sequences"][arm] = sequence
-                if all(
-                    len(collected[arm]) >= minimum and now - started >= duration
-                    for arm in missing_arms
-                ):
-                    break
-            time.sleep(0.01)
-        if not all(
-            len(collected[arm]) >= minimum for arm in missing_arms
-        ):
-            detail = ", ".join(
-                f"{arm} samples={len(collected[arm])}" for arm in missing_arms
-            )
-            raise MissionError(
-                f"{prefix} baseline collection timed out: {detail}; {last_detail}; "
-                f"timeout_sec={timeout:.1f}"
-            )
-        for arm, values in collected.items():
-            baseline = float(statistics.median(values))
-            session["baseline_fx"][arm] = baseline
-            session["windows"][arm].clear()
-            session["windows"][arm].extend(values[-session["windows"][arm].maxlen :])
-
-    def _force_clamp_metric(self, session: dict, arm: str) -> tuple[float, float]:
-        prefix = session["prefix"]
-        wrench, _sequence, age = self._force_clamp_wrench_snapshot(arm)
-        if wrench is None:
-            raise MissionError(f"{prefix} {arm} wrench feedback is unavailable")
-        sensor_max_age = self._float(f"{prefix}_sensor_max_age_sec")
-        if age > sensor_max_age:
-            raise MissionError(
-                f"{prefix} {arm} wrench feedback is stale: age={age:.3f}s, "
-                f"max_age={sensor_max_age:.3f}s"
-            )
-        fx = float(wrench[0])
-        if not math.isfinite(fx):
-            raise MissionError(f"{prefix} {arm} wrench force-x is not finite")
-        window = session["windows"][arm]
-        window.append(fx)
-        filtered = float(statistics.median(window))
-        sign = self._float(f"{prefix}_force_sign_{arm}")
-        value = sign * (filtered - session["baseline_fx"][arm])
-        return value, age
-
-    def _force_clamp_progress_callback(self, session: dict, arms: Sequence[str]):
-        prefix = session["prefix"]
-        emergency = {
-            arm: self._float(f"{prefix}_emergency_threshold_{arm}_counts")
-            for arm in arms
-        }
-
-        def progress():
-            for arm in arms:
-                value, _age = self._force_clamp_metric(session, arm)
-                if value >= emergency[arm]:
-                    raise MissionError(
-                        f"{prefix} emergency threshold on {arm}: "
-                        f"S={value:.1f} >= {emergency[arm]:.1f}"
-                    )
-
-        return progress
-
-    @staticmethod
-    def _force_clamp_direction(delta_box_xyz: Sequence[float], arm: str):
-        delta = tuple(float(value) for value in delta_box_xyz)
-        if len(delta) != 3 or not all(math.isfinite(value) for value in delta):
-            raise MissionError(f"{arm} force-clamp direction is invalid")
-        norm = math.sqrt(sum(value * value for value in delta))
-        if norm <= 1e-9:
-            return None
-        return tuple(value / norm for value in delta)
-
-    def _force_clamp_step_pose(
-        self, current_pose: Pose, arm: str, direction: Sequence[float], distance: float
-    ) -> Pose:
-        return self._translate_pose_in_box_frame(
-            current_pose,
-            [float(direction[index]) * float(distance) for index in range(3)],
-            arm,
-        )
-
-    def _force_clamp_move_arms(
+    def _force_clamp_sdk_tool_y_stream(
         self,
         goal_handle,
         adapter,
         session: dict,
         current_poses: dict[str, Pose],
-        move_arms: Sequence[str],
-        directions: dict[str, Optional[Sequence[float]]],
-    ) -> dict[str, Pose]:
+        *,
+        initial_drag_right_contact: bool = False,
+        target_force_override_n: Optional[dict[str, float]] = None,
+    ) -> tuple[dict[str, Pose], str]:
+        """Run SDK Tool-Y force-position control and read final Link7 poses."""
         prefix = session["prefix"]
-        speed = self._float(f"{prefix}_movel_velocity_percent")
-        blocking = self._boolean("direct_movel_blocking")
-        step = self._float(f"{prefix}_search_step_m")
-        targets = {}
-        previous_sequences = {
-            arm: self.latest_slave_arm_pose_sequences.get(arm, 0)
-            for arm in move_arms
+        arms = tuple(arm for arm in ("left", "right") if arm in current_poses)
+        target_force_n = {
+            arm: (
+                float(target_force_override_n[arm])
+                if target_force_override_n is not None and arm in target_force_override_n
+                else self._float(f"{prefix}_sdk_target_force_{arm}_n")
+            )
+            for arm in arms
         }
-        for arm in move_arms:
-            direction = directions.get(arm)
-            if direction is None:
-                continue
-            value, _age = self._force_clamp_metric(session, arm)
-            contact = self._float(f"{prefix}_contact_threshold_{arm}_counts")
-            distance = (
-                self._float(f"{prefix}_fine_step_m")
-                if value >= contact
-                else step
+        self._publish_box_grasp_feedback(
+            goal_handle,
+            "SDK_TOOL_Y_FORCE_CLAMP",
+            "starting incremental SDK Tool-Y force-position control: "
+            + ", ".join(
+                f"{arm}_target_delta={target_force_n[arm]:.3f}N"
+                for arm in arms
             )
-            remaining = self._float(f"{prefix}_max_distance_{arm}_m") - session[
-                "travelled_m"
-            ][arm]
-            if remaining <= 1e-9:
-                raise MissionError(
-                    f"{prefix} {arm} reached max clamp travel "
-                    f"{self._float(f'{prefix}_max_distance_{arm}_m'):.3f}m"
-                )
-            distance = min(distance, remaining)
-            targets[arm] = self._force_clamp_step_pose(
-                current_poses[arm], arm, direction, distance
-            )
-
-        if not targets:
-            return current_poses
-        tf_prefix = (
-            "drag_box_tf" if prefix.startswith("drag_box_tf") else "grasp_box_tf"
+            + f"; speed={self._float(f'{prefix}_sdk_speed_mm_s'):.3f}mm/s; "
+            "waiting for simultaneous stable per-arm Tool-Y baselines: "
+            f"window={self._float(f'{prefix}_sdk_baseline_stability_window_sec'):.3f}s, "
+            f"max_span={self._float(f'{prefix}_sdk_baseline_stability_max_span_n'):.3f}N, "
+            f"timeout={self._float(f'{prefix}_sdk_baseline_stability_timeout_sec'):.3f}s; "
+            + (
+                "initial right stops at first threshold crossing, then "
+                "must hold at least "
+                f"{self._float('drag_box_tf_force_clamp_initial_right_post_stop_min_delta_n'):.3f}N "
+                "for "
+                f"{self._float('drag_box_tf_force_clamp_initial_right_post_stop_confirm_sec'):.3f}s "
+                "while stationary; at most "
+                f"{self._integer('drag_box_tf_force_clamp_initial_right_max_attempts')} "
+                "attempts"
+                if initial_drag_right_contact
+                else "each arm requires 5 consecutive contact samples (reset on any miss); each confirmed arm stops inward motion; lift proceeds once both arms have confirmed; no post-stop force hold required"
+            ),
         )
-        motion_mode = self._string(
-            f"{tf_prefix}_post_movel_sdk_motion_mode"
-        ).strip().lower()
-        if motion_mode not in ("movel", "movel_offset"):
-            raise MissionError(
-                f"{tf_prefix}_post_movel_sdk_motion_mode must be "
-                "'movel' or 'movel_offset'"
-            )
-
-        def sdk_target(arm: str):
-            if motion_mode == "movel_offset":
-                return self._work_frame_offset_between_poses(
-                    current_poses[arm], targets[arm]
-                )
-            return pose_to_sdk_target(targets[arm])
-
+        previous_sequences = {
+            arm: self.latest_slave_arm_pose_sequences.get(arm, 0) for arm in arms
+        }
+        retry_options = {}
+        clamp_executor = adapter.execute_tool_y_force_clamp
+        if initial_drag_right_contact:
+            clamp_executor = adapter.execute_tool_y_force_clamp_retry_initial_right
+            retry_options = {
+                "max_attempts": self._integer(
+                    "drag_box_tf_force_clamp_initial_right_max_attempts"
+                ),
+                "on_retry": lambda attempt, maximum, reason: (
+                    self._publish_box_grasp_feedback(
+                        goal_handle,
+                        "SDK_TOOL_Y_FORCE_CLAMP_RETRY",
+                        f"initial right contact retry {attempt}/{maximum}; {reason}",
+                    )
+                ),
+            }
         try:
-            if len(targets) == 2:
-                motion_result = adapter.execute_dual(
-                    sdk_target("left"),
-                    sdk_target("right"),
-                    motion_mode,
-                    speed,
-                    blocking,
-                    cancel_requested=lambda: goal_handle.is_cancel_requested,
-                    timeout_sec=self._float(f"{prefix}_motion_timeout_sec"),
-                    progress_callback=self._force_clamp_progress_callback(
-                        session, tuple(current_poses)
-                    ),
-                    offset_frame_type=0,
-                )
-            else:
-                arm = next(iter(targets))
-                motion_result = adapter.execute_single(
-                    arm,
-                    sdk_target(arm),
-                    motion_mode,
-                    speed,
-                    blocking,
-                    cancel_requested=lambda: goal_handle.is_cancel_requested,
-                    timeout_sec=self._float(f"{prefix}_motion_timeout_sec"),
-                    progress_callback=self._force_clamp_progress_callback(
-                        session, tuple(current_poses)
-                    ),
-                    offset_frame_type=0,
-                )
+            result = clamp_executor(
+                arms,
+                target_force_n,
+                speed_mm_s=self._float(f"{prefix}_sdk_speed_mm_s"),
+                max_travel_m={
+                    arm: self._float(f"{prefix}_sdk_max_travel_{arm}_m")
+                    for arm in arms
+                },
+                timeout_sec=self._float(f"{prefix}_timeout_sec"),
+                control_period_sec=self._float(
+                    f"{prefix}_sdk_control_period_sec"
+                ),
+                baseline_stability_window_sec=self._float(
+                    f"{prefix}_sdk_baseline_stability_window_sec"
+                ),
+                baseline_stability_max_span_n=self._float(
+                    f"{prefix}_sdk_baseline_stability_max_span_n"
+                ),
+                baseline_stability_timeout_sec=self._float(
+                    f"{prefix}_sdk_baseline_stability_timeout_sec"
+                ),
+                post_stop_confirmation_sec=(
+                    self._float(
+                        "drag_box_tf_force_clamp_initial_right_post_stop_confirm_sec"
+                    )
+                    if initial_drag_right_contact
+                    else 0.0
+                ),
+                post_stop_min_force_n=(
+                    self._float(
+                        "drag_box_tf_force_clamp_initial_right_post_stop_min_delta_n"
+                    )
+                    if initial_drag_right_contact
+                    else 0.0
+                ),
+                contact_consecutive_samples=(
+                    self._integer(
+                        "drag_box_tf_force_clamp_initial_right_contact_consecutive_samples"
+                    )
+                    if initial_drag_right_contact
+                    else 5
+                ),
+                dual_post_stop_confirmation_sec=0.0,
+                contact_min_duration_sec=0.0,
+                cancel_requested=lambda: goal_handle.is_cancel_requested,
+                **retry_options,
+            )
         except RealManSdkCanceled as exc:
             raise MissionCanceled(str(exc)) from exc
-        except (RealManSdkError, ValueError, MissionError) as exc:
-            raise MissionError(
-                f"{prefix} clamp {motion_mode} failed: {exc}"
-            ) from exc
-        for arm in targets:
-            session["travelled_m"][arm] += distance if len(targets) == 1 else math.sqrt(
-                sum(
-                    (
-                        targets[arm].position.__getattribute__(axis)
-                        - current_poses[arm].position.__getattribute__(axis)
-                    )
-                    ** 2
-                    for axis in ("x", "y", "z")
-                )
-            )
-        del motion_result
-        # The SDK call is blocking, but use a fresh pose sequence before
-        # computing the next short correction.  This prevents stale feedback
-        # from making a correction in the wrong direction.
+        except (RealManSdkError, ValueError) as exc:
+            raise MissionError(f"{prefix} SDK Tool-Y force clamp failed: {exc}") from exc
+
+        for arm, distance in result["travel_m"].items():
+            session["travelled_m"][arm] += float(distance)
         updated = dict(current_poses)
         deadline = time.monotonic() + self._float(f"{prefix}_motion_timeout_sec")
         while time.monotonic() < deadline:
-            self._check_canceled(goal_handle, "while waiting for force-clamp pose feedback")
+            self._check_canceled(
+                goal_handle, "while waiting for SDK Tool-Y force-clamp feedback"
+            )
             all_fresh = True
-            for arm in targets:
+            for arm in arms:
                 pose, sequence, age = self._force_clamp_pose_snapshot(arm)
-                if pose is None or sequence <= previous_sequences[arm] or age > self._float(
-                    f"{prefix}_sensor_max_age_sec"
+                if (
+                    pose is None
+                    or sequence <= previous_sequences[arm]
+                    or age > self._float(f"{prefix}_sensor_max_age_sec")
                 ):
                     all_fresh = False
                     continue
                 updated[arm] = pose
             if all_fresh:
-                return updated
+                break
             time.sleep(0.01)
-        raise MissionError(
-            f"{prefix} did not receive fresh Link7 pose after clamp {motion_mode}"
-        )
+        else:
+            raise MissionError(
+                f"{prefix} did not receive fresh Link7 pose after SDK Tool-Y clamp"
+            )
 
-    def _force_clamp_wait_hold(
-        self, goal_handle, session: dict, arms: Sequence[str], start_time: float
-    ) -> bool:
-        prefix = session["prefix"]
-        hold_wait = self._float(f"{prefix}_hold_wait_sec")
-        hold_duration = self._float(f"{prefix}_hold_required_duration_sec")
-        hold_thresholds = {
-            arm: self._float(f"{prefix}_hold_threshold_{arm}_counts") for arm in arms
-        }
-        if hold_wait > 0.0:
-            time.sleep(hold_wait)
-        deadline = time.monotonic() + max(hold_duration * 3.0, 1.0)
-        held_since = None
-        while time.monotonic() < deadline:
-            self._check_canceled(goal_handle, "while holding force clamp")
-            metrics = {
-                arm: self._force_clamp_metric(session, arm)[0] for arm in arms
-            }
-            if all(metrics[arm] >= hold_thresholds[arm] for arm in arms):
-                held_since = held_since or time.monotonic()
-                if time.monotonic() - held_since >= hold_duration:
-                    return True
-            else:
-                # Return to the main loop so it can issue at most the
-                # configured number of fine corrections instead of silently
-                # holding a weak contact.
-                return False
-            time.sleep(0.01)
-        raise MissionError(
-            f"{prefix} hold confirmation timed out after "
-            f"{time.monotonic() - start_time:.2f}s"
-        )
-
-    def _force_clamp_contact_only(
-        self,
-        goal_handle,
-        adapter,
-        session: dict,
-        arm: str,
-        current_pose: Pose,
-        delta_box_xyz: Sequence[float],
-    ) -> tuple[Pose, str]:
-        prefix = session["prefix"]
-        self._force_clamp_ensure_baseline(goal_handle, session, (arm,))
-        direction = self._force_clamp_direction(delta_box_xyz, arm)
-        if direction is None:
-            raise MissionError(f"{prefix} {arm} contact direction is zero")
-        contact = self._float(f"{prefix}_contact_threshold_{arm}_counts")
-        required = self._float(f"{prefix}_contact_required_duration_sec")
-        emergency = self._float(f"{prefix}_emergency_threshold_{arm}_counts")
-        timeout = self._float(f"{prefix}_timeout_sec")
-        deadline = time.monotonic() + timeout
-        contact_since = None
-        current = current_pose
-        while time.monotonic() < deadline:
-            self._check_canceled(goal_handle, "during force contact search")
-            metric, _age = self._force_clamp_metric(session, arm)
-            if metric >= emergency:
-                raise MissionError(
-                    f"{prefix} emergency threshold on {arm}: "
-                    f"S={metric:.1f} >= {emergency:.1f}"
-                )
-            if metric >= contact:
-                contact_since = contact_since or time.monotonic()
-                if time.monotonic() - contact_since >= required:
-                    return current, (
-                        f"force_contact arm={arm}; S={metric:.1f}; "
-                        f"baseline_Fx={session['baseline_fx'][arm]:.1f}; "
-                        f"travel={session['travelled_m'][arm]:.4f}m"
-                    )
-            else:
-                contact_since = None
-                current = self._force_clamp_move_arms(
-                    goal_handle,
-                    adapter,
-                    session,
-                    {arm: current},
-                    (arm,),
-                    {arm: direction},
-                )[arm]
-            time.sleep(0.01)
-        raise MissionError(f"{prefix} {arm} contact search timed out")
-
-    def _force_clamp_bilateral(
-        self,
-        goal_handle,
-        adapter,
-        session: dict,
-        current_poses: dict[str, Pose],
-        directions: dict[str, Optional[Sequence[float]]],
-    ) -> tuple[dict[str, Pose], str]:
-        prefix = session["prefix"]
-        arms = tuple(arm for arm in ("left", "right") if arm in current_poses)
-        self._force_clamp_ensure_baseline(goal_handle, session, arms)
-        clamped = {
-            arm: self._float(f"{prefix}_clamped_threshold_{arm}_counts") for arm in arms
-        }
-        emergency = {
-            arm: self._float(f"{prefix}_emergency_threshold_{arm}_counts") for arm in arms
-        }
-        required = self._float(f"{prefix}_clamped_required_duration_sec")
-        deadline = time.monotonic() + self._float(f"{prefix}_timeout_sec")
-        clamped_since = None
-        current = dict(current_poses)
-        start_time = time.monotonic()
-        while time.monotonic() < deadline:
-            self._check_canceled(goal_handle, "during force clamp")
-            metrics = {
-                arm: self._force_clamp_metric(session, arm)[0] for arm in arms
-            }
-            for arm in arms:
-                if metrics[arm] >= emergency[arm]:
-                    raise MissionError(
-                        f"{prefix} emergency threshold on {arm}: "
-                        f"S={metrics[arm]:.1f} >= {emergency[arm]:.1f}"
-                    )
-            if all(metrics[arm] >= clamped[arm] for arm in arms):
-                clamped_since = clamped_since or time.monotonic()
-                if time.monotonic() - clamped_since >= required:
-                    if self._force_clamp_wait_hold(
-                        goal_handle, session, arms, start_time
-                    ):
-                        return current, (
-                            "force_clamp confirmed; "
-                            + ", ".join(
-                                f"{arm}_S={metrics[arm]:.1f}" for arm in arms
-                            )
-                            + "; "
-                            + ", ".join(
-                                f"{arm}_travel={session['travelled_m'][arm]:.4f}m"
-                                for arm in arms
-                            )
-                        )
-                    low_arms = [
-                        arm
-                        for arm in arms
-                        if metrics[arm]
-                        < self._float(f"{prefix}_hold_threshold_{arm}_counts")
-                    ]
-                    for arm in low_arms:
-                        session["corrections"][arm] += 1
-                    if any(
-                        session["corrections"][arm]
-                        > self._integer(f"{prefix}_max_correction_count")
-                        for arm in low_arms
-                    ):
-                        raise MissionError(
-                            f"{prefix} hold force dropped below threshold: "
-                            + ", ".join(
-                                f"{arm}={metrics[arm]:.1f}" for arm in arms
-                            )
-                        )
-                    correction_arms = [
-                        arm for arm in low_arms if directions.get(arm) is not None
-                    ]
-                    if len(correction_arms) != len(low_arms):
-                        raise MissionError(
-                            f"{prefix} passive arm cannot correct hold-force drop: "
-                            + ", ".join(low_arms)
-                        )
-                    current = self._force_clamp_move_arms(
-                        goal_handle,
-                        adapter,
-                        session,
-                        current,
-                        correction_arms,
-                        directions,
-                    )
-                    clamped_since = None
-            else:
-                clamped_since = None
-                move_arms = [
-                    arm
-                    for arm in arms
-                    if metrics[arm] < clamped[arm] and directions.get(arm) is not None
-                ]
-                # A zero direction means that arm is already at its nominal
-                # Step1 pose; it is monitored for hold but never moved blindly.
-                if not move_arms:
-                    raise MissionError(
-                        f"{prefix} clamp needs motion but all low-force arms are passive: "
-                        + ", ".join(
-                            f"{arm}={metrics[arm]:.1f}" for arm in arms
-                        )
-                    )
-                current = self._force_clamp_move_arms(
-                    goal_handle, adapter, session, current, move_arms, directions
-                )
-            time.sleep(0.01)
-        raise MissionError(
-            f"{prefix} clamp timed out: "
+        final = result["final_tool_wrench"]
+        initial = result["initial_tool_wrench"]
+        force_delta = result["force_delta_n"]
+        contact_delta = result["contact_force_delta_n"]
+        return updated, (
+            "incremental SDK Tool-Y force clamp confirmed; "
+            + ("bilateral_contact=confirmed_5_consecutive_samples_per_arm; post_stop_force_hold=disabled; " if len(arms) == 2 else "")
             + ", ".join(
-                f"{arm}_S={self._force_clamp_metric(session, arm)[0]:.1f}"
+                f"{arm}_Fy={float(final[arm][1]):.3f}N,"
+                f"baseline_Fy={float(initial[arm][1]):.3f}N,"
+                f"delta_Fy={float(force_delta[arm]):+.3f}N,"
+                f"trigger_delta_Fy={float(contact_delta[arm]):+.3f}N,"
+                f"target_delta={float(result['target_force_n'][arm]):+.3f}N,"
+                f"sdk_target_Fy="
+                f"{float(result['controller_target_force_n'][arm]):+.3f}N,"
+                f"travel={float(result['travel_m'][arm]):.4f}m"
                 for arm in arms
             )
+            + "; baseline_stability="
+            + ",".join(
+                f"{arm}:{float(result['baseline_stability_spans_n'][arm]):.3f}N"
+                for arm in arms
+            )
+            + f" over {float(result['baseline_stability_elapsed_sec']):.3f}s"
+            + f" ({int(result['baseline_stability_samples'])} samples); "
+            + (
+                "post_stop_confirm_delta_Fy="
+                f"{float(result['post_stop_confirm_delta_n']):+.3f}N; "
+                if result["post_stop_confirm_delta_n"] is not None
+                else ""
+            )
+            + (
+                f"contact_attempts={int(result['contact_attempts'])}; "
+                if "contact_attempts" in result
+                else ""
+            )
+            + f"elapsed={float(result['elapsed_sec']):.3f}s; "
+            "orientation=locked_by_sdk_fk"
         )
 
     def _rebase_post_movel_targets_after_force_clamp(
@@ -603,5 +322,7 @@ class BoxForceClampMixin:
                         )
                     ),
                 )
-                updated[arm] = BoxSupportMixin._endpoint_sync_transform_to_pose(transform)
+                updated[arm] = BoxSupportMixin._endpoint_sync_transform_to_pose(
+                    transform
+                )
             targets[index] = (label, updated["left"], updated["right"])

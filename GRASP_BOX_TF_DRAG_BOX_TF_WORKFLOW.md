@@ -238,21 +238,21 @@ drag_box_tf_force_clamp_*
 
 | 参数后缀 | 作用 |
 |---|---|
-| `mode` | `disabled`、`monitor_only`、`closed_loop` |
-| `contact_threshold_left/right_counts` | 接触阈值 |
-| `clamped_threshold_left/right_counts` | 夹紧确认阈值 |
-| `hold_threshold_left/right_counts` | 保持阈值 |
-| `emergency_threshold_left/right_counts` | 紧急停止阈值 |
-| `max_distance_left/right_m` | 最大夹紧搜索距离 |
-| `search_step_m` | 粗搜索步长 |
-| `fine_step_m` | 精搜索步长 |
-| `movel_velocity_percent` | 力控 MoveL 速度 |
-| `sensor_max_age_sec` | 力传感器数据最大允许延迟 |
-| `force_sign_left/right` | 力方向符号 |
-| `timeout_sec` | 力控总超时 |
+| `mode` | `disabled` 或 `closed_loop` |
+| `sdk_target_force_left/right_n` | 左右 Tool-Y 目标力，单位 N |
+| `sdk_speed_mm_s` | Tool-Y 接近速度，单位 mm/s |
+| `sdk_max_travel_left/right_m` | 左右最大接近距离 |
+| `sdk_stable_duration_sec` | 目标力持续稳定时间 |
+| `sdk_control_period_sec` | SDK 实时控制周期 |
+| `sdk_emergency_torque_nm` | 六维力矩保护阈值，单位 Nm |
+| `sensor_max_age_sec` | Link7 Pose 最大允许延迟 |
+| `motion_timeout_sec` | 夹紧后等待新鲜 Link7 Pose 的超时 |
+| `timeout_sec` | SDK Tool-Y 力控总超时 |
 | `stop_after_clamp_confirmed` | 夹紧确认后是否停止 |
 
-当前默认力控模式为 `closed_loop`。GraspBox Step1 为双臂夹紧；DragBox 先右臂夹紧，左臂加入后再进行双臂夹紧。
+当前只保留 RealMan SDK Tool-Y 力控：左臂沿 `+Tool Y` 达到负向
+`Fy`，右臂沿 `-Tool Y` 达到正向 `Fy`，末端姿态保持不变。GraspBox
+Step1 为双臂夹紧；DragBox 先右臂夹紧，左臂加入后再进行双臂夹紧。
 
 ## 9. DragBox 左臂加入
 

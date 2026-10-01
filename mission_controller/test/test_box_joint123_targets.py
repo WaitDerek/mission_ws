@@ -1,7 +1,8 @@
 import math
 import unittest
+from copy import deepcopy
 
-from geometry_msgs.msg import Pose
+from geometry_msgs.msg import Pose, PoseStamped
 
 from mission_runtime.mission_controller import MissionController
 
@@ -43,6 +44,60 @@ class _Harness:
 
     def _string(self, name):
         return str(self.VALUES[name])
+
+
+class _CarryEndpointHarness(_Harness):
+    VALUES = {
+        **_Harness.VALUES,
+        "box_post_movel_enabled": True,
+        "drag_box_post_movel_enabled": True,
+        "grasp_box_tf_body_home_carry_enabled": True,
+        "drag_box_tf_body_home_carry_enabled": True,
+        "box_tf_equalize_dual_target_z_enabled": True,
+        "box_body_command_units_per_degree": [1000.0] * 4,
+        "grasp_box_tf_body_home_carry_joint_units": [0.0] * 4,
+        "drag_box_tf_body_home_carry_joint_units": [0.0] * 4,
+    }
+
+    _joint123_arm_base_transform = MissionController._joint123_arm_base_transform
+    _joint123_chest_transform = MissionController._joint123_chest_transform
+    _equalize_tf_dual_target_z = MissionController._equalize_tf_dual_target_z
+    _waist_workspace_pose_transform = staticmethod(
+        MissionController._waist_workspace_pose_transform
+    )
+
+    @staticmethod
+    def _pose_stamped_to_transform(pose):
+        return MissionController._pose_stamped_to_transform(pose)
+
+    @staticmethod
+    def _endpoint_sync_transform_to_pose(transform):
+        return MissionController._endpoint_sync_transform_to_pose(transform)
+
+    def __init__(self):
+        frozen = PoseStamped()
+        frozen.header.frame_id = "base_link"
+        frozen.pose.orientation.w = 1.0
+        self._last_grasp_box_tf_box_pose = frozen
+
+    def _boolean(self, name):
+        return bool(self.VALUES[name])
+
+    def _post_movel_targets_with_labels(
+        self, left_start, right_start, **_kwargs
+    ):
+        left_step1 = deepcopy(left_start)
+        right_step1 = deepcopy(right_start)
+        left_step1.position.x += 0.03
+        right_step1.position.x += 0.03
+        left_step2 = deepcopy(left_start)
+        right_step2 = deepcopy(right_start)
+        left_step2.position.x += 0.1
+        right_step2.position.x += 0.1
+        return [
+            ("step1", left_step1, right_step1),
+            ("step2", left_step2, right_step2),
+        ]
 
 
 def _pose_values(pose):
@@ -138,6 +193,92 @@ class TestBoxJoint123Targets(unittest.TestCase):
         for actual, expected in zip(recovered_relation[0], box_to_link[0]):
             self.assertAlmostEqual(actual, expected, places=9)
         self.assertEqual(future_box[1], current_box[1])
+
+    def test_optimizer_predicts_only_one_waist_home_final_pose_per_arm(self):
+        harness = _CarryEndpointHarness()
+        left = Pose()
+        left.position.y = 0.5
+        left.position.z = 0.2
+        left.orientation.w = 1.0
+        right = Pose()
+        right.position.y = -0.5
+        right.position.z = 0.2
+        right.orientation.w = 1.0
+
+        left_endpoints, right_endpoints = (
+            MissionController._waist_workspace_carry_final_endpoints(
+                harness,
+                left,
+                right,
+                (0.0, 0.0, 0.0),
+                box_layer=1,
+                model_label="bigbox",
+                drag_mode=False,
+                right_arm_only=False,
+                delayed_left_join=False,
+            )
+        )
+
+        self.assertEqual(len(left_endpoints), 1)
+        self.assertEqual(len(right_endpoints), 1)
+        self.assertAlmostEqual(left_endpoints[0].position.x, 0.1, places=8)
+        self.assertAlmostEqual(right_endpoints[0].position.x, 0.1, places=8)
+
+    def test_drag_uses_one_right_waist_home_final_pose(self):
+        harness = _CarryEndpointHarness()
+        left = Pose()
+        left.position.y = 0.5
+        left.position.z = 0.2
+        left.orientation.w = 1.0
+        right = Pose()
+        right.position.y = -0.5
+        right.position.z = 0.2
+        right.orientation.w = 1.0
+
+        left_endpoints, right_endpoints = (
+            MissionController._waist_workspace_carry_final_endpoints(
+                harness,
+                left,
+                right,
+                (0.0, 0.0, 0.0),
+                box_layer=1,
+                model_label="bigbox",
+                drag_mode=True,
+                right_arm_only=True,
+                delayed_left_join=True,
+            )
+        )
+
+        self.assertEqual(len(left_endpoints), 1)
+        self.assertEqual(len(right_endpoints), 1)
+
+    def test_force_carry_optimizer_uses_clamp_pose_without_step2_lift(self):
+        harness = _CarryEndpointHarness()
+        left = Pose()
+        left.position.y = 0.5
+        left.position.z = 0.2
+        left.orientation.w = 1.0
+        right = Pose()
+        right.position.y = -0.5
+        right.position.z = 0.2
+        right.orientation.w = 1.0
+
+        left_endpoints, right_endpoints = (
+            MissionController._waist_workspace_carry_final_endpoints(
+                harness,
+                left,
+                right,
+                (0.0, 0.0, 0.0),
+                box_layer=1,
+                model_label="smallbox",
+                drag_mode=False,
+                right_arm_only=False,
+                delayed_left_join=False,
+                direct_carry_after_clamp=True,
+            )
+        )
+        self.assertAlmostEqual(left_endpoints[0].position.x, 0.03, places=8)
+        self.assertAlmostEqual(right_endpoints[0].position.x, 0.03, places=8)
 
     def test_place_box_slerp_preserves_normalization_and_endpoints(self):
         start = MissionController._quaternion_from_rpy(0.0, 0.0, 0.0)

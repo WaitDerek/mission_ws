@@ -18,6 +18,9 @@ try:
 except ModuleNotFoundError:
     EstimateObjectPose = None
 
+from .arm_target_visualization import pose_record, publish_targets
+from .post_waist_sync import wait_for_settled_tf_targets
+
 from .common import (
     MissionError,
     pose_to_array,
@@ -450,6 +453,111 @@ class BoxGeometryMixin:
         result.orientation = deepcopy(transformed.pose.orientation)
         return result
 
+    def _scale_grasp_contact_forward_delta(
+        self, contact_pose: PoseStamped, box_pose: PoseStamped, arm: str,
+        *, drag_mode: bool = False,
+    ) -> PoseStamped:
+        """Scale contact-to-box forward delta in base_footprint (-Y here).
+
+        The deployed URDF has front wheels at negative Y, left at positive X.
+        Preserve footprint X/Z and orientation. Apply before fixture compensation.
+        k=1 returns the original pose without TF lookup or numerical changes.
+        """
+        prefix = "drag_box_tf" if drag_mode else "grasp_box_tf"
+        name = f"{prefix}_{arm}_contact_forward_delta_scale"
+        scale = self._float(name)
+        if not math.isfinite(scale) or scale < 0.0:
+            raise MissionError(f"{name} must be finite and >= 0")
+        if scale == 1.0:
+            return contact_pose
+        source = contact_pose.header.frame_id.strip().lstrip("/")
+        if not source or source != box_pose.header.frame_id.strip().lstrip("/"):
+            raise MissionError("Contact and box must share a non-empty frame")
+        transform = None
+        if source == "base_footprint":
+            contact_foot, box_foot = contact_pose, box_pose
+        else:
+            try:
+                transform = self.tf_buffer.lookup_transform(
+                    "base_footprint",
+                    source,
+                    rclpy.time.Time.from_msg(box_pose.header.stamp),
+                    timeout=Duration(
+                        seconds=self._float("grasp_box_tf_detection_tf_timeout_sec")
+                    ),
+                )
+            except TransformException as exc:
+                raise MissionError(
+                    f"{prefix} contact scaling {source} -> base_footprint failed: {exc}"
+                ) from exc
+            contact_foot = do_transform_pose_stamped(contact_pose, transform)
+            box_foot = do_transform_pose_stamped(box_pose, transform)
+        delta_y = contact_foot.pose.position.y - box_foot.pose.position.y
+        shift_foot = (0.0, (scale - 1.0) * delta_y, 0.0)
+        if transform is None:
+            shift_source = shift_foot
+        else:
+            q = transform.transform.rotation
+            shift_source = rotate_vector(shift_foot, (-q.x, -q.y, -q.z, q.w))
+        result = deepcopy(contact_pose)
+        result.pose.position.x += shift_source[0]
+        result.pose.position.y += shift_source[1]
+        result.pose.position.z += shift_source[2]
+        if callable(getattr(self, "get_logger", None)):
+            self.get_logger().info(
+                f"{prefix} contact_forward_scale arm={arm} k={scale:.6f} "
+                f"frame=base_footprint forward_axis=-Y "
+                f"box_xy=[{box_foot.pose.position.x:.6f},{box_foot.pose.position.y:.6f}] "
+                f"contact_xy_before=[{contact_foot.pose.position.x:.6f},"
+                f"{contact_foot.pose.position.y:.6f}] "
+                f"contact_xy_after=[{contact_foot.pose.position.x:.6f},"
+                f"{contact_foot.pose.position.y + shift_foot[1]:.6f}] "
+                f"forward_delta_before={-delta_y:.6f}m "
+                f"forward_delta_after={-scale * delta_y:.6f}m"
+            )
+        return result
+
+    def _raise_drag_contact_target(
+        self, contact_pose: PoseStamped,
+        parameter_name: str = "drag_box_tf_contact_height_offset_m",
+        footprint_direction=(0.0, 0.0, 1.0),
+    ) -> PoseStamped:
+        """Raise the initial fixture center along footprint +Z, before compensation.
+
+        Cache this raised center in the box relation. Delayed left joining
+        inherits that relation and must not apply this height a second time.
+        """
+        height = self._float(parameter_name)
+        if not math.isfinite(height) or height < 0.0:
+            raise MissionError(f"{parameter_name} must be finite and >= 0")
+        if height == 0.0:
+            return contact_pose
+        source = contact_pose.header.frame_id.strip().lstrip("/")
+        if not source:
+            raise MissionError("Contact height requires a non-empty frame")
+        shift = tuple(height * component for component in footprint_direction)
+        if source != "base_footprint":
+            try:
+                transform = self.tf_buffer.lookup_transform(
+                    "base_footprint", source,
+                    rclpy.time.Time.from_msg(contact_pose.header.stamp),
+                    timeout=Duration(seconds=self._float("grasp_box_tf_detection_tf_timeout_sec")),
+                )
+            except TransformException as exc:
+                raise MissionError(f"Contact height {source} -> base_footprint failed: {exc}") from exc
+            q = transform.transform.rotation
+            shift = rotate_vector(shift, (-q.x, -q.y, -q.z, q.w))
+        result = deepcopy(contact_pose)
+        result.pose.position.x += shift[0]
+        result.pose.position.y += shift[1]
+        result.pose.position.z += shift[2]
+        if callable(getattr(self, "get_logger", None)):
+            self.get_logger().info(
+                f"{parameter_name}: initial contact offset={height:.4f}m along base_footprint {footprint_direction}; "
+                "applied once before box-relation caching and fixture compensation"
+            )
+        return result
+
     def _make_tf_link8_target_poses(
         self,
         frozen_box_pose: PoseStamped,
@@ -467,6 +575,11 @@ class BoxGeometryMixin:
                 "camera_offset_box_orientation"
             )
         targets = []
+        visualization_entries = {}
+        if drag_mode:
+            # Keep UNSCALED contact relations for the moved-box left join.
+            # Reapplying k to an already scaled relation would shrink twice.
+            self._last_drag_box_tf_unscaled_contact_relations = {}
         for arm in ("left", "right"):
             center_pose, corrected_box_pose = self._apply_box_frame_target_correction(
                 frozen_box_pose,
@@ -488,10 +601,102 @@ class BoxGeometryMixin:
             link8_pose = self._make_camera_offset_box_orientation_pose(
                 center_pose, corrected_box_pose, arm
             )
+            link8_pose = self._raise_drag_contact_target(
+                link8_pose,
+                parameter_name=(
+                    "drag_box_tf_contact_height_offset_m" if drag_mode
+                    else "grasp_box_tf_contact_height_offset_m"
+                ),
+            )
+            if drag_mode:
+                box_transform = BoxSupportMixin._pose_stamped_to_transform(frozen_box_pose)
+                self._last_drag_box_tf_unscaled_contact_relations[arm] = (
+                    BoxSupportMixin._compose_transform(
+                        BoxSupportMixin._inverse_transform(box_transform),
+                        BoxSupportMixin._pose_stamped_to_transform(link8_pose),
+                    )
+                )
+            raw_contact = pose_record(link8_pose)
+            link8_pose = self._scale_grasp_contact_forward_delta(
+                link8_pose, frozen_box_pose, arm, drag_mode=drag_mode
+            )
+            if not drag_mode and arm == "right":
+                link8_pose = self._raise_drag_contact_target(
+                    link8_pose,
+                    parameter_name=f"grasp_box_tf_right_forward_offset_m_layer{box_layer}",
+                    footprint_direction=(0.0, -1.0, 0.0),
+                )
+            if not drag_mode and arm == "left" and box_layer == 1:
+                link8_pose = self._raise_drag_contact_target(
+                    link8_pose,
+                    parameter_name="grasp_box_tf_left_backward_offset_m_layer1",
+                    footprint_direction=(0.0, 1.0, 0.0),
+                )
+            if drag_mode and arm == "right" and box_layer in (1, 2):
+                link8_pose = self._raise_drag_contact_target(
+                    link8_pose,
+                    parameter_name=f"drag_box_tf_right_backward_offset_m_layer{box_layer}",
+                    footprint_direction=(0.0, 1.0, 0.0),
+                )
+            if drag_mode and arm == "right" and box_layer in (3, 4):
+                link8_pose = self._raise_drag_contact_target(
+                    link8_pose,
+                    parameter_name=f"drag_box_tf_right_forward_offset_m_layer{box_layer}",
+                    footprint_direction=(0.0, -1.0, 0.0),
+                )
+            scaled_contact = pose_record(link8_pose)
             compensated = self._make_direct_movel_pose(link8_pose, arm)
             link8_pose.pose = compensated
+            visualization_entries[arm] = {
+                "raw": raw_contact,
+                "contact": scaled_contact,
+                "link8": pose_record(link8_pose),
+            }
             targets.append(link8_pose)
+        publish_targets(
+            self, frozen_box_pose, visualization_entries,
+            "DragBox initial targets" if drag_mode else "GraspBox initial targets",
+        )
         return targets[0], targets[1]
+
+    def _tf_target_pose_for_joint123_angles(
+        self,
+        target: PoseStamped,
+        arm: str,
+        waist_angles_rad,
+    ) -> Pose:
+        """Express a frozen base-frame target for one candidate waist pose."""
+        source_frame = target.header.frame_id.strip().lstrip("/")
+        freeze_frame = self._string("grasp_box_tf_freeze_frame").strip().lstrip("/")
+        if source_frame != freeze_frame:
+            raise MissionError(
+                "waist workspace optimization requires its frozen target in "
+                f"{freeze_frame}, got {source_frame or '<empty>'}"
+            )
+        base_to_arm = self._joint123_arm_base_transform(arm, waist_angles_rad)
+        base_to_target = (
+            (
+                float(target.pose.position.x),
+                float(target.pose.position.y),
+                float(target.pose.position.z),
+            ),
+            self._normalize_quaternion(
+                (
+                    float(target.pose.orientation.x),
+                    float(target.pose.orientation.y),
+                    float(target.pose.orientation.z),
+                    float(target.pose.orientation.w),
+                )
+            ),
+        )
+        arm_to_target = self._compose_transform(
+            self._inverse_transform(base_to_arm), base_to_target
+        )
+        result = Pose()
+        result.position.x, result.position.y, result.position.z = arm_to_target[0]
+        result.orientation.x, result.orientation.y = arm_to_target[1][0:2]
+        result.orientation.z, result.orientation.w = arm_to_target[1][2:4]
+        return result
 
     def _apply_tf_execution_mode(
         self,
@@ -503,6 +708,7 @@ class BoxGeometryMixin:
         model_label: str | None = None,
         *,
         drag_mode: bool = False,
+        approach_angles_override=None,
     ) -> tuple[Pose, Pose, str]:
         """Move the waist as configured, then express frozen targets via TF."""
         execution_mode = self._string("box_grasp_execution_mode").strip().lower()
@@ -524,6 +730,7 @@ class BoxGeometryMixin:
                     model_label,
                     tf_mode=True,
                     drag_mode=drag_mode,
+                    approach_angles_override=approach_angles_override,
                 )
                 movement_detail = (
                     "joint1/2/3 motion completed from measured /mcap/body feedback"
@@ -553,13 +760,37 @@ class BoxGeometryMixin:
                 movement_detail = (
                     f"{execution_mode} waist motion planned but skipped in dry-run"
                 )
-        left_moved = self._tf_target_pose_in_arm_base(left_target, "left")
-        right_moved = self._tf_target_pose_in_arm_base(right_target, "right")
+        if dry_run and approach_angles_override is not None:
+            left_moved = self._tf_target_pose_for_joint123_angles(
+                left_target, "left", approach_angles_override
+            )
+            right_moved = self._tf_target_pose_for_joint123_angles(
+                right_target, "right", approach_angles_override
+            )
+        elif not dry_run and execution_mode == "joint123_then_arms":
+            desired_angles = approach_angles_override
+            if desired_angles is None:
+                desired_angles = [
+                    math.radians(value) for value in self._box_layer_joint123_approach_angles_deg(
+                        box_layer, model_label, tf_mode=True, drag_mode=drag_mode
+                    )
+                ]
+            left_moved, right_moved = wait_for_settled_tf_targets(
+                self, goal_handle, left_target, right_target, desired_angles
+            )
+        else:
+            left_moved = self._tf_target_pose_in_arm_base(left_target, "left")
+            right_moved = self._tf_target_pose_in_arm_base(right_target, "right")
         return (
             left_moved,
             right_moved,
             f"execution={execution_mode}; target_frame=live_TF_arm_base; "
-            f"frozen_frame={left_target.header.frame_id}; {movement_detail}",
+            f"frozen_frame={left_target.header.frame_id}; {movement_detail}"
+            + (
+                "; waist_target=workspace_optimized"
+                if approach_angles_override is not None
+                else ""
+            ),
         )
 
     def _measured_camera_pose_in_arm_base(
@@ -750,7 +981,11 @@ class BoxGeometryMixin:
         return f"{action_prefix}_{stem}_{normalized_model}_layer{box_layer}"
 
     def _box_detection_arm(
-        self, *, tf_mode: bool = False, drag_mode: bool = False
+        self,
+        *,
+        tf_mode: bool = False,
+        drag_mode: bool = False,
+        model_label: str | None = None,
     ) -> str:
         """Resolve the camera/detection arm for the current action path."""
         if tf_mode:
@@ -759,6 +994,8 @@ class BoxGeometryMixin:
                 if drag_mode
                 else "grasp_box_tf_detection_arm"
             )
+            if drag_mode and str(model_label or "").strip().lower() == "smallbox":
+                parameter_name = "drag_box_tf_detection_arm_smallbox"
         else:
             parameter_name = "camera_detection_arm"
         arm = self._string(parameter_name).strip().lower()

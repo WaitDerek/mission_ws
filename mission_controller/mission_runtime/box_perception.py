@@ -1,11 +1,15 @@
 import math
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from copy import deepcopy
 import time
 
 import rclpy
 from action_msgs.msg import GoalStatus
 from geometry_msgs.msg import PoseStamped
+from rclpy.duration import Duration
 from task_interfaces.action import PickupTask
+from tf2_geometry_msgs import do_transform_pose_stamped
+from tf2_ros import TransformException
 
 try:
     from task_interfaces.srv import MoveCartesian
@@ -24,10 +28,157 @@ from .common import (
     quaternion_multiply,
     rotate_vector,
 )
+from .box_horizontal import apply_box_horizontal
+from .taskflow.model import NavigationRequest
+from .taskflow.mqtt_navigation import MqttNavigationGateway
 
 
 class BoxPerceptionMixin:
     """FoundationPose validation, child calls, retries, and grasp closure."""
+
+    def _execute_drag_box_parallel_arm_preparation(
+        self, goal_handle, dry_run, box_layer, model_label
+    ):
+        """Start left avoidance and right preparation in the same phase."""
+        left_motion = lambda: self._execute_drag_box_tf_post_detection_left_movej(
+            goal_handle, dry_run, box_layer, model_label
+        )
+        right_motion = lambda: self._execute_drag_box_tf_right_grasp_preparation(
+            goal_handle, getattr(self, "direct_sdk_adapter", None),
+            dry_run, box_layer, model_label,
+        )
+        if dry_run:
+            return left_motion(), right_motion()
+        self._publish_box_grasp_feedback(
+            goal_handle, "DRAG_PARALLEL_ARM_PREPARATION",
+            "starting left avoidance and right preparation together; "
+            "waiting for both arms before continuing",
+        )
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="drag-arm-prep") as pool:
+            left_future = pool.submit(left_motion)
+            right_future = pool.submit(right_motion)
+            done, _ = wait((left_future, right_future), return_when=FIRST_EXCEPTION)
+            failure = next((future.exception() for future in done if future.exception()), None)
+            if failure is not None:
+                adapter = getattr(self, "direct_sdk_adapter", None)
+                if adapter is not None:
+                    adapter.stop_all()
+                raise failure
+            left_detail = left_future.result()
+            right_detail = right_future.result()
+        self._publish_box_grasp_feedback(
+            goal_handle, "DRAG_PARALLEL_ARM_PREPARATION_REACHED",
+            "left avoidance and right preparation both completed",
+        )
+        return left_detail, right_detail
+
+    def _align_workflow_drag_box_base_x(
+        self, goal_handle, request, detection, box_pose: PoseStamped,
+        *, detection_arm: str,
+    ):
+        """Align a workflow DragBox, then detect again from the new base pose.
+
+        The measured chassis X error is sent in micro-navigation pos[1], as
+        verified on this robot.  A successful micro-navigation is followed by
+        a fresh FoundationPose estimate; the old frozen pose is not shifted or
+        reused for the right MoveJ_P and Drag path.
+        """
+        workflow_id = self.mission_lease_manager.workflow_id
+        if not workflow_id or request.dry_run:
+            return detection, box_pose
+        frozen_pose = getattr(self, "_last_grasp_box_tf_box_pose", None)
+        if frozen_pose is None:
+            raise MissionError("DragBox TF has no frozen pose for base-X alignment")
+        source_frame = frozen_pose.header.frame_id.strip().lstrip("/")
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                "base_footprint",
+                source_frame,
+                rclpy.time.Time.from_msg(frozen_pose.header.stamp),
+                timeout=Duration(
+                    seconds=self._float("grasp_box_tf_detection_tf_timeout_sec")
+                ),
+            )
+            observed_x = do_transform_pose_stamped(
+                frozen_pose, transform
+            ).pose.position.x
+        except TransformException as exc:
+            raise MissionError(
+                f"DragBox TF base_footprint X transform failed: {exc}"
+            ) from exc
+
+        reference_x = self._float("drag_box_tf_workflow_reference_base_x_m")
+        tolerance = self._float("drag_box_tf_workflow_base_x_tolerance_m")
+        correction_x = observed_x - reference_x
+        self._publish_box_grasp_feedback(
+            goal_handle,
+            "DRAG_BASE_X_ALIGNMENT_CHECK",
+            f"box_origin_x={observed_x:.6f}m; reference_x={reference_x:.6f}m; "
+            f"error={correction_x:+.6f}m; tolerance={tolerance:.6f}m",
+        )
+        if abs(correction_x) <= tolerance:
+            return detection, box_pose
+
+        # The platform's tested mapping is pos[1] -> base_footprint X.  Do
+        # not alter pos[0]: existing [-0.5, 0, 0] retreat remains unchanged.
+        micro_pos = (0.0, correction_x, 0.0)
+        self._publish_box_grasp_feedback(
+            goal_handle,
+            "DRAG_BASE_X_MICRO_NAVIGATION",
+            f"requesting base_footprint X correction {correction_x:+.6f}m "
+            f"with micro pos={list(micro_pos)}",
+        )
+        gateway = MqttNavigationGateway(
+            host="127.0.0.1",
+            port=1883,
+            request_topic="mission/micro_navigation/request",
+            result_topic="mission/micro_navigation/result",
+            navigation_timeout_sec=120.0,
+            robot_id="realman-001",
+            frame_id="base_footprint",
+            include_point_id=False,
+        )
+        try:
+            outcome = gateway.navigate(
+                NavigationRequest(
+                    workflow_id=workflow_id,
+                    step_id="drag_box_tf_base_x_alignment",
+                    point_id="micro",
+                    pos=micro_pos,
+                ),
+                lambda: goal_handle.is_cancel_requested,
+            )
+        finally:
+            gateway.close()
+        if not outcome.success:
+            if goal_handle.is_cancel_requested:
+                raise MissionCanceled("DragBox TF base-X micro-navigation canceled")
+            raise MissionError(
+                "DragBox TF base-X micro-navigation failed: "
+                f"{outcome.message or outcome.status}"
+            )
+
+        self._publish_box_grasp_feedback(
+            goal_handle,
+            "DRAG_BASE_X_REDETECTING",
+            "micro-navigation succeeded; requesting a fresh FoundationPose "
+            "estimate before planning the right MoveJ_P; no displacement "
+            "compensation will be added to the new pose",
+        )
+        fresh_detection, fresh_box_pose = self._call_box_object_pose(
+            goal_handle,
+            request,
+            tf_mode=True,
+            drag_mode=True,
+            detection_arm=detection_arm,
+        )
+        self._publish_box_grasp_feedback(
+            goal_handle,
+            "DRAG_BASE_X_REDETECTED",
+            "using the second FoundationPose result for the right MoveJ_P "
+            "and subsequent Drag path; old frozen pose discarded",
+        )
+        return fresh_detection, fresh_box_pose
 
     def _constrain_box_camera_pose(self, camera_pose: PoseStamped) -> PoseStamped:
         """Normalize F320/F455 axes before camera-to-robot TF conversion.
@@ -199,7 +350,7 @@ class BoxPerceptionMixin:
         model_label = self._box_model_label_for_request(request)
         if detection_arm is None:
             detection_arm = self._box_detection_arm(
-                tf_mode=tf_mode, drag_mode=drag_mode
+                tf_mode=tf_mode, drag_mode=drag_mode, model_label=model_label
             )
         foundation_goal.camera_side = detection_arm
         foundation_goal.model_label = model_label
@@ -279,8 +430,15 @@ class BoxPerceptionMixin:
             frozen_box_pose = self._transform_foundation_pose_to_tf_freeze_frame(
                 camera_pose
             )
-            self._last_grasp_box_tf_box_pose = frozen_box_pose
             raw_foundation_center_pose = deepcopy(frozen_box_pose)
+            frozen_box_pose, horizontal_detail = apply_box_horizontal(
+                self, frozen_box_pose, drag_mode=drag_mode
+            )
+            if horizontal_detail:
+                self._publish_box_grasp_feedback(
+                    goal_handle, "BOX_HORIZONTAL_CONSTRAINT", horizontal_detail
+                )
+            self._last_grasp_box_tf_box_pose = frozen_box_pose
             foundation_center_pose = deepcopy(frozen_box_pose)
             self._last_box_pose_by_arm = {}
         elif self._boolean("camera_measured_extrinsics_enabled"):
@@ -552,18 +710,26 @@ class BoxPerceptionMixin:
         detection_attempts = self._integer("box_detection_attempts")
         failures: list[str] = []
         model_label = self._box_model_label_for_request(request)
-        detection_arm = self._box_detection_arm(tf_mode=tf_mode, drag_mode=drag_mode)
+        detection_arm = self._box_detection_arm(
+            tf_mode=tf_mode, drag_mode=drag_mode, model_label=model_label
+        )
 
         # Put the selected wrist camera at its calibrated observation
         # configuration before requesting FoundationPose.  Manipulation
         # ownership (for example, DragBox right-arm-only execution) is kept
         # independent from the arm that carries the detection camera.
         if self._boolean("box_direct_movel_enabled"):
-            self._execute_pre_detection_arm_movej(
-                goal_handle,
-                request.dry_run,
-                active_arms=(detection_arm,),
-            )
+            # TF GraspBox/DragBox go directly through their calibrated,
+            # layer-specific detection transition.  Do not insert the legacy
+            # generic [0, 40, 0, 0, 0, 0, 0] posture in these TF paths.
+            if not tf_mode:
+                self._execute_pre_detection_arm_movej(
+                    goal_handle,
+                    request.dry_run,
+                    active_arms=(detection_arm,),
+                )
+            # Only the selected camera arm enters the observation pose.
+            # DragBox's left-arm avoidance remains in post-detection preparation.
             # Select the per-model detection table from the action goal for
             # both GraspBox and DragBox.  Bigbox keeps the existing generic
             # values, while a smallbox goal now uses its smallbox-specific
@@ -620,6 +786,11 @@ class BoxPerceptionMixin:
                 continue
 
             self._check_canceled(goal_handle, "after FoundationPose estimation")
+            if tf_mode and drag_mode:
+                detection, box_pose = self._align_workflow_drag_box_base_x(
+                    goal_handle, request, detection, box_pose,
+                    detection_arm=detection_arm,
+                )
             if not request.dry_run and not self._boolean("box_direct_movel_enabled"):
                 self._publish_box_grasp_feedback(
                     goal_handle,
@@ -676,24 +847,72 @@ class BoxPerceptionMixin:
                 ),
             )
             if self._boolean("box_direct_movel_enabled"):
+                parallel_optimization = None
                 try:
-                    post_detection_left_detail = (
-                        "drag_box_tf_post_detection_left_movej=not_applicable"
-                    )
-                    if tf_mode and drag_mode and detection_arm == "left":
-                        post_detection_left_detail = (
-                            self._execute_drag_box_tf_post_detection_left_movej(
+                    preparation_already_completed = False
+                    if tf_mode:
+                        direct_carry_options = (
+                            {"direct_carry_after_clamp": True}
+                            if bool(getattr(request, "force_carry_profile", False))
+                            and not drag_mode
+                            else {}
+                        )
+                        parallel_optimization = (
+                            self._start_tf_waist_optimization_parallel(
                                 goal_handle,
-                                request.dry_run,
                                 request.box_layer,
                                 model_label,
+                                drag_mode=drag_mode,
+                                equalize_target_z=(
+                                    not right_arm_only and not delayed_left_join
+                                ),
+                                right_arm_only=right_arm_only,
+                                delayed_left_join=delayed_left_join,
+                                **direct_carry_options,
                             )
                         )
-                    pre_target_detail = self._execute_pre_target_arm_movej(
-                        goal_handle,
-                        request.dry_run,
-                        right_arm_only=right_arm_only,
-                    )
+                    post_detection_left_detail = "drag_box_tf_post_detection_left_movej=not_applicable"
+                    drag_right_preparation_detail = None
+                    if tf_mode and drag_mode:
+                        (
+                            post_detection_left_detail,
+                            drag_right_preparation_detail,
+                        ) = self._execute_drag_box_parallel_arm_preparation(
+                            goal_handle, request.dry_run, request.box_layer, model_label
+                        )
+                    if tf_mode and not drag_mode:
+                        # Direct GraspBox uses its independently calibrated
+                        # box-type/layer posture immediately after detection.
+                        # Waist IK is already running in the background.
+                        pre_target_detail = self._execute_post_waist_pre_movej(
+                            goal_handle,
+                            getattr(self, "direct_sdk_adapter", None),
+                            request.dry_run,
+                            request.box_layer,
+                            model_label,
+                            drag_mode=False,
+                            right_arm_only=False,
+                            timing="parallel_before_waist",
+                        )
+                        preparation_already_completed = True
+                    elif not tf_mode:
+                        pre_target_detail = self._execute_pre_target_arm_movej(
+                            goal_handle,
+                            request.dry_run,
+                            right_arm_only=right_arm_only,
+                        )
+                    else:
+                        # Keep the DragBox left arm at its independent
+                        # post-detection avoidance pose.  While waist IK is
+                        # still running, move only the right arm through the
+                        # matching GraspBox box-type/layer preparation profile.
+                        # The legacy [0, 40, 0, 0, 0, 0, 0] posture remains
+                        # removed from physical execution.
+                        pre_target_detail = (
+                            "tf_pre_target_arm_movej=removed; "
+                            "legacy_[0,40,0,0,0,0,0]_target_not_executed; "
+                            f"{drag_right_preparation_detail}"
+                        )
                     pickup_message = self._call_direct_box_movel(
                         goal_handle,
                         box_pose,
@@ -704,6 +923,10 @@ class BoxPerceptionMixin:
                         delayed_left_join=delayed_left_join,
                         tf_mode=tf_mode,
                         model_label=model_label,
+                        parallel_optimization=parallel_optimization,
+                        preparation_already_completed=(
+                            preparation_already_completed
+                        ),
                     )
                     pickup_message = (
                         f"{post_detection_left_detail}; "
@@ -725,6 +948,14 @@ class BoxPerceptionMixin:
                     # waypoints; never retry perception and issue another
                     # Cartesian command without an explicit recovery posture.
                     raise MissionError("; ".join(failures)) from exc
+                finally:
+                    if (
+                        parallel_optimization is not None
+                        and not parallel_optimization["future"].done()
+                    ):
+                        self._abort_tf_waist_optimization_parallel(
+                            parallel_optimization
+                        )
             try:
                 pickup_message = self._call_pickup_task(
                     goal_handle,

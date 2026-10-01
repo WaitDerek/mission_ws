@@ -89,6 +89,7 @@ class RealbotsGlobalTf(Node):
         self.declare_parameter("left_arm_feedback_topic", "/mcap/slave_arm_left")
         self.declare_parameter("right_arm_feedback_topic", "/mcap/slave_arm_right")
         self.declare_parameter("joint_state_topic", "/joint_states")
+        self.declare_parameter("joint_state_input_topic", "")
         self.declare_parameter(
             "body_input_joint_names", ["joint1", "joint2", "joint3", "joint4"]
         )
@@ -374,9 +375,15 @@ class RealbotsGlobalTf(Node):
                 joint_state_topic,
                 joint_state_qos,
             )
+        # Never subscribe to our own normalized output: an older self-published
+        # sample could overwrite newer /mcap hardware feedback and refresh its age.
+        joint_state_input_topic = str(self.get_parameter("joint_state_input_topic").value).strip()
+        if joint_state_input_topic:
+            if self.resolve_topic_name(joint_state_input_topic) == self.resolve_topic_name(joint_state_topic):
+                raise ValueError("joint_state_input_topic must differ from joint_state_topic")
             self.joint_state_subscription = self.create_subscription(
                 JointState,
-                joint_state_topic,
+                joint_state_input_topic,
                 self._joint_state_callback,
                 feedback_qos,
             )

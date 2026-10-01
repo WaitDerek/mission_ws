@@ -27,19 +27,63 @@ class TfLayerProfilesMixin:
                 [2341, 248, -3624, -16956, 2290, 10183, -45681],
             ],
         }
-        # DragBox TF uses the left camera for detection.  Keep its calibrated
-        # bigbox poses independent from the GraspBox/right-camera profiles.
+        # GraspBox uses the right wrist camera.  Keep its calibrated detection
+        # poses independent from the generic/DragBox profiles.
+        grasp_right_detection_overrides = {
+            ("smallbox", 1): [
+                -43681,
+                64069,
+                -32832,
+                -82829,
+                52815,
+                -5888,
+                -85689,
+            ],
+            ("smallbox", 2): [
+                -43666,
+                34670,
+                20100,
+                -82382,
+                11944,
+                37569,
+                -34208,
+            ],
+            ("smallbox", 3): [
+                -7650,
+                14669,
+                8212,
+                -6785,
+                -28607,
+                10575,
+                -76223,
+            ],
+            ("smallbox", 4): [
+                -5483,
+                9744,
+                12854,
+                -2708,
+                -19532,
+                1808,
+                -70085,
+            ],
+        }
+        # DragBox TF uses the right camera for detection.  Keep the left arm
+        # at its configured layer-specific clearance posture during imaging.
         # The values are controller joint units (1000 units = 1 degree).
         drag_left_detection = {
             "bigbox": [
-                [-172278, 7319, 20124, 51808, -17856, -23263, -70442],
-                [-34406, 164214, -172158, 103200, 468, -19272, -60846],
-                [18442, 3544, 2870, -104500, -2568, 5250, -24076],
-                [-19238, 3482, 215, -91196, -2634, 5268, -78519],
+                [57192, -409, -8583, -95717, 1770, -12286, 62542],
+                [57192, -409, -8583, -95717, 1770, -12286, 62542],
+                [28101, 10100, -5186, -67156, -3504, -12579, 31431],
+                [-11175, 19393, -96084, 17486, 96830, -4823, 36800],
             ],
-            # Until separately calibrated, retain the existing left/smallbox
-            # defaults rather than coupling them to the bigbox calibration.
-            "smallbox": detection["smallbox"],
+            # Layers 1-2 share the measured left-arm standby posture while
+            # the right wrist camera observes either box size.
+            "smallbox": [
+                [57192, -409, -8583, -95717, 1770, -12286, 62542],
+                [57192, -409, -8583, -95717, 1770, -12286, 62542],
+                *detection["smallbox"][2:],
+            ],
         }
         post_detection_left = {
             model: [
@@ -48,18 +92,41 @@ class TfLayerProfilesMixin:
             ]
             for model in ("bigbox", "smallbox")
         }
+        # Big-box DragBox joins use a negative-Joint4 IK branch.  Retaining a
+        # positive-Joint4 avoidance posture forced another sign crossing after
+        # Drag3.  Keep the other six calibrated avoidance axes independent.
+        for layer_profile in post_detection_left["bigbox"]:
+            layer_profile[3] = -25000
+        for layer_profile in post_detection_left["smallbox"]:
+            layer_profile[3] = -25000
         angles = {
-            "bigbox": {
-                1: (-13.0, 0.0, 0.0),
-                2: (-45.0, -85.0, -55.0),
-                3: (-70.0, -120.0, -73.0),
-                4: (-89.0, -149.0, -89.0),
+            "grasp_box_tf": {
+                "bigbox": {
+                    1: (-13.0, 0.0, 0.0),
+                    2: (-45.0, -85.0, -55.0),
+                    3: (-70.0, -120.0, -73.0),
+                    4: (-89.0, -149.0, -89.0),
+                },
+                "smallbox": {
+                    1: (-13.0, 0.0, 0.0),
+                    2: (-45.0, -85.0, -70.0),
+                    3: (-70.0, -120.0, -73.0),
+                    4: (-89.0, -149.0, -89.0),
+                },
             },
-            "smallbox": {
-                1: (-13.0, 0.0, 0.0),
-                2: (-45.0, -85.0, -70.0),
-                3: (-70.0, -120.0, -73.0),
-                4: (-89.0, -149.0, -89.0),
+            "drag_box_tf": {
+                "bigbox": {
+                    1: (-13.0, 0.0, 0.0),
+                    2: (-45.0, -85.0, -55.0),
+                    3: (-60.0, -115.0, -70.0),
+                    4: (-89.0, -149.0, -89.0),
+                },
+                "smallbox": {
+                    1: (-13.0, 0.0, 0.0),
+                    2: (-45.0, -85.0, -70.0),
+                    3: (-70.0, -120.0, -73.0),
+                    4: (-89.0, -149.0, -89.0),
+                },
             },
         }
         offsets = {
@@ -79,23 +146,187 @@ class TfLayerProfilesMixin:
             },
         }
         left_correction = [
-            0.064762,
-            -0.049358,
-            0.060595,
+            0.0,
+            0.0,
+            0.0,
             -0.058164,
             -0.006476,
             0.081596,
             0.994946,
         ]
         right_correction = [
-            0.081444,
-            -0.049338,
-            -0.020083,
+            0.0,
+            0.0,
+            0.0,
             0.012614,
             -0.032172,
             0.081927,
             0.996039,
         ]
+        # Absolute left/right corrections measured with the interactive
+        # GraspBox TF calibrator. Keep every smallbox layer independent.
+        grasp_smallbox_corrections = {
+            1: (
+                [
+                    0.0,
+                    0.0,
+                    0.0,
+                    -0.024384405,
+                    -0.023875088,
+                    -0.037291703,
+                    0.998721538,
+                ],
+                [
+                    0.0,
+                    0.0,
+                    0.0,
+                    -0.051357703,
+                    0.004360193,
+                    0.012754161,
+                    0.998589358,
+                ],
+            ),
+            2: (
+                [
+                    0.0,
+                    0.0,
+                    0.0,
+                    -0.016304739,
+                    -0.002712095,
+                    0.007963239,
+                    0.999831679,
+                ],
+                [
+                    0.0,
+                    0.0,
+                    0.0,
+                    -0.039304169,
+                    0.050625186,
+                    0.030148091,
+                    0.997488529,
+                ],
+            ),
+            3: (
+                [
+                    0.0,
+                    0.0,
+                    0.0,
+                    -0.009310303,
+                    -0.008333252,
+                    0.003572466,
+                    0.999915553,
+                ],
+                [
+                    0.0,
+                    0.0,
+                    0.0,
+                    -0.038994183,
+                    0.003851522,
+                    0.040366668,
+                    0.998416322,
+                ],
+            ),
+            4: (
+                [
+                    0.0,
+                    0.0,
+                    0.0,
+                    -0.005119032,
+                    -0.013035214,
+                    0.004660018,
+                    0.999891076,
+                ],
+                [
+                    0.0,
+                    0.0,
+                    0.0,
+                    -0.044762070,
+                    0.002591940,
+                    0.031502585,
+                    0.998497484,
+                ],
+            ),
+        }
+        # Absolute left-side corrections measured after Drag3 re-anchoring.
+        # Keep every bigbox layer independent from the initial right target.
+        drag_bigbox_left_corrections = {
+            1: [
+                0.0,
+                0.0,
+                0.0,
+                -0.035042439,
+                -0.034710191,
+                0.024586835,
+                0.998480204,
+            ],
+            2: [
+                0.0,
+                0.0,
+                0.0,
+                -0.054370455,
+                0.016881237,
+                0.023892927,
+                0.998092183,
+            ],
+            3: [
+                0.0,
+                0.0,
+                0.0,
+                -0.054209689,
+                -0.006481642,
+                0.038319026,
+                0.997772995,
+            ],
+            4: [
+                0.0,
+                0.0,
+                0.0,
+                -0.040472304,
+                -0.027567708,
+                -0.003524540,
+                0.998794069,
+            ],
+        }
+        # Absolute right-side corrections measured with the interactive
+        # DragBox TF calibrator. Keep every bigbox layer independent.
+        drag_bigbox_right_corrections = {
+            1: [
+                0.0,
+                0.0,
+                0.0,
+                -0.078806036,
+                0.031130706,
+                0.078378699,
+                0.993316298,
+            ],
+            2: [
+                0.0,
+                0.0,
+                0.0,
+                -0.064522892,
+                0.019208153,
+                0.050748447,
+                0.996439882,
+            ],
+            3: [
+                0.0,
+                0.0,
+                0.0,
+                -0.081903855,
+                0.048541701,
+                0.073411578,
+                0.992746797,
+            ],
+            4: [
+                0.0,
+                0.0,
+                0.0,
+                -0.059377345,
+                0.012520900,
+                0.047450144,
+                0.997028606,
+            ],
+        }
         standard_steps = {
             "left": {
                 1: [0.0, 0.0, 0.025],
@@ -118,13 +349,13 @@ class TfLayerProfilesMixin:
         }
         drag_steps = {
             "left": {
-                1: [0.0, 0.0, 0.0],
-                2: [0.0, 0.0, 0.2],
-                3: [0.0, 0.0, 0.0],
+                1: [0.14, 0.0, 0.0],
+                2: [0.0, 0.20, 0.0],
+                3: [-0.14, 0.0, 0.0],
             },
             "right": {
                 1: [0.14, 0.0, 0.0],
-                2: [0.0, 0.0, 0.2],
+                2: [0.0, 0.20, 0.0],
                 3: [-0.14, 0.0, 0.0],
             },
         }
@@ -132,12 +363,25 @@ class TfLayerProfilesMixin:
         for action_prefix in ("grasp_box_tf", "drag_box_tf"):
             for model in ("bigbox", "smallbox"):
                 for layer in range(1, 5):
+                    layer_left_correction = left_correction
+                    layer_right_correction = right_correction
+                    if action_prefix == "grasp_box_tf" and model == "smallbox":
+                        (
+                            layer_left_correction,
+                            layer_right_correction,
+                        ) = grasp_smallbox_corrections[layer]
+                    elif action_prefix == "drag_box_tf" and model == "bigbox":
+                        layer_left_correction = drag_bigbox_left_corrections[layer]
+                        layer_right_correction = drag_bigbox_right_corrections[layer]
                     for arm in ("left", "right"):
-                        profile = (
-                            drag_left_detection[model][layer - 1]
-                            if action_prefix == "drag_box_tf" and arm == "left"
-                            else detection[model][layer - 1]
-                        )
+                        if action_prefix == "drag_box_tf" and arm == "left":
+                            profile = drag_left_detection[model][layer - 1]
+                        elif action_prefix == "grasp_box_tf" and arm == "right":
+                            profile = grasp_right_detection_overrides.get(
+                                (model, layer), detection[model][layer - 1]
+                            )
+                        else:
+                            profile = detection[model][layer - 1]
                         parameters.append(
                             (
                                 f"{action_prefix}_box_layer_pre_detection_{arm}_movej_joint_units_"
@@ -153,7 +397,9 @@ class TfLayerProfilesMixin:
                                 list(post_detection_left[model][layer - 1]),
                             )
                         )
-                    for joint_index, angle in enumerate(angles[model][layer], start=1):
+                    for joint_index, angle in enumerate(
+                        angles[action_prefix][model][layer], start=1
+                    ):
                         parameters.append(
                             (
                                 f"{action_prefix}_box_layer_joint{joint_index}_"
@@ -161,27 +407,34 @@ class TfLayerProfilesMixin:
                                 float(angle),
                             )
                         )
+                    left_offset = list(offsets[model][layer][0])
+                    right_offset = list(offsets[model][layer][1])
+                    if action_prefix == "grasp_box_tf" and model == "smallbox":
+                        left_offset = [0.0, 0.0, -0.54]
+                    elif action_prefix == "drag_box_tf" and model == "bigbox":
+                        left_offset = [0.0, 0.0, -0.54]
+                        right_offset = [0.0, 0.0, 0.54]
                     parameters.extend(
                         [
                             (
                                 f"{action_prefix}_direct_movel_left_offset_xyz_"
                                 f"{model}_layer{layer}",
-                                list(offsets[model][layer][0]),
+                                left_offset,
                             ),
                             (
                                 f"{action_prefix}_direct_movel_right_offset_xyz_"
                                 f"{model}_layer{layer}",
-                                list(offsets[model][layer][1]),
+                                right_offset,
                             ),
                             (
                                 f"{action_prefix}_joint123_left_target_correction_pose_box_"
                                 f"{model}_layer{layer}",
-                                list(left_correction),
+                                [0.0, 0.0, 0.0, *layer_left_correction[3:]],
                             ),
                             (
                                 f"{action_prefix}_joint123_right_target_correction_pose_box_"
                                 f"{model}_layer{layer}",
-                                list(right_correction),
+                                [0.0, 0.0, 0.0, *layer_right_correction[3:]],
                             ),
                         ]
                     )
@@ -231,11 +484,12 @@ class TfLayerProfilesMixin:
                     if action_prefix == "drag_box_tf":
                         for arm in ("left", "right"):
                             for drag_index in range(1, 4):
+                                drag_step = drag_steps[arm][drag_index]
                                 parameters.append(
                                     (
                                         f"drag_box_tf_post_movel_step_drag{drag_index}_"
                                         f"{arm}_xyz_{model}_layer{layer}",
-                                        list(drag_steps[arm][drag_index]),
+                                        list(drag_step),
                                     )
                                 )
         return parameters

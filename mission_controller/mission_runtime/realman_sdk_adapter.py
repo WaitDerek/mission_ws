@@ -8,6 +8,7 @@ from .realman_sdk_common import (
 )
 from .realman_sdk_connected_motion import RealManSdkConnectedMotionMixin
 from .realman_sdk_connection import RealManSdkConnectionMixin
+from .realman_sdk_force import RealManSdkForceMixin
 from .realman_sdk_motion import RealManSdkMotionMixin
 
 
@@ -15,6 +16,7 @@ class RealManSdkAdapter(
     RealManSdkConnectionMixin,
     RealManSdkMotionMixin,
     RealManSdkConnectedMotionMixin,
+    RealManSdkForceMixin,
 ):
     """Own two SDK connections and expose the legacy public API."""
 

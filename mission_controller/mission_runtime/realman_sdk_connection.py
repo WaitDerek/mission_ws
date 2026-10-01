@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import ctypes
+import math
 import os
 import sys
 import threading
 from pathlib import Path
 
 from .realman_sdk_common import RealManSdkError
+from .realman_sdk_algorithm import ControllerAlgorithmProfile, SDK_ALGORITHM_LOCK
 
 
 class RealManSdkConnectionMixin:
@@ -34,6 +37,15 @@ class RealManSdkConnectionMixin:
         self._right_robot = None
         self._robot_type = None
         self._thread_mode_type = None
+        self._ik_params_type = None
+        self._ik_matrix_type = None
+        self._force_position_move_type = None
+        self._algo_type = None
+        self._arm_model_type = None
+        self._force_type = None
+        self._dh_type = None
+        self._frame_type = None
+        self._algo_profiles = {}
         self._sdk_loaded = False
         self._stop_event = threading.Event()
         self._motion_active = False
@@ -100,11 +112,27 @@ class RealManSdkConnectionMixin:
             try:
                 from src.Robotic_Arm.rm_robot_interface import (  # type: ignore
                     RoboticArm,
+                    Algo,
+                    rm_Mat_t,
+                    rm_dh_t,
+                    rm_frame_t,
+                    rm_robot_arm_model_e,
+                    rm_force_type_e,
+                    rm_inverse_kinematics_params_t,
+                    rm_force_position_move_t,
                     rm_thread_mode_e,
                 )
             except ModuleNotFoundError:
                 from Robotic_Arm.rm_robot_interface import (  # type: ignore
                     RoboticArm,
+                    Algo,
+                    rm_Mat_t,
+                    rm_dh_t,
+                    rm_frame_t,
+                    rm_robot_arm_model_e,
+                    rm_force_type_e,
+                    rm_inverse_kinematics_params_t,
+                    rm_force_position_move_t,
                     rm_thread_mode_e,
                 )
         except Exception as exc:  # noqa: BLE001
@@ -112,8 +140,260 @@ class RealManSdkConnectionMixin:
                 f"failed to import RealMan Python SDK from {root}: {exc}"
             ) from exc
         self._robot_type = RoboticArm
+        self._algo_type = Algo
+        self._arm_model_type = rm_robot_arm_model_e
+        self._force_type = rm_force_type_e
+        self._dh_type = rm_dh_t
+        self._frame_type = rm_frame_t
         self._thread_mode_type = rm_thread_mode_e
+        self._ik_params_type = rm_inverse_kinematics_params_t
+        self._ik_matrix_type = rm_Mat_t
+        self._force_position_move_type = rm_force_position_move_t
         self._sdk_loaded = True
+
+    def _activate_arm_algorithm(self, arm: str, robot):
+        """Reapply a complete controller profile under SDK_ALGORITHM_LOCK.
+
+        Connected-handle FK/IK load controller configuration into shared state,
+        so even consecutive calls for one arm must reapply the cached profile.
+        """
+        profile = self._algo_profiles.get(arm)
+        if profile is None:
+            profile = ControllerAlgorithmProfile.read(
+                arm, robot, self._arm_model_type, self._force_type,
+                self._dh_type, self._frame_type,
+            )
+            self._algo_profiles[arm] = profile
+            self._log("info", f"SDK {arm} offline profile loaded from controller: "
+                      f"installation_deg={profile.angle}; joint_min_deg={profile.lower}; "
+                      f"joint_max_deg={profile.upper}; model/DH/Tool/Work synchronized")
+        return profile.activate(self._algo_type)
+
+    def solve_ik(
+        self,
+        arm: str,
+        target_pose_euler,
+        seed_joint_deg,
+    ) -> list[float] | None:
+        """Solve one 7-DOF target without sending any motion command.
+
+        The connected arm handle lets the SDK use that controller's actual
+        kinematic parameters.  This method only calls the local algorithm
+        interface; it never calls MoveJ, MoveJ_P, MoveL, or MoveL_Offset.
+        """
+        if arm not in ("left", "right"):
+            raise RealManSdkError(f"invalid arm for offline IK: {arm}")
+        target = [float(value) for value in target_pose_euler]
+        seed = [float(value) for value in seed_joint_deg]
+        if len(target) != 6 or len(seed) != 7:
+            raise RealManSdkError(
+                "offline IK requires [x,y,z,rx,ry,rz] and seven seed joints"
+            )
+        if not all(math.isfinite(value) for value in target + seed):
+            raise RealManSdkError("offline IK input contains NaN or Inf")
+        with SDK_ALGORITHM_LOCK, self._sdk_lock:
+            self._connect()
+            left_robot, right_robot = self._robots()
+            robot = left_robot if arm == "left" else right_robot
+            self._activate_arm_algorithm(arm, robot)
+            params = self._ik_params_type(seed, target, 1)
+            return_code, solution = robot.rm_algo_inverse_kinematics(params)
+        if int(return_code) != 0:
+            return None
+        result = [float(value) for value in solution]
+        if len(result) != 7 or not all(math.isfinite(value) for value in result):
+            raise RealManSdkError(
+                f"offline 7DOF IK returned {len(result)} joints for {arm}"
+            )
+        return result
+
+    def ik_pose_residual(self, arm, target_pose_euler, joint_deg):
+        """Return offline FK position (m) and rotation (rad) errors; no motion."""
+        from scipy.spatial.transform import Rotation
+
+        if arm not in ("left", "right"):
+            raise RealManSdkError(f"invalid arm for offline FK: {arm}")
+        with SDK_ALGORITHM_LOCK, self._sdk_lock:
+            self._connect()
+            robot = self._robots()[0 if arm == "left" else 1]
+            self._activate_arm_algorithm(arm, robot)
+            actual = list(robot.rm_algo_forward_kinematics(joint_deg, flag=1))
+        if len(actual) != 6 or not all(math.isfinite(v) for v in actual):
+            return math.inf, math.inf
+        target = list(target_pose_euler)
+        position_error = math.dist(actual[:3], target[:3])
+        rotation_error = (
+            Rotation.from_euler("xyz", actual[3:]).inv()
+            * Rotation.from_euler("xyz", target[3:])
+        ).magnitude()
+        return position_error, float(rotation_error)
+
+    def inspect_joint_path(
+        self,
+        arm: str,
+        start_joint_deg,
+        target_joint_deg,
+        joint_min_deg,
+        joint_max_deg,
+        *,
+        max_sample_step_deg: float = 2.0,
+        singularity_limit: float = 0.01,
+    ) -> str:
+        """Check a sampled joint-space segment without commanding the arm.
+
+        The SDK checks singularity and robot self-collision. This does not
+        check the carried box, fixtures, or other obstacles in the room.
+        """
+        if arm not in ("left", "right"):
+            raise RealManSdkError(f"invalid arm for joint path inspection: {arm}")
+        vectors = [
+            [float(value) for value in vector]
+            for vector in (
+                start_joint_deg, target_joint_deg, joint_min_deg, joint_max_deg
+            )
+        ]
+        if any(len(vector) != 7 for vector in vectors) or not all(
+            math.isfinite(value) for vector in vectors for value in vector
+        ):
+            raise RealManSdkError("joint path inspection requires four finite 7-joint arrays")
+        if (
+            not math.isfinite(max_sample_step_deg)
+            or max_sample_step_deg <= 0.0
+            or not math.isfinite(singularity_limit)
+            or not 0.0 < singularity_limit < 1.0
+        ):
+            raise RealManSdkError("joint path inspection thresholds are invalid")
+        start, target, lower, upper = vectors
+        steps = max(
+            1,
+            math.ceil(
+                max(abs(end - begin) for begin, end in zip(start, target))
+                / max_sample_step_deg
+            ),
+        )
+        with SDK_ALGORITHM_LOCK, self._sdk_lock:
+            self._connect()
+            left_robot, right_robot = self._robots()
+            robot = left_robot if arm == "left" else right_robot
+            self._activate_arm_algorithm(arm, robot)
+            for index in range(steps + 1):
+                fraction = index / steps
+                sample = [
+                    begin + (end - begin) * fraction
+                    for begin, end in zip(start, target)
+                ]
+                location = f"sample={index}/{steps}, fraction={fraction:.3f}"
+                for joint_index, (value, minimum, maximum) in enumerate(
+                    zip(sample, lower, upper), start=1
+                ):
+                    if minimum > maximum or value < minimum or value > maximum:
+                        raise RealManSdkError(
+                            f"{arm} joint path limit at {location}: "
+                            f"joint{joint_index}={value:.3f}deg, "
+                            f"allowed=[{minimum:.3f},{maximum:.3f}]deg"
+                        )
+                singularity = int(
+                    robot.rm_algo_universal_singularity_analyse(
+                        sample, singularity_limit
+                    )
+                )
+                if singularity != 0:
+                    raise RealManSdkError(
+                        f"{arm} joint path singularity check at {location}: "
+                        f"return_code={singularity}, joint_deg="
+                        f"{[round(value, 3) for value in sample]}"
+                    )
+                collision = int(
+                    robot.rm_algo_safety_robot_self_collision_detection(sample)
+                )
+                if collision != 0:
+                    raise RealManSdkError(
+                        f"{arm} joint path self-collision check at {location}: "
+                        f"return_code={collision}, joint_deg="
+                        f"{[round(value, 3) for value in sample]}"
+                    )
+        return (
+            f"{arm} joint path offline checks passed: samples={steps + 1}, "
+            f"max_step_deg={max_sample_step_deg:.3f}, "
+            f"singularity_limit={singularity_limit:.3f}"
+        )
+
+    def solve_continuous_ik(
+        self,
+        arm: str,
+        target_poses_euler,
+        seed_joint_deg,
+        dt_sec: float,
+    ) -> list[list[float]] | None:
+        """Solve one Cartesian pose sequence without dispatching motion.
+
+        ``rm_algo_ik_remote`` is the SDK solver intended for continuous
+        Cartesian poses.  The complete sequence is solved while holding the
+        process-global SDK lock because its initialization and solver state
+        are shared by all connected handles.
+        """
+        if arm not in ("left", "right"):
+            raise RealManSdkError(f"invalid arm for continuous IK: {arm}")
+        seed = [float(value) for value in seed_joint_deg]
+        targets = [
+            [float(value) for value in target]
+            for target in target_poses_euler
+        ]
+        dt = float(dt_sec)
+        if len(seed) != 7 or not all(math.isfinite(value) for value in seed):
+            raise RealManSdkError("continuous IK requires seven finite seed joints")
+        if not math.isfinite(dt) or dt <= 0.0:
+            raise RealManSdkError("continuous IK dt_sec must be positive")
+        if any(
+            len(target) != 6
+            or not all(math.isfinite(value) for value in target)
+            for target in targets
+        ):
+            raise RealManSdkError(
+                "continuous IK targets must be finite [x,y,z,rx,ry,rz] poses"
+            )
+        if not targets:
+            return []
+
+        with SDK_ALGORITHM_LOCK, self._sdk_lock:
+            self._connect()
+            left_robot, right_robot = self._robots()
+            robot = left_robot if arm == "left" else right_robot
+            self._activate_arm_algorithm(arm, robot)
+            robot.rm_algo_ik_remote_init(dt, 1)
+            previous = seed
+            solutions: list[list[float]] = []
+            for index, target in enumerate(targets):
+                compact_matrix = robot.rm_algo_pos2matrix(target)
+                matrix_rows = [
+                    [
+                        float(compact_matrix.data[row * 4 + column])
+                        for column in range(4)
+                    ]
+                    for row in range(4)
+                ]
+                target_matrix = self._ik_matrix_type(4, 4, matrix_rows)
+                output = (ctypes.c_float * 7)()
+                return_code = int(
+                    robot.rm_algo_ik_remote(target_matrix, previous, output)
+                )
+                if return_code != 0:
+                    self._log(
+                        "debug",
+                        f"continuous IK rejected {arm} sample {index + 1}/"
+                        f"{len(targets)}: return_code={return_code}",
+                    )
+                    return None
+                solution = [float(value) for value in output]
+                if len(solution) != 7 or not all(
+                    math.isfinite(value) for value in solution
+                ):
+                    raise RealManSdkError(
+                        f"continuous IK returned invalid 7DOF solution for {arm}"
+                    )
+                solutions.append(solution)
+                previous = solution
+        return solutions
 
     @staticmethod
     def _handle_id(handle) -> int:
@@ -167,6 +447,8 @@ class RealManSdkConnectionMixin:
                 raise
             self._left_robot = left_robot
             self._right_robot = right_robot
+            # Controller calibration/frames may have changed since disconnect.
+            self._algo_profiles.clear()
             self._log(
                 "info",
                 f"RealMan SDK connected: left={self._left_ip}, right={self._right_ip}",

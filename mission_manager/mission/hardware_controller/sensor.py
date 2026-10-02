@@ -30,7 +30,14 @@ class ForceTorque:
             if not self._requested:
                 return
 
-            self._latest_force = (msg.fx, msg.fy, msg.fz)
+            self._latest_force = {
+                'fx': msg.fx,
+                'fy': msg.fy,
+                'fz': msg.fz,
+                'mx': msg.mx,
+                'my': msg.my,
+                'mz': msg.mz,
+            }
             self._requested = False
             self._condition.notify()
 

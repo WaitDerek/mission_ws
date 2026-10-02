@@ -47,4 +47,34 @@ def mat_2_pose_array(T):
         float(quat[3]), 
     ]
 
-  
+def euler_to_tf_mat(poses, order="xyz"):
+    """
+    Sequentially compose a list of [x, y, z, rx, ry, rz] poses.
+
+    Args:
+        poses: list of poses
+            [
+                [x, y, z, rx, ry, rz],
+                [x, y, z, rx, ry, rz],
+                ...
+            ]
+
+        order: Euler rotation order, e.g. "xyz", "zyx".
+
+    Returns:
+        np.ndarray: 4x4 transformation matrix list
+    """
+    T_list = []
+
+    for pose in poses:
+        x, y, z, rx, ry, rz = pose
+
+        Ti = np.eye(4)
+        Ti[:3, :3] = R.from_euler(
+            order, [rx, ry, rz], degrees=True
+        ).as_matrix()
+        Ti[:3, 3] = [x, y, z]
+
+        T_list.append(Ti)
+
+    return T_list

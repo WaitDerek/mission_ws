@@ -1,0 +1,11 @@
+# Start the complete connector-and-badge installation workflow.
+
+---
+
+bool success
+string message
+
+---
+
+string stage
+string detail

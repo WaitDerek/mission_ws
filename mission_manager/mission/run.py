@@ -10,6 +10,7 @@ from .skills.execute_peel import ExecutorPeel
 from .skills.execute_grasp import ExecutorGrasp
 from .skills.execute_workflow import ExecutorWorkflow
 from .skills.execute_assembly import ExecutorAssembly
+from .skills.execute_init import ExecutorInitialization
 from .skills.execute_navigation import ExecutorNavigation
 
 
@@ -26,6 +27,12 @@ class MissionManager(Node):
         self.robot = RobotController(self, self.force_sensor)
 
         # Mission Executor        
+        self.executor_init = ExecutorInitialization(
+            self,
+            self.config_dir, 
+            self.gripper, self.force_sensor, self.robot
+        )
+
         self.executor_navigation = ExecutorNavigation(
             self,
             self.config_dir, 
@@ -53,6 +60,7 @@ class MissionManager(Node):
         self.workflow_server = ExecutorWorkflow(
             node=self,
             config_dir=self.config_dir,
+            executor_init=self.executor_init,
             executor_navigation=self.executor_navigation,
             executor_grasp=self.executor_grasp,
             executor_peel=self.executor_peel,

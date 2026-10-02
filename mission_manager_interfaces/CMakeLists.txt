@@ -16,6 +16,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "action/ExecuteWorkflow.action"
   "action/NavigateToPoint.action"
   "action/ExecuteNavigation.action"
+  "action/ExecuteInitialization.action"
   DEPENDENCIES geometry_msgs
 )
 

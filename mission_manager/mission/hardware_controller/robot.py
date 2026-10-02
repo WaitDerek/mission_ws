@@ -298,7 +298,7 @@ class RobotController:
                     f"target={target_height:.4f} m"
                 )
 
-                return True
+                return False
 
             # Take a consistent snapshot of torso state.
             with self.state_lock:
@@ -344,8 +344,180 @@ class RobotController:
                     "Torso stopped before target: "
                     f"current={current_height:.4f} m, target={target_height:.4f} m"
                 )
-                return True
+                return False
 
+
+            # Avoid busy waiting.
+            time.sleep(self.loop_interval)
+
+    def initialize_torso(
+            self,
+            speed=0.3,
+            wait_sub_timeout=5.0,
+            torso_move_timeout=30.0,
+            init_timeout=5.0,
+        ):
+        """
+        Initialize torso
+
+        Returns:
+            True:
+                Set the torso to the lowest point and initialize.
+
+            False:
+                Timeout or ROS shutdown.
+        """
+        
+        self._node.get_logger().info("Wait for /g1_d/torso/command subscriber")
+        start_time = time.monotonic()
+        while self.torso_pub.get_subscription_count() == 0:
+            if time.monotonic() - start_time >= wait_sub_timeout:
+                self._node.get_logger().error(
+                    "Timeout waiting for subscriber to /g1_d/torso/command"
+                )
+                return False
+            time.sleep(self.loop_interval)
+        
+
+        # Record the time immediately before publishing the command.
+        # We use this to ensure that the state used for verification was
+        # received after this command was issued.
+        command_time = self._node.get_clock().now()
+
+        # Publish torso command.
+        target_height = -0.39
+        msg = G1dTorsoCommand()
+        msg.control_mode = 3
+        msg.target_position = target_height
+        msg.speed = speed
+        
+        self.torso_pub.publish(msg)
+
+        self._node.get_logger().info(
+            "Set the torso to the lowest point" 
+        )
+
+        # ------------------------------------------------------------------
+        # Wait for a new torso state and then check whether the target has
+        # been reached.
+        # ------------------------------------------------------------------
+
+        start_time = time.monotonic()
+
+        while True:
+
+            # Check local timeout.
+            elapsed = time.monotonic() - start_time
+
+            if elapsed >= torso_move_timeout:
+                with self.state_lock:
+                    state = self.torso_state
+
+                if state is not None:
+                    current_height = state.column_height_m
+                else:
+                    current_height = None
+
+                self._node.get_logger().error(
+                    "Torso movement timed out. "
+                    f"Current height={current_height}, "
+                    f"target={target_height:.4f} m"
+                )
+
+                return False
+
+            # Take a consistent snapshot of torso state.
+            with self.state_lock:
+                state = self.torso_state
+                state_time = self.torso_update_time
+
+            # No state received yet.
+            if state is None or state_time is None:
+                time.sleep(self.loop_interval)
+                continue
+
+            # Ignore state received before the command was published.
+            if state_time <= command_time:
+                time.sleep(self.loop_interval)
+                continue
+
+            # Read all fields from the same message snapshot.
+            current_height = state.column_height_m
+            velocity = state.column_velocity_mps
+
+            self._node.get_logger().info(
+                f"Torso: height={current_height:.4f} m, "
+                f"target={target_height:.4f} m, "
+                f"velocity={velocity:.4f} m/s"
+            )
+
+            if current_height <= 0.0 and abs(velocity) <= 0.001:
+                self._node.get_logger().info("Torso has reached the lowest point")
+                break
+
+            if (not state.column_target_active and abs(velocity) <= 0.001):
+                self._node.get_logger().error(
+                    "Torso hasn't reached the lowest point"
+                    f"current={current_height:.4f} m, target={target_height:.4f} m"
+                )
+                return False
+
+            # Avoid busy waiting.
+            time.sleep(self.loop_interval)
+
+        # Set the lowest point as the zero point.
+        command_time = self._node.get_clock().now()
+        msg = G1dTorsoCommand()
+        msg.initialize = True
+        self.torso_pub.publish(msg)
+
+        start_time = time.monotonic()
+        while True:
+
+            # Check local timeout.
+            elapsed = time.monotonic() - start_time
+
+            if elapsed >= init_timeout:
+                with self.state_lock:
+                    state = self.torso_state
+
+                if state is not None:
+                    current_height = state.column_height_m
+                else:
+                    current_height = None
+
+                self._node.get_logger().error("Torso initialization timed out")
+
+                return False
+
+            # Take a consistent snapshot of torso state.
+            with self.state_lock:
+                state = self.torso_state
+                state_time = self.torso_update_time
+
+            # No state received yet.
+            if state is None or state_time is None:
+                time.sleep(self.loop_interval)
+                continue
+
+            # Ignore state received before the command was published.
+            if state_time <= command_time:
+                time.sleep(self.loop_interval)
+                continue
+
+            # Read all fields from the same message snapshot.
+            current_height = state.column_height_m
+            velocity = state.column_velocity_mps
+
+            self._node.get_logger().info(
+                f"Torso: height={current_height:.4f} m, "
+                f"target={target_height:.4f} m, "
+                f"velocity={velocity:.4f} m/s"
+            )
+
+            if current_height <= 0.0 and abs(velocity) <= 0.001:
+                self._node.get_logger().info("Torso initialize succeeds")
+                return True
 
             # Avoid busy waiting.
             time.sleep(self.loop_interval)
@@ -848,7 +1020,7 @@ class RobotController:
             )
             return False
 
-        _, _, initial_fz = force
+        initial_fz = force['fz']
         self._node.get_logger().info(f"Initial force: Fz={initial_fz:.4f} kg")
 
         # ------------------------------------------------------------------
@@ -933,12 +1105,10 @@ class RobotController:
             if force is None:
                 continue
 
-            fx, fy, fz = force
+            fz = force['fz']
             delta_fz = abs(fz - initial_fz)
             self._node.get_logger().info(
                 f"Suction force: "
-                f"Fx={fx:.4f}, "
-                f"Fy={fy:.4f}, "
                 f"Fz={fz:.4f}, "
                 f"ΔFz={delta_fz:.4f}"
             )
@@ -1076,7 +1246,7 @@ class RobotController:
 
         result_future = goal_handle.get_result_async()
 
-        if not self._wait_for_future(result_future, 25.0):
+        if not self._wait_for_future(result_future,80.0):
             self._node.get_logger().error(
                 "Failed while waiting for object pose result."
             )

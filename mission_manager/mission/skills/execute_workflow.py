@@ -21,6 +21,7 @@ class ExecutorWorkflow:
             self, 
             node,
             config_dir,
+            executor_init,
             executor_navigation,
             executor_grasp,
             executor_peel,
@@ -43,6 +44,7 @@ class ExecutorWorkflow:
         self.navigation_timeout = 100.0
 
         self.executor_mapping = {
+            'ExecutorInitialization': executor_init,
             'ExecutorNavigation': executor_navigation,
             'ExecutorGrasp': executor_grasp,
             'ExecutorPeel': executor_peel,

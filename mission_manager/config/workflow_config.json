@@ -1,6 +1,13 @@
 {
     "workflow":[
         {
+            "if_exec": true,
+            "description": "Initilizae robot",
+            "executor": "ExecutorInitialization",
+            "params": {
+            }
+        },
+        {
             "if_exec": false,
             "description": "Navigate to start point",
             "executor": "ExecutorNavigation",
@@ -52,6 +59,21 @@
             "params": {
                 "assemble_obj": "badge_connector",
                 "if_update_config": true
+            }
+        },
+        {
+            "if_exec": false,
+            "description": "Navigate to start point",
+            "executor": "ExecutorNavigation",
+            "params": {
+                "navi_goal":  {
+                    "request_id": "start-point", 
+                    "start": true, 
+                    "point_id": 1, 
+                    "use_custom_pos": true, 
+                    "pos": [0.1, 0.01, 0.06],
+                    "dry_run": false
+                }
             }
         },
         {

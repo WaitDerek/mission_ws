@@ -1,0 +1,6 @@
+{
+    "refresh_config": true,
+    "movement_switch": [
+        [true , "Initialize torso"]
+    ]
+}

@@ -66,8 +66,14 @@ class WaistWorkspaceOptimizer:
         refine_step_deg: float = 1.0,
         sobol_sample_count: int = 1024,
         sobol_seed: int = 0,
+        ik_pose_residual=None,
+        robustness_delta_deg: float = 0.0,
     ) -> None:
-        self._solve_ik = solve_ik
+        self._raw_solve_ik = solve_ik
+        self._ik_pose_residual = ik_pose_residual
+        self._robustness_delta_deg = float(robustness_delta_deg)
+        if not math.isfinite(self._robustness_delta_deg) or self._robustness_delta_deg < 0:
+            raise ValueError("robustness_delta_deg must be finite and non-negative")
         self._left_limits = self._validated_limits(
             left_joint_limits_deg, 7, "left arm"
         )
@@ -89,6 +95,19 @@ class WaistWorkspaceOptimizer:
         self._sobol_sample_count = int(sobol_sample_count)
         self._sobol_seed = int(sobol_seed)
         self._validate_configuration()
+
+    def _solve_ik(self, arm, pose, seed):
+        solution = self._raw_solve_ik(arm, pose, seed)
+        if solution is None:
+            return None
+        if len(solution) != 7 or not all(math.isfinite(v) for v in solution):
+            return None
+        if self._ik_pose_residual is not None:
+            position, rotation = self._ik_pose_residual(arm, pose, solution)
+            if (not math.isfinite(position) or not math.isfinite(rotation)
+                    or position > 0.0005 or rotation > math.radians(0.1)):
+                return None
+        return solution
 
     def _validate_configuration(self) -> None:
         if self._search_mode not in self.SEARCH_MODES:
@@ -716,6 +735,60 @@ class WaistWorkspaceOptimizer:
 
         all_valid = initial_valid + refined_valid
         best = max(all_valid, key=lambda item: item.rank)
+        robustness_checked = 0
+        if self._robustness_delta_deg > 0:
+            best = None
+            for candidate in sorted(all_valid, key=lambda item: item.rank, reverse=True):
+                robustness_checked += 1
+                if progress_callback is not None:
+                    progress_callback(
+                        f"waist robustness check: candidate={robustness_checked}/{len(all_valid)}; "
+                        f"waist_deg={candidate.waist_deg}; "
+                        f"axis_delta_deg=+/-{self._robustness_delta_deg:.3f}"
+                    )
+                if min(candidate.left_margin_deg, candidate.right_margin_deg) < self._minimum_margin_deg:
+                    continue
+                passed = True
+                for axis, sign in itertools.product(range(3), (-1, 1)):
+                    perturbed = list(candidate.waist_deg)
+                    perturbed[axis] += sign * self._robustness_delta_deg
+                    if not self._waist_limits[0][axis] <= perturbed[axis] <= self._waist_limits[1][axis]:
+                        passed = False
+                        break
+                    if progress_callback is not None:
+                        progress_callback(
+                            f"waist robustness probe: candidate={robustness_checked}; "
+                            f"joint={axis + 1}; delta_deg={sign * self._robustness_delta_deg:+.3f}"
+                        )
+                    probe = self._evaluate_candidate(
+                        perturbed, nominal_deg,
+                        candidate.left_joint_deg, candidate.right_joint_deg,
+                        target_pose_provider, movel_endpoint_provider,
+                        endpoint_seed_mode, active_arms,
+                        initial_solution_validator, endpoint_solution_validator,
+                        priority_joint_arm, priority_joint_index,
+                        priority_joint_upper_bound_deg, auxiliary_candidate_validator,
+                    )
+                    if (probe is None
+                            or min(probe.left_margin_deg, probe.right_margin_deg) < self._minimum_margin_deg
+                            or (probe.priority_joint_margin_deg is not None
+                                and probe.priority_joint_margin_deg < self._minimum_margin_deg)):
+                        passed = False
+                        break
+                if passed:
+                    best = candidate
+                    break
+            if best is None:
+                raise RuntimeError(
+                    f"no robust waist target among {len(all_valid)} nominal IK-valid candidates; "
+                    f"required J1/J2/J3 +/-{self._robustness_delta_deg:.3f}deg"
+                )
+            if progress_callback is not None:
+                progress_callback(
+                    f"waist robustness passed: checked_candidates={robustness_checked}; "
+                    f"probes=6/6; axis_delta_deg=+/-{self._robustness_delta_deg:.3f}; "
+                    "nominal ranking unchanged; valid count describes nominal candidates"
+                )
         result = WaistWorkspaceResult(
             search_mode=self._search_mode,
             waist_angles_rad=tuple(math.radians(value) for value in best.waist_deg),

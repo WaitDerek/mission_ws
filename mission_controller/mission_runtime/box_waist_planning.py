@@ -487,7 +487,8 @@ class BoxWaistPlanningMixin:
                 position_error, rotation_error = adapter.ik_pose_residual(
                     "left", target_values, solution
                 )
-                if position_error > 0.001 or rotation_error > math.radians(0.5):
+                if (not math.isfinite(position_error) or not math.isfinite(rotation_error)
+                        or position_error > 0.0005 or rotation_error > math.radians(0.1)):
                     continue
                 best_solution, best_margin = solution, margin
             return {"left": best_solution} if best_solution is not None else False
@@ -523,6 +524,8 @@ class BoxWaistPlanningMixin:
         )
         optimizer = WaistWorkspaceOptimizer(
             solve_ik=adapter.solve_ik,
+            ik_pose_residual=adapter.ik_pose_residual,
+            robustness_delta_deg=0.1,
             left_joint_limits_deg=(
                 self._float_array("waist_workspace_left_arm_joint_min_deg"),
                 self._float_array("waist_workspace_left_arm_joint_max_deg"),
@@ -619,11 +622,13 @@ class BoxWaistPlanningMixin:
                 "left_initial_ik=not_required; left_join_ik=checked_per_candidate; "
                 f"left_join_ik_deg={[round(v, 3) for v in result.left_joint_deg]}; "
                 f"left_join_min_margin_deg={result.left_margin_deg:.3f}; "
-                "left_join_fk_tolerance=0.001m/0.5deg; "
+                "left_join_fk_tolerance=0.0005m/0.1deg; "
             )
         )
         detail = (
             f"waist_workspace_optimization={'disabled_fixed_pose' if fixed_waist else 'enabled'}; "
+            "ik_fk_tolerance=0.0005m/0.1deg; waist_robustness=6_axis_probes_passed; "
+            "waist_robustness_delta_deg=0.1; "
             f"search_mode={result.search_mode}; "
             f"evaluated_arms={','.join(optimization_arms)}; "
             + (
